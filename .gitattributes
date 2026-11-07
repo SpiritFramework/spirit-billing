@@ -1,0 +1,7 @@
+# Keep shell/deploy files Unix-safe for Ubuntu installs via WinSCP/zip
+*.sh text eol=lf
+scripts/** text eol=lf
+deploy/nginx/*.conf text eol=lf
+deploy/systemd/*.service text eol=lf
+deploy/env.production.example text eol=lf
+deploy/INSTALL.md text eol=lf

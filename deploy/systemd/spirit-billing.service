@@ -1,0 +1,39 @@
+[Unit]
+Description=Spirit Billing API
+Documentation=file:///opt/spirit-billing/deploy/INSTALL.md
+After=network.target mysql.service mariadb.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=spirit-billing
+Group=spirit-billing
+WorkingDirectory=/opt/spirit-billing/billing-api
+Environment=NODE_ENV=production
+EnvironmentFile=/opt/spirit-billing/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+# API tree + ticket image uploads (must stay writable by User=spirit-billing)
+ReadWritePaths=/opt/spirit-billing/billing-api /opt/spirit-billing/billing-api/uploads
+CapabilityBoundingSet=
+AmbientCapabilities=
+LockPersonality=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=spirit-billing
+
+[Install]
+WantedBy=multi-user.target

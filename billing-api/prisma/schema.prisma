@@ -1,0 +1,404 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  staff
+  client
+}
+
+enum BillingCycle {
+  monthly
+  quarterly
+  yearly
+}
+
+enum ServiceStatus {
+  pending_payment
+  active
+  suspended
+  cancelled
+}
+
+enum InvoiceStatus {
+  unpaid
+  paid
+  cancelled
+}
+
+enum CouponType {
+  percent
+  fixed
+  credit
+}
+
+enum CreditReason {
+  admin_adjust
+  order_payment
+  coupon_bonus
+  refund
+  purchase_topup
+}
+
+enum NotificationType {
+  info
+  success
+  warning
+}
+
+enum SystemLogLevel {
+  info
+  warn
+  error
+}
+
+enum SystemLogCategory {
+  auth
+  billing
+  admin
+  panel
+  system
+}
+
+enum TicketStatus {
+  open
+  answered
+  awaiting_customer
+  closed
+}
+
+enum TicketPriority {
+  low
+  normal
+  high
+  urgent
+}
+
+model User {
+  id                 String   @id @default(cuid())
+  email              String   @unique
+  username           String   @unique
+  passwordHash       String   @map("password_hash")
+  firstName          String?  @map("first_name")
+  lastName           String?  @map("last_name")
+  avatarUrl          String?  @map("avatar_url") @db.VarChar(512)
+  role               UserRole @default(client)
+  panelUserId        String?  @unique @map("panel_user_id")
+  creditBalanceCents Int      @default(0) @map("credit_balance_cents")
+  enabled            Boolean  @default(true)
+  tokenVersion       Int      @default(0) @map("token_version")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  services          Service[]
+  invoices          Invoice[]
+  invoicesPaid      Invoice[]          @relation("InvoicePaidBy")
+  creditLedgers     CreditLedger[]
+  couponRedemptions CouponRedemption[]
+  creditsAdjusted   CreditLedger[]     @relation("CreditAdjustedBy")
+  notifications     Notification[]
+  systemLogsActor   SystemLog[]        @relation("SystemLogActor")
+  systemLogsTarget  SystemLog[]        @relation("SystemLogTarget")
+  tickets           Ticket[]
+  ticketMessages    TicketMessage[]
+
+  @@map("users")
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String           @map("user_id")
+  type      NotificationType @default(info)
+  title     String           @db.VarChar(120)
+  message   String           @db.VarChar(500)
+  href      String?          @db.VarChar(255)
+  readAt    DateTime?        @map("read_at")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("notifications")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String   @default("") @db.Text
+  color       String   @default("#6366f1")
+  icon        String   @default("gamepad")
+  logoUrl     String?  @map("logo_url") @db.VarChar(512)
+  /// Spirit-Panel egg this game category provisions / matches on import.
+  panelEggId  String?  @map("panel_egg_id")
+  sortOrder   Int      @default(0) @map("sort_order")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+  services Service[]
+
+  @@map("categories")
+}
+
+model Product {
+  id              String       @id @default(cuid())
+  categoryId      String?      @map("category_id")
+  name            String
+  description     String       @default("") @db.Text
+  /// Plan bullet points shown on the storefront (JSON string array, stored as text).
+  features        String       @default("[]") @db.Text
+  priceCents      Int          @map("price_cents")
+  currency        String       @default("GBP")
+  cycle           BillingCycle @default(monthly)
+  active          Boolean      @default(true)
+  sortOrder       Int          @default(0) @map("sort_order")
+  panelEggId      String       @map("panel_egg_id")
+  panelNodeId     String?      @map("panel_node_id")
+  memoryMb        Int          @default(1024) @map("memory_mb")
+  diskMb          Int          @default(10240) @map("disk_mb")
+  cpuPercent      Int          @default(100) @map("cpu_percent")
+  backupLimit     Int          @default(1) @map("backup_limit")
+  databaseLimit   Int          @default(1) @map("database_limit")
+  allocationLimit Int          @default(0) @map("allocation_limit")
+  /// When true, provisioned panel servers may use client subdomain manager (if Cloudflare DNS is enabled).
+  subdomainAccess Boolean      @default(false) @map("subdomain_access")
+  /// When true, FiveM servers on this plan may use the resource marketplace.
+  fivemMarketplaceAccess Boolean @default(false) @map("fivem_marketplace_access")
+  /// When true, Minecraft servers on this plan may use one-click Modrinth plugins.
+  minecraftPluginsAccess Boolean @default(false) @map("minecraft_plugins_access")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  services Service[]
+
+  @@map("products")
+}
+
+model Service {
+  id              String        @id @default(cuid())
+  userId          String        @map("user_id")
+  productId       String        @map("product_id")
+  /// Optional display category (e.g. imported panel servers) — overrides product.category in UI.
+  categoryId      String?       @map("category_id")
+  name            String
+  status          ServiceStatus @default(pending_payment)
+  panelServerId   String?       @unique @map("panel_server_id")
+  /// Panel egg id for imported servers (not sold via catalog).
+  panelEggId      String?       @map("panel_egg_id")
+  panelEggName    String?       @map("panel_egg_name") @db.VarChar(120)
+  /// Panel node for custom/deferred provisioning (used when product.panelNodeId is shared/empty).
+  panelNodeId     String?       @map("panel_node_id")
+  memoryMb        Int?          @map("memory_mb")
+  diskMb          Int?          @map("disk_mb")
+  cpuPercent      Int?          @map("cpu_percent")
+  backupLimit     Int?          @map("backup_limit")
+  databaseLimit   Int?          @map("database_limit")
+  allocationLimit Int?          @map("allocation_limit")
+  /// Client subdomain manager access for this service (copied from product or set on custom create).
+  subdomainAccess Boolean       @default(false) @map("subdomain_access")
+  /// FiveM marketplace access for this service.
+  fivemMarketplaceAccess Boolean @default(false) @map("fivem_marketplace_access")
+  /// Minecraft Modrinth plugins access for this service.
+  minecraftPluginsAccess Boolean @default(false) @map("minecraft_plugins_access")
+  priceCents      Int?          @map("price_cents")
+  currency        String?
+  cycle           BillingCycle?
+  nextDueAt       DateTime?     @map("next_due_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product  Product   @relation(fields: [productId], references: [id])
+  category Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  invoices Invoice[]
+  tickets  Ticket[]
+
+  @@map("services")
+}
+
+model Invoice {
+  id                 String        @id @default(cuid())
+  number             String        @unique
+  userId             String        @map("user_id")
+  serviceId          String?       @map("service_id")
+  status             InvoiceStatus @default(unpaid)
+  currency           String        @default("GBP")
+  subtotalCents      Int           @map("subtotal_cents")
+  discountCents      Int           @default(0) @map("discount_cents")
+  creditAppliedCents Int           @default(0) @map("credit_applied_cents")
+  totalCents         Int           @map("total_cents")
+  description        String        @default("") @db.Text
+  couponId           String?       @map("coupon_id")
+  couponCode         String?       @map("coupon_code") @db.VarChar(64)
+  /// When set, paying this invoice upgrades the linked service to this product (same egg).
+  upgradeToProductId String?       @map("upgrade_to_product_id")
+  dueAt              DateTime      @map("due_at")
+  paidAt             DateTime?     @map("paid_at")
+  paidById           String?       @map("paid_by_id")
+  createdAt          DateTime      @default(now()) @map("created_at")
+  updatedAt          DateTime      @updatedAt @map("updated_at")
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  service           Service?           @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  paidBy            User?              @relation("InvoicePaidBy", fields: [paidById], references: [id], onDelete: SetNull)
+  coupon            Coupon?            @relation(fields: [couponId], references: [id], onDelete: SetNull)
+  creditLedgers     CreditLedger[]
+  couponRedemptions CouponRedemption[]
+
+  @@map("invoices")
+}
+
+model CreditLedger {
+  id                String       @id @default(cuid())
+  userId            String       @map("user_id")
+  amountCents       Int          @map("amount_cents")
+  balanceAfterCents Int          @map("balance_after_cents")
+  reason            CreditReason
+  note              String?      @db.VarChar(500)
+  invoiceId         String?      @map("invoice_id")
+  createdById       String?      @map("created_by_id")
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice   Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  createdBy User?    @relation("CreditAdjustedBy", fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("credit_ledgers")
+}
+
+model Coupon {
+  id               String     @id @default(cuid())
+  code             String     @unique @db.VarChar(64)
+  type             CouponType
+  value            Int
+  description      String     @default("") @db.VarChar(255)
+  maxRedemptions   Int?       @map("max_redemptions")
+  redemptionCount  Int        @default(0) @map("redemption_count")
+  perUserLimit     Int        @default(1) @map("per_user_limit")
+  minOrderCents    Int        @default(0) @map("min_order_cents")
+  startsAt         DateTime?  @map("starts_at")
+  endsAt           DateTime?  @map("ends_at")
+  active           Boolean    @default(true)
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+
+  invoices    Invoice[]
+  redemptions CouponRedemption[]
+
+  @@map("coupons")
+}
+
+model CouponRedemption {
+  id            String   @id @default(cuid())
+  couponId      String   @map("coupon_id")
+  userId        String   @map("user_id")
+  invoiceId     String?  @map("invoice_id")
+  discountCents Int      @default(0) @map("discount_cents")
+  creditCents   Int      @default(0) @map("credit_cents")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  coupon  Coupon   @relation(fields: [couponId], references: [id], onDelete: Cascade)
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  invoice Invoice? @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+
+  @@index([couponId, userId])
+  @@map("coupon_redemptions")
+}
+
+model Setting {
+  key       String   @id
+  value     String   @db.Text
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("settings")
+}
+
+model SystemLog {
+  id           String            @id @default(cuid())
+  level        SystemLogLevel    @default(info)
+  category     SystemLogCategory
+  action       String            @db.VarChar(80)
+  message      String            @db.VarChar(500)
+  actorUserId  String?           @map("actor_user_id")
+  targetUserId String?           @map("target_user_id")
+  ip           String?           @db.VarChar(64)
+  method       String?           @db.VarChar(12)
+  path         String?           @db.VarChar(255)
+  statusCode   Int?              @map("status_code")
+  durationMs   Int?              @map("duration_ms")
+  meta         Json?
+  createdAt    DateTime          @default(now()) @map("created_at")
+
+  actor  User? @relation("SystemLogActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  target User? @relation("SystemLogTarget", fields: [targetUserId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([category, createdAt])
+  @@index([level, createdAt])
+  @@map("system_logs")
+}
+
+model TicketCategory {
+  id          String   @id @default(cuid())
+  name        String   @db.VarChar(64)
+  description String   @default("") @db.VarChar(255)
+  color       String   @default("#6366f1") @db.VarChar(7)
+  icon        String   @default("life-buoy") @db.VarChar(32)
+  sortOrder   Int      @default(0) @map("sort_order")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  tickets Ticket[]
+
+  @@map("ticket_categories")
+}
+
+model Ticket {
+  id         String         @id @default(cuid())
+  number     String         @unique @db.VarChar(32)
+  userId     String         @map("user_id")
+  categoryId String?        @map("category_id")
+  serviceId  String?        @map("service_id")
+  subject    String         @db.VarChar(160)
+  status     TicketStatus   @default(open)
+  priority   TicketPriority @default(normal)
+  createdAt  DateTime       @default(now()) @map("created_at")
+  updatedAt  DateTime       @updatedAt @map("updated_at")
+  closedAt   DateTime?      @map("closed_at")
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category TicketCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  service  Service?        @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  messages TicketMessage[]
+
+  @@index([userId, createdAt])
+  @@index([status, updatedAt])
+  @@index([priority, updatedAt])
+  @@map("tickets")
+}
+
+model TicketMessage {
+  id           String   @id @default(cuid())
+  ticketId     String   @map("ticket_id")
+  authorUserId String   @map("author_user_id")
+  body         String   @db.Text
+  attachments  Json     @default("[]")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User   @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId, createdAt])
+  @@map("ticket_messages")
+}
