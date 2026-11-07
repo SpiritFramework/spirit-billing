@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react';
+import { FormEvent, useState, type ReactNode } from 'react';
 import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -9,13 +9,10 @@ import {
   Gamepad2,
   LockKeyhole,
   Mail,
-  Server,
   ShieldCheck,
-  Sparkles,
   User as UserIcon,
   UserPlus,
   Wrench,
-  Zap,
 } from 'lucide-react';
 import { api, ApiError } from '../lib/api';
 import { useAuth, type User } from '../context/AuthContext';
@@ -29,59 +26,80 @@ function safeNextPath(raw: string | null) {
   return raw;
 }
 
-function AuthBrand() {
+function AuthBrand({ compact = false }: { compact?: boolean }) {
   const branding = useBranding();
   return (
-    <Link to="/" className="auth-v3-brand">
+    <Link to="/" className={`auth-v3-brand${compact ? ' is-compact' : ''}`}>
       {branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) ? (
         <img src={branding.logoUrl} alt="" />
       ) : (
-        <span><Gamepad2 size={18} /></span>
+        <span aria-hidden>
+          <Gamepad2 size={18} />
+        </span>
       )}
       <div>
         <strong>{branding.companyName}</strong>
-        <small>Game server hosting</small>
+        {!compact && <small>{branding.tagline || 'Game server hosting'}</small>}
       </div>
     </Link>
   );
 }
 
 function AuthVisual({ mode }: { mode: 'login' | 'register' }) {
+  const branding = useBranding();
+  const company = branding.companyName || 'Spirit Billing';
+
   return (
     <aside className={`auth-v3-visual is-${mode}`}>
-      <div className="auth-v3-visual__grid" />
-      <div className="auth-v3-visual__glow" />
+      <div className="auth-v3-visual__atmosphere" aria-hidden>
+        <div className="auth-v3-visual__orb auth-v3-visual__orb--a" />
+        <div className="auth-v3-visual__orb auth-v3-visual__orb--b" />
+        <div className="auth-v3-visual__mesh" />
+        <div className="auth-v3-visual__scan" />
+      </div>
+
       <div className="auth-v3-visual__content">
-        <span className="auth-v3-visual__kicker"><Sparkles size={13} /> Powered by Spirit-Panel</span>
-        <h2>{mode === 'login' ? 'Your servers are waiting.' : 'A new world is only a few steps away.'}</h2>
-        <p>
-          {mode === 'login'
-            ? 'Sign in to manage billing, services and every server connected to your account.'
-            : 'Create one account for simple billing and powerful game server control.'}
+        <AuthBrand />
+        <p className="auth-v3-visual__eyebrow">
+          {mode === 'login' ? 'Client area' : 'New account'}
         </p>
-        <ul>
-          <li><span><Server size={15} /></span><div><strong>Everything in one place</strong><small>Services, invoices and server access.</small></div></li>
-          <li><span><Zap size={15} /></span><div><strong>Connected provisioning</strong><small>Billing and Spirit-Panel work together.</small></div></li>
-          <li><span><ShieldCheck size={15} /></span><div><strong>Protected access</strong><small>Secure sessions and account controls.</small></div></li>
+        <h2>
+          {mode === 'login' ? (
+            <>
+              Welcome back
+              <span> to {company}.</span>
+            </>
+          ) : (
+            <>
+              Join {company}
+              <span> and start hosting.</span>
+            </>
+          )}
+        </h2>
+        <p className="auth-v3-visual__lede">
+          {mode === 'login'
+            ? 'Manage invoices, services, and every game server linked to your account.'
+            : 'One account for billing and Spirit-Panel — order, pay, and provision from here.'}
+        </p>
+
+        <ul className="auth-v3-visual__points">
+          <li>
+            <ShieldCheck size={16} aria-hidden />
+            <span>Secure sessions &amp; account controls</span>
+          </li>
+          <li>
+            <Gamepad2 size={16} aria-hidden />
+            <span>Billing connected to Spirit-Panel</span>
+          </li>
         </ul>
       </div>
-      <div className="auth-v3-server-card" aria-hidden>
-        <header>
-          <span><Gamepad2 size={15} /></span>
-          <div><strong>Community Server</strong><small>Spirit-Panel</small></div>
-          <em><i /> Online</em>
-        </header>
-        <div>
-          <span><small>CPU</small><strong>34%</strong><i><b style={{ width: '34%' }} /></i></span>
-          <span><small>Memory</small><strong>4.2 GB</strong><i><b style={{ width: '58%' }} /></i></span>
-        </div>
-      </div>
-      <p className="auth-v3-visual__footer">Secure billing · Complete server control</p>
+
+      <p className="auth-v3-visual__footer">Spirit-Billing · SpiritFramework</p>
     </aside>
   );
 }
 
-function AuthShell({ mode, children }: { mode: 'login' | 'register'; children: React.ReactNode }) {
+function AuthShell({ mode, children }: { mode: 'login' | 'register'; children: ReactNode }) {
   const branding = useBranding();
   const supportHref = branding.supportUrl && /^https?:\/\//i.test(branding.supportUrl)
     ? branding.supportUrl
@@ -94,8 +112,11 @@ function AuthShell({ mode, children }: { mode: 'login' | 'register'; children: R
   return (
     <main className="auth-v3">
       <div className="auth-v3__top">
-        <AuthBrand />
-        <Link to="/" className="auth-v3__back"><ArrowLeft size={14} /> Back to website</Link>
+        <AuthBrand compact />
+        <Link to="/" className="auth-v3__back">
+          <ArrowLeft size={14} />
+          <span>Back to website</span>
+        </Link>
       </div>
       <div className="auth-v3__layout">
         <AuthVisual mode={mode} />
@@ -109,10 +130,14 @@ function AuthShell({ mode, children }: { mode: 'login' | 'register'; children: R
                 </a>
               )}
               {termsHref && (
-                <a href={termsHref} target="_blank" rel="noopener noreferrer">Terms</a>
+                <a href={termsHref} target="_blank" rel="noopener noreferrer">
+                  Terms
+                </a>
               )}
               {privacyHref && (
-                <a href={privacyHref} target="_blank" rel="noopener noreferrer">Privacy</a>
+                <a href={privacyHref} target="_blank" rel="noopener noreferrer">
+                  Privacy
+                </a>
               )}
             </p>
           )}
@@ -153,7 +178,9 @@ function AccessUnavailable({
         <Link className="auth-v3-submit" to="/login">
           Sign in <ArrowRight size={16} />
         </Link>
-        <Link className="auth-v3-status__home" to="/">Return to homepage</Link>
+        <Link className="auth-v3-status__home" to="/">
+          Return to homepage
+        </Link>
       </div>
     </AuthShell>
   );
@@ -207,12 +234,17 @@ export function LoginPage() {
 
   return (
     <AuthShell mode="login">
-      <form className="auth-v3-card" onSubmit={onSubmit}>
+      <form className="auth-v3-card" onSubmit={onSubmit} noValidate>
         <header className="auth-v3-card__head">
-          <span><LockKeyhole size={16} /></span>
-          <small>Secure account access</small>
-          <h1>Welcome back.</h1>
-          <p>Enter your details to open your client area.</p>
+          <p className="auth-v3-card__brand-mobile">
+            <AuthBrand compact />
+          </p>
+          <small>Secure sign in</small>
+          <h1>Sign in</h1>
+          <p>
+            Enter your {branding.companyName} account details to open the client area
+            {nextPath ? ' and continue where you left off' : ''}.
+          </p>
         </header>
 
         {branding.maintenanceMode && (
@@ -225,12 +257,16 @@ export function LoginPage() {
           </div>
         )}
 
-        {error && <div className="auth-v3-error">{error}</div>}
+        {error && (
+          <div className="auth-v3-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <label className="auth-v3-field">
           <span>Email or username</span>
           <div>
-            <Mail size={15} />
+            <Mail size={16} aria-hidden />
             <input
               value={identifier}
               onChange={(e) => setIdentifier(e.target.value)}
@@ -245,17 +281,21 @@ export function LoginPage() {
         <label className="auth-v3-field">
           <span>Password</span>
           <div>
-            <LockKeyhole size={15} />
+            <LockKeyhole size={16} aria-hidden />
             <input
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              placeholder="Enter your password"
+              placeholder="Your password"
               required
             />
-            <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
-              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
         </label>
@@ -265,7 +305,15 @@ export function LoginPage() {
         ) : null}
 
         <button className="auth-v3-submit" disabled={loading} type="submit">
-          {loading ? <><i /> Signing in…</> : <>Sign in securely <ArrowRight size={16} /></>}
+          {loading ? (
+            <>
+              <i /> Signing in…
+            </>
+          ) : (
+            <>
+              Sign in <ArrowRight size={16} />
+            </>
+          )}
         </button>
 
         {branding.registrationEnabled !== false && (
@@ -303,11 +351,21 @@ export function RegisterPage() {
   if (user) return <Navigate to={nextPath || '/dashboard'} replace />;
 
   if (branding.maintenanceMode) {
-    return <AccessUnavailable type="maintenance" message={branding.maintenanceMessage || 'Billing is under maintenance. New accounts cannot be created right now.'} />;
+    return (
+      <AccessUnavailable
+        type="maintenance"
+        message={branding.maintenanceMessage || 'Billing is under maintenance. New accounts cannot be created right now.'}
+      />
+    );
   }
 
   if (branding.registrationEnabled === false) {
-    return <AccessUnavailable type="registration" message="New account registration is currently disabled. If you need an account, contact the hosting team." />;
+    return (
+      <AccessUnavailable
+        type="registration"
+        message="New account registration is currently disabled. If you need an account, contact the hosting team."
+      />
+    );
   }
 
   async function onSubmit(e: FormEvent) {
@@ -348,29 +406,45 @@ export function RegisterPage() {
 
   return (
     <AuthShell mode="register">
-      <form className="auth-v3-card is-register" onSubmit={onSubmit}>
+      <form className="auth-v3-card is-register" onSubmit={onSubmit} noValidate>
         <header className="auth-v3-card__head">
-          <span><UserPlus size={16} /></span>
+          <p className="auth-v3-card__brand-mobile">
+            <AuthBrand compact />
+          </p>
           <small>Create your account</small>
-          <h1>Start hosting.</h1>
+          <h1>Start hosting</h1>
           <p>One account for billing and Spirit-Panel access.</p>
         </header>
 
-        {error && <div className="auth-v3-error">{error}</div>}
+        {error && (
+          <div className="auth-v3-error" role="alert">
+            {error}
+          </div>
+        )}
 
         <div className="auth-v3-field-grid">
           <label className="auth-v3-field">
             <span>First name</span>
             <div>
-              <UserIcon size={15} />
-              <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} placeholder="First name" required />
+              <UserIcon size={16} aria-hidden />
+              <input
+                value={form.firstName}
+                onChange={(e) => setForm({ ...form, firstName: e.target.value })}
+                placeholder="First name"
+                required
+              />
             </div>
           </label>
           <label className="auth-v3-field">
             <span>Last name</span>
             <div>
-              <UserIcon size={15} />
-              <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} placeholder="Last name" required />
+              <UserIcon size={16} aria-hidden />
+              <input
+                value={form.lastName}
+                onChange={(e) => setForm({ ...form, lastName: e.target.value })}
+                placeholder="Last name"
+                required
+              />
             </div>
           </label>
         </div>
@@ -378,15 +452,21 @@ export function RegisterPage() {
         <label className="auth-v3-field">
           <span>Email address</span>
           <div>
-            <Mail size={15} />
-            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" required />
+            <Mail size={16} aria-hidden />
+            <input
+              type="email"
+              value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              placeholder="you@example.com"
+              required
+            />
           </div>
         </label>
 
         <label className="auth-v3-field">
           <span>Username</span>
           <div>
-            <UserIcon size={15} />
+            <UserIcon size={16} aria-hidden />
             <input
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
@@ -403,7 +483,7 @@ export function RegisterPage() {
         <label className="auth-v3-field">
           <span>Password</span>
           <div>
-            <LockKeyhole size={15} />
+            <LockKeyhole size={16} aria-hidden />
             <input
               type={showPassword ? 'text' : 'password'}
               value={form.password}
@@ -412,11 +492,17 @@ export function RegisterPage() {
               required
               minLength={16}
             />
-            <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>
-              {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+            <button
+              type="button"
+              onClick={() => setShowPassword((value) => !value)}
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
+            >
+              {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
             </button>
           </div>
-          <small className="auth-v3-field__hint"><CheckCircle2 size={12} /> Use at least 16 characters with a letter and number.</small>
+          <small className="auth-v3-field__hint">
+            <CheckCircle2 size={12} /> Use at least 16 characters with a letter and number.
+          </small>
         </label>
 
         {branding.turnstileEnabled && branding.turnstileSiteKey ? (
@@ -424,14 +510,25 @@ export function RegisterPage() {
         ) : null}
 
         <button className="auth-v3-submit" disabled={loading} type="submit">
-          {loading ? <><i /> Creating account…</> : <>Create my account <ArrowRight size={16} /></>}
+          {loading ? (
+            <>
+              <i /> Creating account…
+            </>
+          ) : (
+            <>
+              Create account <ArrowRight size={16} />
+            </>
+          )}
         </button>
 
         <p className="auth-v3-terms">
           By creating an account, your details are also used to create your Spirit-Panel account.
         </p>
         <p className="auth-v3-switch">
-          Already registered? <Link to={`/login${nextQuery}`}>Sign in <ArrowRight size={13} /></Link>
+          Already registered?{' '}
+          <Link to={`/login${nextQuery}`}>
+            Sign in <ArrowRight size={13} />
+          </Link>
         </p>
       </form>
     </AuthShell>
