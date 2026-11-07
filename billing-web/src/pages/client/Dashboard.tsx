@@ -162,12 +162,17 @@ export function DashboardPage() {
           <h1>Your hosting home</h1>
         </div>
         <div className="client-home__intro-actions">
-          <Link className="ds-btn ds-btn--primary" to="/game-hosting">
-            <Gamepad2 size={15} /> Browse hosting
+          <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to="/game-hosting">
+            <span className="client-home__btn-icon" aria-hidden>
+              <Gamepad2 size={15} />
+            </span>
+            <span>Browse hosting</span>
+            <ArrowRight size={14} className="client-home__btn-arrow" />
           </Link>
           {panelHref && (data?.activeServices ?? 0) > 0 && (
-            <a className="ds-btn ds-btn--ghost" href={panelHref} target="_blank" rel="noopener noreferrer">
-              Open panel <ArrowUpRight size={14} />
+            <a className="client-home__btn client-home__btn--ghost" href={panelHref} target="_blank" rel="noopener noreferrer">
+              <span>Open panel</span>
+              <ArrowUpRight size={14} />
             </a>
           )}
         </div>
@@ -202,29 +207,49 @@ export function DashboardPage() {
 
       <div className="client-home__pulse" aria-label="Account snapshot">
         <Link to="/services" className="client-home__pulse-item">
-          <small>Services</small>
-          <strong>{data ? data.activeServices : '—'}</strong>
-          <span>{data ? `${data.totalServices} total` : 'Loading'}</span>
+          <span className="client-home__pulse-copy">
+            <small>Services</small>
+            <strong>{data ? data.activeServices : '—'}</strong>
+            <span>{data ? `${data.totalServices} total` : 'Loading'}</span>
+          </span>
+          <span className="client-home__pulse-icon is-services" aria-hidden>
+            <Server size={18} />
+          </span>
         </Link>
         <Link to="/invoices" className="client-home__pulse-item">
-          <small>Amount due</small>
-          <strong className={unpaid > 0 ? 'is-warn' : undefined}>{money(unpaid, currency)}</strong>
-          <span>{data ? `${data.unpaidInvoices} unpaid` : 'Loading'}</span>
+          <span className="client-home__pulse-copy">
+            <small>Amount due</small>
+            <strong className={unpaid > 0 ? 'is-warn' : undefined}>{money(unpaid, currency)}</strong>
+            <span>{data ? `${data.unpaidInvoices} unpaid` : 'Loading'}</span>
+          </span>
+          <span className="client-home__pulse-icon is-due" aria-hidden>
+            <Receipt size={18} />
+          </span>
         </Link>
         <div className="client-home__pulse-item">
-          <small>Credit</small>
-          <strong>{money(creditBalance, currency)}</strong>
-          <span>Ready at checkout</span>
+          <span className="client-home__pulse-copy">
+            <small>Credit</small>
+            <strong>{money(creditBalance, currency)}</strong>
+            <span>Ready at checkout</span>
+          </span>
+          <span className="client-home__pulse-icon is-credit" aria-hidden>
+            <Wallet size={18} />
+          </span>
         </div>
         <div className="client-home__pulse-item">
-          <small>Panel</small>
-          <strong className={panelWarn ? 'is-warn' : panelOk ? 'is-ok' : undefined}>
-            {data == null ? '…' : panelOk ? 'Linked' : data.panelStatus === 'unreachable' ? 'Down' : 'Not linked'}
-          </strong>
-          <span>
-            {data?.memberSince
-              ? `Member since ${new Date(data.memberSince).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
-              : 'Checking connection'}
+          <span className="client-home__pulse-copy">
+            <small>Panel</small>
+            <strong className={panelWarn ? 'is-warn' : panelOk ? 'is-ok' : undefined}>
+              {data == null ? '…' : panelOk ? 'Linked' : data.panelStatus === 'unreachable' ? 'Down' : 'Not linked'}
+            </strong>
+            <span>
+              {data?.memberSince
+                ? `Member since ${new Date(data.memberSince).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+                : 'Checking connection'}
+            </span>
+          </span>
+          <span className={`client-home__pulse-icon is-panel${panelWarn ? ' is-warn' : panelOk ? ' is-ok' : ''}`} aria-hidden>
+            <ShieldCheck size={18} />
           </span>
         </div>
       </div>
@@ -235,7 +260,7 @@ export function DashboardPage() {
             <h2>Services</h2>
             <p>Servers and plans on your account.</p>
           </div>
-          <Link to="/services">
+          <Link className="client-home__btn client-home__btn--text" to="/services">
             View all <ArrowRight size={14} />
           </Link>
         </div>
@@ -261,28 +286,40 @@ export function DashboardPage() {
                   icon={category?.icon}
                   logoUrl={category?.logoUrl}
                   color={category?.color}
-                  size={40}
+                  size={42}
                   className="client-home__service-mark"
                 />
                 <span className="client-home__service-main">
-                  <small>{category?.name || service.panelEggName || 'Hosting'}</small>
-                  <strong>{service.name}</strong>
-                  <em>{planLabel(service)}</em>
+                  <span className="client-home__service-title">
+                    <strong>{service.name}</strong>
+                    <span className={statusBadge(service.status)}>{service.status.replaceAll('_', ' ')}</span>
+                  </span>
+                  <small>
+                    {category?.name || service.panelEggName || 'Hosting'}
+                    <span aria-hidden>·</span>
+                    {planLabel(service)}
+                    {service.nextDueAt ? (
+                      <>
+                        <span aria-hidden>·</span>
+                        Renews{' '}
+                        {new Date(service.nextDueAt).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                        })}
+                      </>
+                    ) : null}
+                  </small>
                 </span>
                 <span className="client-home__service-specs" aria-label="Resources">
                   <span><MemoryStick size={12} /> {formatRam(memory)}</span>
                   <span><Cpu size={12} /> {cpu <= 0 ? 'Unlimited' : `${cpu}%`}</span>
                   <span><HardDrive size={12} /> {formatDisk(disk)}</span>
                 </span>
-                <span className="client-home__service-meta">
-                  <span className={statusBadge(service.status)}>{service.status.replaceAll('_', ' ')}</span>
-                  <small>
-                    {service.nextDueAt
-                      ? `Renews ${new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
-                      : price > 0
-                        ? `${money(price, svcCurrency)} / ${cycle}`
-                        : cycle}
-                  </small>
+                <span className="client-home__service-aside">
+                  <strong>
+                    {price > 0 ? money(price, svcCurrency) : 'Included'}
+                  </strong>
+                  <small>{cycle}</small>
                 </span>
                 <ArrowRight size={15} className="client-home__service-go" />
               </Link>
@@ -296,8 +333,12 @@ export function DashboardPage() {
                 <strong>No services yet</strong>
                 <p>Pick a game and launch your first server.</p>
               </div>
-              <Link className="ds-btn ds-btn--primary ds-btn--sm" to="/game-hosting">
-                Browse plans
+              <Link className="client-home__btn client-home__btn--primary client-home__btn--cta client-home__btn--sm" to="/game-hosting">
+                <span className="client-home__btn-icon" aria-hidden>
+                  <Gamepad2 size={14} />
+                </span>
+                <span>Browse plans</span>
+                <ArrowRight size={13} className="client-home__btn-arrow" />
               </Link>
             </div>
           )}
@@ -317,27 +358,41 @@ export function DashboardPage() {
               <h2>Invoices</h2>
               <p>Recent billing activity.</p>
             </div>
-            <Link to="/invoices">
+            <Link className="client-home__btn client-home__btn--text" to="/invoices">
               View all <ArrowRight size={14} />
             </Link>
           </div>
           <div className="client-home__invoice-list">
             {(data?.recentInvoices ?? []).map((invoice) => (
-              <Link key={invoice.id} to={`/invoices/${invoice.id}`} className="client-home__invoice">
-                <span className="client-home__invoice-id">
-                  <strong>{invoice.number}</strong>
-                  <small>{invoice.service?.name || 'Hosting invoice'}</small>
+              <Link
+                key={invoice.id}
+                to={`/invoices/${invoice.id}`}
+                className={`client-home__invoice is-${invoice.status}`}
+              >
+                <span className="client-home__invoice-mark" aria-hidden>
+                  <Receipt size={16} />
                 </span>
-                <time dateTime={invoice.createdAt}>
-                  {new Date(invoice.createdAt).toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'short',
-                  })}
-                </time>
-                <span className={statusBadge(invoice.status)}>{invoice.status}</span>
+                <span className="client-home__invoice-id">
+                  <span className="client-home__invoice-title">
+                    <strong>{invoice.number}</strong>
+                    <span className={statusBadge(invoice.status)}>{invoice.status.replaceAll('_', ' ')}</span>
+                  </span>
+                  <small>
+                    {invoice.service?.name || 'Hosting invoice'}
+                    <span aria-hidden>·</span>
+                    <time dateTime={invoice.createdAt}>
+                      {new Date(invoice.createdAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </time>
+                  </small>
+                </span>
                 <strong className="client-home__invoice-amount">
                   {money(invoice.totalCents, invoice.currency)}
                 </strong>
+                <ArrowRight size={14} className="client-home__invoice-go" aria-hidden />
               </Link>
             ))}
             {data && !data.recentInvoices.length && (
@@ -358,19 +413,22 @@ export function DashboardPage() {
         </section>
 
         <section className="client-home__block client-home__credit">
-          <div className="client-home__block-head">
+          <div className="client-home__credit-top">
             <div>
               <h2>Account credit</h2>
               <p>Applied automatically at checkout.</p>
             </div>
+            <span className="client-home__credit-chip" aria-hidden>
+              <Wallet size={16} />
+            </span>
           </div>
           <div className="client-home__credit-balance">
-            <Wallet size={18} />
             <strong>{money(creditBalance, currency)}</strong>
+            <small>Available balance</small>
           </div>
           <form className="client-home__redeem" onSubmit={(e) => void redeemCoupon(e)}>
             <label htmlFor="client-home-coupon">Redeem a credit code</label>
-            <div>
+            <div className="client-home__redeem-row">
               <input
                 id="client-home-coupon"
                 value={couponCode}
@@ -378,7 +436,11 @@ export function DashboardPage() {
                 maxLength={64}
                 onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
               />
-              <button type="submit" disabled={redeemBusy || !couponCode.trim()}>
+              <button
+                className="client-home__btn client-home__btn--primary client-home__btn--sm"
+                type="submit"
+                disabled={redeemBusy || !couponCode.trim()}
+              >
                 {redeemBusy ? '…' : 'Redeem'}
               </button>
             </div>

@@ -53,8 +53,180 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
   flex-shrink: 0;
+}
+
+.client-home__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.45rem;
+  padding: 0.55rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--surface) 80%, transparent);
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.8rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.15s ease;
+}
+
+.client-home__btn:hover {
+  transform: translateY(-1px);
+}
+
+.client-home__btn:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  outline-offset: 2px;
+}
+
+.client-home__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.client-home__btn--primary {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-color: color-mix(in srgb, var(--accent) 52%, #fff 8%);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent) 78%, #fff 14%), var(--accent) 48%, color-mix(in srgb, var(--accent) 82%, #000 12%));
+  color: var(--accent-contrast);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 22%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 18%, transparent),
+    0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+    0 12px 28px -12px color-mix(in srgb, var(--accent) 78%, transparent);
+}
+
+.client-home__btn--primary::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(115deg, transparent 30%, color-mix(in srgb, #fff 22%, transparent) 48%, transparent 62%);
+  opacity: 0.55;
+  transform: translateX(-40%);
+  transition: transform 0.35s ease, opacity 0.2s ease;
+  pointer-events: none;
+}
+
+.client-home__btn--primary:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-hover) 60%, #fff 10%);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--accent-hover) 86%, #fff 10%), var(--accent-hover) 52%, var(--accent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 24%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, #000 16%, transparent),
+    0 14px 32px -12px color-mix(in srgb, var(--accent) 88%, transparent);
+}
+
+.client-home__btn--primary:hover:not(:disabled)::before {
+  opacity: 0.85;
+  transform: translateX(35%);
+}
+
+.client-home__btn--cta {
+  min-height: 2.65rem;
+  padding: 0.35rem 0.85rem 0.35rem 0.35rem;
+  gap: 0.55rem;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.client-home__btn-icon {
+  width: 1.95rem;
+  height: 1.95rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(in srgb, #fff 18%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent),
+    0 0 0 1px color-mix(in srgb, #fff 10%, transparent);
+}
+
+.client-home__btn-arrow {
+  margin-right: 0.15rem;
+  opacity: 0.88;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.client-home__btn--cta:hover .client-home__btn-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+.client-home__btn--ghost {
+  border-color: color-mix(in srgb, var(--border) 90%, transparent);
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+}
+
+.client-home__btn--ghost:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+  background: color-mix(in srgb, var(--accent-muted) 55%, var(--surface));
+  color: var(--text);
+}
+
+.client-home__btn--text {
+  min-height: 2rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border-color: color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.client-home__btn--text:hover {
+  border-color: color-mix(in srgb, var(--accent) 32%, var(--border));
+  background: color-mix(in srgb, var(--accent-muted) 45%, transparent);
+  color: var(--accent-hover);
+}
+
+.client-home__btn--sm {
+  min-height: 2.15rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 0.7rem;
+  font-size: 0.76rem;
+}
+
+.client-home__btn--cta.client-home__btn--sm {
+  min-height: 2.35rem;
+  padding: 0.28rem 0.7rem 0.28rem 0.28rem;
+  border-radius: 999px;
+  font-size: 0.76rem;
+}
+
+.client-home__btn--cta.client-home__btn--sm .client-home__btn-icon {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.client-home__btn svg {
+  flex-shrink: 0;
+}
+
+.client-home__empty .client-home__btn--cta {
+  margin-left: auto;
 }
 
 .client-home__notice {
@@ -82,11 +254,21 @@
   display: inline-flex;
   align-items: center;
   gap: 0.3rem;
+  padding: 0.35rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   font-style: normal;
-  font-size: 0.78rem;
+  font-size: 0.74rem;
   font-weight: 650;
   color: var(--accent-hover);
   white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.client-home__notice:hover > em {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .client-home__notice.is-due {
@@ -123,8 +305,10 @@
 }
 
 .client-home__pulse-item {
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
   padding: 0.95rem 1.05rem;
   color: inherit;
   text-decoration: none;
@@ -140,7 +324,13 @@ a.client-home__pulse-item:hover {
   background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-.client-home__pulse-item small {
+.client-home__pulse-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.client-home__pulse-copy small {
   color: var(--muted);
   font-size: 0.66rem;
   font-weight: 700;
@@ -148,7 +338,7 @@ a.client-home__pulse-item:hover {
   text-transform: uppercase;
 }
 
-.client-home__pulse-item strong {
+.client-home__pulse-copy strong {
   font-family: var(--font-display);
   font-size: 1.25rem;
   font-weight: 650;
@@ -156,17 +346,65 @@ a.client-home__pulse-item:hover {
   line-height: 1.1;
 }
 
-.client-home__pulse-item strong.is-warn {
+.client-home__pulse-copy strong.is-warn {
   color: #fbbf24;
 }
 
-.client-home__pulse-item strong.is-ok {
+.client-home__pulse-copy strong.is-ok {
   color: #6ee7b7;
 }
 
-.client-home__pulse-item > span {
+.client-home__pulse-copy > span {
   color: var(--faint);
   font-size: 0.68rem;
+}
+
+.client-home__pulse-icon {
+  width: 2.35rem;
+  height: 2.35rem;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 80%, transparent);
+  color: var(--muted);
+}
+
+.client-home__pulse-icon.is-services {
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.client-home__pulse-icon.is-due {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--border));
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.client-home__pulse-icon.is-credit {
+  color: #6ee7b7;
+  border-color: color-mix(in srgb, #34d399 28%, var(--border));
+  background: color-mix(in srgb, #34d399 12%, transparent);
+}
+
+.client-home__pulse-icon.is-panel {
+  color: var(--accent-hover);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.client-home__pulse-icon.is-panel.is-warn {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--border));
+  background: color-mix(in srgb, #f59e0b 12%, transparent);
+}
+
+.client-home__pulse-icon.is-panel.is-ok {
+  color: #6ee7b7;
+  border-color: color-mix(in srgb, #34d399 28%, var(--border));
+  background: color-mix(in srgb, #34d399 12%, transparent);
 }
 
 .client-home__block {
@@ -196,19 +434,8 @@ a.client-home__pulse-item:hover {
   font-size: 0.74rem;
 }
 
-.client-home__block-head > a {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  color: var(--muted);
-  font-size: 0.76rem;
-  font-weight: 600;
-  text-decoration: none;
+.client-home__block-head > .client-home__btn--text {
   white-space: nowrap;
-}
-
-.client-home__block-head > a:hover {
-  color: var(--accent-hover);
 }
 
 .client-home__service-list,
@@ -222,14 +449,16 @@ a.client-home__pulse-item:hover {
 
 .client-home__service {
   display: grid;
-  grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 0.9fr) auto auto;
+  grid-template-columns: auto minmax(0, 1.35fr) minmax(0, 0.95fr) auto auto;
   align-items: center;
   gap: 0.9rem;
-  padding: 0.9rem 1rem;
+  padding: 0.95rem 1rem;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-left: 3px solid color-mix(in srgb, var(--service-color, var(--accent)) 70%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--service-color, var(--accent)) 72%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 8%, transparent), transparent 46%);
   transition: background 0.15s ease;
 }
 
@@ -238,76 +467,110 @@ a.client-home__pulse-item:hover {
 }
 
 .client-home__service:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 13%, transparent), color-mix(in srgb, var(--accent) 5%, transparent));
 }
 
 .client-home__service-mark.cat-mark {
-  width: 2.5rem;
-  height: 2.5rem;
-  border-radius: 0.7rem;
+  width: 2.65rem;
+  height: 2.65rem;
+  border-radius: 0.8rem;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--service-color, var(--accent)) 22%, transparent),
+    0 8px 18px color-mix(in srgb, #000 18%, transparent);
 }
 
 .client-home__service-main {
   min-width: 0;
   display: grid;
-  gap: 0.08rem;
+  gap: 0.22rem;
+}
+
+.client-home__service-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.client-home__service-title strong {
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-home__service-title .ds-badge {
+  flex-shrink: 0;
+  text-transform: capitalize;
+  font-size: 0.62rem;
+  padding: 0.18rem 0.45rem;
 }
 
 .client-home__service-main small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
   color: var(--muted);
-  font-size: 0.64rem;
-  font-weight: 650;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.client-home__service-main strong {
-  font-size: 0.9rem;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-size: 0.68rem;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.client-home__service-main em {
+.client-home__service-main small > span {
   color: var(--faint);
-  font-size: 0.7rem;
-  font-style: normal;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .client-home__service-specs {
   display: flex;
   flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 0.35rem;
 }
 
 .client-home__service-specs > span {
   display: inline-flex;
   align-items: center;
-  gap: 0.28rem;
-  padding: 0.22rem 0.45rem;
-  border-radius: 0.45rem;
-  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  background: color-mix(in srgb, var(--bg) 55%, transparent);
-  color: var(--muted);
-  font-size: 0.66rem;
-  font-weight: 600;
+  gap: 0.3rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--service-color, var(--accent)) 22%, var(--border));
+  background: color-mix(in srgb, var(--service-color, var(--accent)) 10%, var(--bg));
+  color: color-mix(in srgb, var(--text) 88%, var(--service-color, var(--accent)));
+  font-size: 0.68rem;
+  font-weight: 650;
 }
 
-.client-home__service-meta {
+.client-home__service-specs > span svg {
+  color: color-mix(in srgb, var(--service-color, var(--accent)) 80%, var(--muted));
+}
+
+.client-home__service-aside {
   display: grid;
-  gap: 0.25rem;
+  gap: 0.18rem;
   justify-items: end;
   text-align: right;
+  min-width: 4.5rem;
 }
 
-.client-home__service-meta small {
+.client-home__service-aside strong {
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-home__service-aside small {
   color: var(--faint);
   font-size: 0.66rem;
+  text-transform: capitalize;
 }
 
 .client-home__service-go {
@@ -328,15 +591,34 @@ a.client-home__pulse-item:hover {
 }
 
 .client-home__invoice {
+  --invoice-tone: var(--accent);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.8rem 1rem;
+  padding: 0.85rem 0.95rem;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  transition: background 0.15s ease;
+  border-left: 3px solid color-mix(in srgb, var(--invoice-tone) 55%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 6%, transparent), transparent 42%);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.client-home__invoice.is-paid,
+.client-home__invoice.is-active {
+  --invoice-tone: #34d399;
+}
+
+.client-home__invoice.is-unpaid,
+.client-home__invoice.is-pending_payment {
+  --invoice-tone: #f59e0b;
+}
+
+.client-home__invoice.is-cancelled,
+.client-home__invoice.is-suspended {
+  --invoice-tone: #f43f5e;
 }
 
 .client-home__invoice:last-child {
@@ -344,114 +626,220 @@ a.client-home__pulse-item:hover {
 }
 
 .client-home__invoice:hover {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 11%, transparent), color-mix(in srgb, var(--accent) 5%, transparent));
+}
+
+.client-home__invoice-mark {
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--invoice-tone) 28%, var(--border));
+  background: color-mix(in srgb, var(--invoice-tone) 14%, transparent);
+  color: color-mix(in srgb, var(--invoice-tone) 85%, #fff);
+  flex-shrink: 0;
 }
 
 .client-home__invoice-id {
   min-width: 0;
   display: grid;
-  gap: 0.08rem;
+  gap: 0.18rem;
 }
 
-.client-home__invoice-id strong {
-  font-size: 0.8rem;
+.client-home__invoice-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.client-home__invoice-title strong {
+  min-width: 0;
+  font-size: 0.82rem;
   font-weight: 650;
-}
-
-.client-home__invoice-id small {
-  color: var(--muted);
-  font-size: 0.66rem;
+  letter-spacing: -0.015em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.client-home__invoice time {
+.client-home__invoice-title .ds-badge {
+  flex-shrink: 0;
+  text-transform: capitalize;
+  font-size: 0.62rem;
+  padding: 0.18rem 0.45rem;
+}
+
+.client-home__invoice-id small {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-home__invoice-id small > span {
   color: var(--faint);
-  font-size: 0.7rem;
+}
+
+.client-home__invoice-id time {
+  color: var(--faint);
+  font-size: inherit;
 }
 
 .client-home__invoice-amount {
   font-family: var(--font-display);
-  font-size: 0.88rem;
-  letter-spacing: -0.02em;
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
   text-align: right;
+  line-height: 1;
+  white-space: nowrap;
+  tabular-nums: true;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-home__invoice-go {
+  color: var(--faint);
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.client-home__invoice:hover .client-home__invoice-go {
+  color: var(--accent-hover);
+  transform: translateX(2px);
 }
 
 .client-home__credit {
-  padding: 1rem 1.05rem 1.1rem;
-  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
-  border-radius: 1rem;
+  gap: 0.95rem;
+  padding: 1.05rem 1.1rem 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
+  border-radius: 1.1rem;
   background:
-    radial-gradient(120% 100% at 100% 0%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 55%),
-    color-mix(in srgb, var(--surface) 90%, transparent);
+    radial-gradient(120% 90% at 100% 0%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 52%),
+    radial-gradient(90% 70% at 0% 100%, color-mix(in srgb, #34d399 8%, transparent), transparent 48%),
+    linear-gradient(165deg, color-mix(in srgb, var(--surface) 94%, transparent), color-mix(in srgb, var(--surface-muted) 88%, transparent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 14px 30px color-mix(in srgb, #000 16%, transparent);
+}
+
+.client-home__credit-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.client-home__credit-top h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.client-home__credit-top p {
+  margin: 0.18rem 0 0;
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.client-home__credit-chip {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent-hover);
+  flex-shrink: 0;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
 }
 
 .client-home__credit-balance {
-  display: flex;
-  align-items: center;
-  gap: 0.55rem;
-  color: var(--accent-hover);
+  display: grid;
+  gap: 0.22rem;
+  padding: 0.85rem 0.95rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(160deg, color-mix(in srgb, var(--accent) 10%, transparent), color-mix(in srgb, var(--bg) 55%, transparent));
 }
 
 .client-home__credit-balance strong {
   font-family: var(--font-display);
-  font-size: 1.65rem;
+  font-size: 1.85rem;
   font-weight: 650;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.045em;
+  line-height: 1;
   color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.client-home__credit-balance small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .client-home__redeem {
   display: grid;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  padding-top: 0.15rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
 }
 
 .client-home__redeem label {
   color: var(--muted);
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.7rem;
+  font-weight: 650;
 }
 
-.client-home__redeem > div {
+.client-home__redeem-row {
   display: flex;
-  gap: 0.4rem;
+  gap: 0.45rem;
+  padding: 0.28rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
 }
 
 .client-home__redeem input {
   flex: 1;
   min-width: 0;
-  height: 2.35rem;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: 0.65rem;
-  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  height: 2.15rem;
+  padding: 0 0.7rem;
+  border: 0;
+  border-radius: 0.6rem;
+  background: transparent;
   color: var(--text);
-  font-size: 0.78rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
 }
 
 .client-home__redeem input:focus {
   outline: none;
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
 }
 
-.client-home__redeem button {
-  height: 2.35rem;
-  padding: 0 0.9rem;
-  border: 0;
+.client-home__redeem-row:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.client-home__redeem .client-home__btn {
+  flex-shrink: 0;
+  min-height: 2.15rem;
   border-radius: 0.65rem;
-  background: var(--accent);
-  color: var(--accent-contrast);
-  font-size: 0.76rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.client-home__redeem button:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
 }
 
 .client-home__redeem-msg {
@@ -551,7 +939,7 @@ a.client-home__pulse-item:hover {
     display: none;
   }
 
-  .client-home__service-meta {
+  .client-home__service-aside {
     grid-column: 2;
     grid-row: 2;
     justify-items: start;
@@ -564,12 +952,16 @@ a.client-home__pulse-item:hover {
   }
 
   .client-home__invoice {
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 0.65rem;
   }
 
-  .client-home__invoice time,
-  .client-home__invoice .ds-badge {
+  .client-home__invoice-go {
     display: none;
+  }
+
+  .client-home__invoice-title .ds-badge {
+    font-size: 0.6rem;
   }
 
   .client-home__empty {

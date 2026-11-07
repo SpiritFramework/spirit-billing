@@ -23,6 +23,11 @@ import {
   type UiDensity,
   type UiRadius,
 } from '../lib/theme-presets';
+import {
+  persistBrandingCache,
+  persistThemeDomCache,
+  readBrandingCache,
+} from '../lib/theme-cache';
 
 export type Branding = {
   companyName: string;
@@ -172,57 +177,72 @@ export function applyDocumentBranding(data: Branding) {
     }
     link.href = href;
   }
+
+  persistThemeDomCache();
+}
+
+function mergeBranding(data: Partial<Branding> & { companyName?: string }): Branding {
+  return {
+    ...defaults,
+    ...data,
+    companyName: data.companyName?.trim() || defaults.companyName,
+    tagline: data.tagline?.trim() || 'Billing',
+    logoUrl: data.logoUrl || null,
+    faviconUrl: data.faviconUrl || null,
+    supportEmail: data.supportEmail?.trim() || '',
+    supportUrl: data.supportUrl?.trim() || '',
+    termsUrl: data.termsUrl?.trim() || '',
+    privacyUrl: data.privacyUrl?.trim() || '',
+    invoiceFooter: data.invoiceFooter?.trim() || '',
+    announcementBanner: data.announcementBanner?.trim() || '',
+    themeMode: normalizeMode(data.themeMode),
+    themePreset: normalizePreset(data.themePreset),
+    uiRadius: normalizeRadius(data.uiRadius),
+    uiDensity: normalizeDensity(data.uiDensity),
+    sidebarStyle: normalizeSidebarStyle(data.sidebarStyle),
+    navbarStyle: normalizeNavbarStyle(data.navbarStyle),
+    authAtmosphere: normalizeAuthAtmosphere(data.authAtmosphere),
+    clientAtmosphere: normalizeShellAtmosphere(
+      data.clientAtmosphere ?? (data as { panelAtmosphere?: unknown }).panelAtmosphere,
+    ),
+    adminAtmosphere: normalizeShellAtmosphere(
+      data.adminAtmosphere ?? (data as { panelAtmosphere?: unknown }).panelAtmosphere,
+    ),
+    clientNavLayout: normalizeNavLayout(data.clientNavLayout),
+    adminNavLayout: normalizeNavLayout(data.adminNavLayout),
+    maintenanceMode: Boolean(data.maintenanceMode),
+    maintenanceMessage: data.maintenanceMessage?.trim() || defaults.maintenanceMessage,
+    registrationEnabled: data.registrationEnabled !== false,
+    ticketsEnabled: data.ticketsEnabled !== false,
+    turnstileEnabled: Boolean(data.turnstileEnabled),
+    turnstileSiteKey: data.turnstileSiteKey?.trim() || '',
+  };
+}
+
+function initialBranding(): Branding {
+  const cached = readBrandingCache<Partial<Branding> & { companyName?: string }>();
+  return cached ? mergeBranding(cached) : defaults;
 }
 
 export function BrandingProvider({ children }: { children: ReactNode }) {
-  const [branding, setBranding] = useState<Branding>(defaults);
+  const [branding, setBranding] = useState<Branding>(initialBranding);
 
   async function refreshBranding() {
     try {
       const data = await api<Partial<Branding> & { companyName: string }>('/auth/branding');
-      const next: Branding = {
-        ...defaults,
-        ...data,
-        tagline: data.tagline?.trim() || 'Billing',
-        logoUrl: data.logoUrl || null,
-        faviconUrl: data.faviconUrl || null,
-        supportEmail: data.supportEmail?.trim() || '',
-        supportUrl: data.supportUrl?.trim() || '',
-        termsUrl: data.termsUrl?.trim() || '',
-        privacyUrl: data.privacyUrl?.trim() || '',
-        invoiceFooter: data.invoiceFooter?.trim() || '',
-        announcementBanner: data.announcementBanner?.trim() || '',
-        themeMode: normalizeMode(data.themeMode),
-        themePreset: normalizePreset(data.themePreset),
-        uiRadius: normalizeRadius(data.uiRadius),
-        uiDensity: normalizeDensity(data.uiDensity),
-        sidebarStyle: normalizeSidebarStyle(data.sidebarStyle),
-        navbarStyle: normalizeNavbarStyle(data.navbarStyle),
-        authAtmosphere: normalizeAuthAtmosphere(data.authAtmosphere),
-        clientAtmosphere: normalizeShellAtmosphere(
-          data.clientAtmosphere ?? (data as { panelAtmosphere?: unknown }).panelAtmosphere,
-        ),
-        adminAtmosphere: normalizeShellAtmosphere(
-          data.adminAtmosphere ?? (data as { panelAtmosphere?: unknown }).panelAtmosphere,
-        ),
-        clientNavLayout: normalizeNavLayout(data.clientNavLayout),
-        adminNavLayout: normalizeNavLayout(data.adminNavLayout),
-        maintenanceMode: Boolean(data.maintenanceMode),
-        maintenanceMessage:
-          data.maintenanceMessage?.trim() || defaults.maintenanceMessage,
-        registrationEnabled: data.registrationEnabled !== false,
-        turnstileEnabled: Boolean(data.turnstileEnabled),
-        turnstileSiteKey: data.turnstileSiteKey?.trim() || '',
-      };
+      const next = mergeBranding(data);
       setBranding(next);
       applyDocumentBranding(next);
+      persistBrandingCache(next);
     } catch {
-      /* keep defaults offline */
+      /* keep cached/defaults offline */
     }
   }
 
   useEffect(() => {
+    applyDocumentBranding(branding);
     void refreshBranding();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once from cache, then refresh from API
   }, []);
 
   useEffect(() => {

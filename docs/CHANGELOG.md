@@ -39,6 +39,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Fixed
 
+- Branding theme/atmosphere no longer flashes the default look on refresh — last applied theme is cached and reapplied before React boots
 - Update now re-applies `chmod -R a+rX` on `billing-api/dist` + `node_modules` after rebuild so `User=spirit-billing` can read new files (fixes crash-loop `EACCES …/dist/lib/*.js`) (installer **v1.3.4**)
 - Update always **verifies** API deps (package files + `import('fastify')` / `@prisma/client`) and rebuilds when anything is missing or broken — not only when the source stamp changes (installer **v1.3.3**)
 - Installer prompts (domain / Panel URL / API key) were skipped under `sudo` when stdin was not a TTY — now always use `/dev/tty` (installer **v1.3.1**)
