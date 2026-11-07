@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import { requireAuth, requireFullAdmin, requireStaffAccess } from '../lib/auth.js';
 import { prisma } from '../lib/prisma.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';

@@ -6,7 +6,7 @@ import rateLimit from '@fastify/rate-limit';
 import multipart from '@fastify/multipart';
 import { createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { ZodError } from 'zod';
+import { ZodError } from 'zod/v3';
 import { getConfig } from './lib/env.js';
 import { recordLogFireAndForget } from './lib/system-log.js';
 import { ensureDefaultTicketCategories } from './lib/tickets.js';

@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import { assertPasswordOk, hashPassword, requireFullAdmin, requireStaffAccess } from '../lib/auth.js';
 import {
   CATEGORY_COLORS,

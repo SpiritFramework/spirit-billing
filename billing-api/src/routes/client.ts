@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Prisma } from '@prisma/client';
-import { z } from 'zod';
+import { z } from 'zod/v3';
 import { requireAuth } from '../lib/auth.js';
 import { addBillingCycle, getInvoiceDueDays, getInvoicePrefix, getSetting, nextInvoiceNumber } from '../lib/billing.js';
 import { adjustCredits, allocateDiscount, claimCouponRedemption, findValidCoupon } from '../lib/credits.js';
