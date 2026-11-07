@@ -19,7 +19,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.3.3"
+SCRIPT_VERSION="1.3.4"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"

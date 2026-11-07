@@ -196,6 +196,20 @@ sync_tree() {
   chmod -R u+rwX,g+rX "$APP_ROOT/billing-api/uploads"
 }
 
+# npm/tsc run as root can leave dist/node_modules unreadable by User=spirit-billing
+fix_api_runtime_perms() {
+  chown -R root:"$APP_GROUP" "$APP_ROOT/billing-api"
+  if [[ -d "$APP_ROOT/billing-api/dist" ]]; then
+    chmod -R a+rX "$APP_ROOT/billing-api/dist"
+  fi
+  if [[ -d "$APP_ROOT/billing-api/node_modules" ]]; then
+    chmod -R a+rX "$APP_ROOT/billing-api/node_modules"
+  fi
+  mkdir -p "$APP_ROOT/billing-api/uploads/tickets"
+  chown -R spirit-billing:spirit-billing "$APP_ROOT/billing-api/uploads"
+  chmod -R u+rwX,g+rX "$APP_ROOT/billing-api/uploads"
+}
+
 env_set_key() {
   local file="$1" key="$2" val="$3" tmp
   tmp="$(mktemp)"
@@ -325,9 +339,7 @@ if [[ "$SKIP_API" -eq 0 ]]; then
     npx prisma generate
     npx prisma db push
   fi
-  mkdir -p "$APP_ROOT/billing-api/uploads/tickets"
-  chown -R spirit-billing:spirit-billing "$APP_ROOT/billing-api/uploads"
-  chmod -R u+rwX,g+rX "$APP_ROOT/billing-api/uploads"
+  fix_api_runtime_perms
   # Restart only after a successful build/schema step
   cp "$APP_ROOT/deploy/systemd/spirit-billing.service" /etc/systemd/system/spirit-billing.service
   systemctl daemon-reload

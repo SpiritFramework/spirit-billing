@@ -3,22 +3,14 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   ArrowUpRight,
-  CalendarDays,
-  CheckCircle2,
-  CircleAlert,
-  CirclePoundSterling,
-  Clock3,
-  CreditCard,
   Cpu,
   Gamepad2,
-  Gift,
   HardDrive,
   MemoryStick,
   Receipt,
   Server,
   ShieldCheck,
-  Sparkles,
-  WalletCards,
+  Wallet,
 } from 'lucide-react';
 import { api, ApiError, money, safeExternalHref, statusBadge } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -106,7 +98,7 @@ function greeting() {
 
 export function DashboardPage() {
   const { user, panelWebUrl, refresh } = useAuth();
-  const { companyName } = useBranding();
+  const branding = useBranding();
   const panelHref = safeExternalHref(panelWebUrl);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -143,7 +135,7 @@ export function DashboardPage() {
         },
       );
       setCouponCode('');
-      setRedeemMsg(`${money(result.creditBonusCents, 'GBP')} was added to your balance.`);
+      setRedeemMsg(`${money(result.creditBonusCents, branding.currency || 'GBP')} was added to your balance.`);
       await refresh();
       await load();
     } catch (err) {
@@ -154,267 +146,247 @@ export function DashboardPage() {
   }
 
   const firstName = user?.firstName || user?.username || 'there';
+  const currency = branding.currency || 'GBP';
   const creditBalance = data?.creditBalanceCents ?? user?.creditBalanceCents ?? 0;
+  const unpaid = data?.unpaidBalanceCents ?? 0;
+  const panelOk = data?.panelLinked === true;
+  const panelWarn = data != null && data.panelLinked !== true;
 
   return (
-    <div className="dashboard-v2">
+    <div className="client-home">
       {loadError && <div className="ds-alert ds-alert--error">{loadError}</div>}
 
-      <section className="dashboard-hero">
-        <div className="dashboard-hero__glow" />
-        <div className="dashboard-hero__content">
-          <span className="dashboard-hero__kicker">
-            <Sparkles size={14} /> Client dashboard
-          </span>
-          <h1>{greeting()}, {firstName}.</h1>
-          <p>
-            Everything you need to run your {companyName} services, payments, and account from one place.
-          </p>
-          <div className="dashboard-hero__actions">
-            <Link className="ds-btn ds-btn--primary" to="/game-hosting">
-              <Gamepad2 size={16} /> Explore game hosting
-            </Link>
-            {panelHref && (data?.activeServices ?? 0) > 0 && (
-              <a className="ds-btn ds-btn--ghost" href={panelHref} target="_blank" rel="noopener noreferrer">
-                Open game panel <ArrowUpRight size={15} />
-              </a>
-            )}
-          </div>
+      <header className="client-home__intro">
+        <div className="client-home__intro-copy">
+          <p>{greeting()}, {firstName}</p>
+          <h1>Your hosting home</h1>
         </div>
-        <div className="dashboard-hero__account">
-          <span>Account status</span>
-          <strong className={data && data.panelLinked !== true ? 'is-warning' : ''}>
-            {data == null ? <CheckCircle2 size={16} /> : data.panelLinked === true ? <CheckCircle2 size={16} /> : <CircleAlert size={16} />}
-            {data == null ? 'Checking…' : data.panelLinked === true ? 'All systems ready' : 'Action required'}
+        <div className="client-home__intro-actions">
+          <Link className="ds-btn ds-btn--primary" to="/game-hosting">
+            <Gamepad2 size={15} /> Browse hosting
+          </Link>
+          {panelHref && (data?.activeServices ?? 0) > 0 && (
+            <a className="ds-btn ds-btn--ghost" href={panelHref} target="_blank" rel="noopener noreferrer">
+              Open panel <ArrowUpRight size={14} />
+            </a>
+          )}
+        </div>
+      </header>
+
+      {unpaid > 0 && (
+        <Link to="/invoices" className="client-home__notice is-due">
+          <span>
+            <Receipt size={16} />
+            You have {money(unpaid, currency)} due across {data?.unpaidInvoices ?? 0} invoice
+            {(data?.unpaidInvoices ?? 0) === 1 ? '' : 's'}
+          </span>
+          <em>
+            Pay now <ArrowRight size={14} />
+          </em>
+        </Link>
+      )}
+
+      {panelWarn && unpaid <= 0 && (
+        <Link to="/profile" className="client-home__notice is-panel">
+          <span>
+            <ShieldCheck size={16} />
+            {data?.panelStatus === 'unreachable'
+              ? 'Spirit-Panel is unreachable right now'
+              : 'Your panel link needs attention'}
+          </span>
+          <em>
+            Review account <ArrowRight size={14} />
+          </em>
+        </Link>
+      )}
+
+      <div className="client-home__pulse" aria-label="Account snapshot">
+        <Link to="/services" className="client-home__pulse-item">
+          <small>Services</small>
+          <strong>{data ? data.activeServices : '—'}</strong>
+          <span>{data ? `${data.totalServices} total` : 'Loading'}</span>
+        </Link>
+        <Link to="/invoices" className="client-home__pulse-item">
+          <small>Amount due</small>
+          <strong className={unpaid > 0 ? 'is-warn' : undefined}>{money(unpaid, currency)}</strong>
+          <span>{data ? `${data.unpaidInvoices} unpaid` : 'Loading'}</span>
+        </Link>
+        <div className="client-home__pulse-item">
+          <small>Credit</small>
+          <strong>{money(creditBalance, currency)}</strong>
+          <span>Ready at checkout</span>
+        </div>
+        <div className="client-home__pulse-item">
+          <small>Panel</small>
+          <strong className={panelWarn ? 'is-warn' : panelOk ? 'is-ok' : undefined}>
+            {data == null ? '…' : panelOk ? 'Linked' : data.panelStatus === 'unreachable' ? 'Down' : 'Not linked'}
           </strong>
-          <small>
-            {data == null
-              ? 'Checking panel connection'
-              : data.panelLinked === true
-                ? 'Billing and panel connected'
-                : data.panelStatus === 'unreachable'
-                  ? 'Spirit-Panel is unreachable'
-                  : 'Panel link needs attention'}
-          </small>
+          <span>
+            {data?.memberSince
+              ? `Member since ${new Date(data.memberSince).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })}`
+              : 'Checking connection'}
+          </span>
         </div>
-      </section>
+      </div>
 
-      <section className="dashboard-metrics" aria-label="Account overview">
-        <Link to="/services" className="dashboard-metric">
-          <span className="dashboard-metric__icon is-purple"><Server size={19} /></span>
-          <span className="dashboard-metric__copy">
-            <small>Active services</small>
-            <strong>{data?.activeServices ?? '—'}</strong>
-            <em>{data?.totalServices ?? 0} total service{data?.totalServices === 1 ? '' : 's'}</em>
-          </span>
-          <ArrowUpRight size={15} className="dashboard-metric__arrow" />
-        </Link>
-        <Link to="/invoices" className="dashboard-metric">
-          <span className="dashboard-metric__icon is-amber"><Receipt size={19} /></span>
-          <span className="dashboard-metric__copy">
-            <small>Amount due</small>
-            <strong>{money(data?.unpaidBalanceCents ?? 0, 'GBP')}</strong>
-            <em>{data?.unpaidInvoices ?? 0} unpaid invoice{data?.unpaidInvoices === 1 ? '' : 's'}</em>
-          </span>
-          <ArrowUpRight size={15} className="dashboard-metric__arrow" />
-        </Link>
-        <div className="dashboard-metric">
-          <span className="dashboard-metric__icon is-green"><WalletCards size={19} /></span>
-          <span className="dashboard-metric__copy">
-            <small>Available credit</small>
-            <strong>{money(creditBalance, 'GBP')}</strong>
-            <em>Applied automatically at checkout</em>
-          </span>
-        </div>
-        <div className="dashboard-metric">
-          <span className="dashboard-metric__icon is-blue"><CheckCircle2 size={19} /></span>
-          <span className="dashboard-metric__copy">
-            <small>Paid invoices</small>
-            <strong>{data?.paidInvoices ?? '—'}</strong>
-            <em>{data?.pendingServices ?? 0} awaiting payment</em>
-          </span>
-        </div>
-      </section>
-
-      <div className="dashboard-content-grid">
-        <section className="dashboard-panel dashboard-services">
-          <div className="dashboard-panel__header">
-            <div>
-              <span className="dashboard-panel__eyebrow">Infrastructure</span>
-              <h2>Your services</h2>
-            </div>
-            <Link to="/services">View all <ArrowRight size={14} /></Link>
+      <section className="client-home__block client-home__services">
+        <div className="client-home__block-head">
+          <div>
+            <h2>Services</h2>
+            <p>Servers and plans on your account.</p>
           </div>
+          <Link to="/services">
+            View all <ArrowRight size={14} />
+          </Link>
+        </div>
 
-          {data && data.totalServices > 0 && (
-            <div className="dashboard-services__stats" aria-label="Service summary">
-              <span><i className="is-live" /> {data.activeServices} active</span>
-              {data.pendingServices > 0 && <span><i className="is-pending" /> {data.pendingServices} pending</span>}
-              <span>{data.totalServices} total</span>
+        <div className="client-home__service-list">
+          {(data?.recentServices ?? []).map((service) => {
+            const category = service.product.category;
+            const memory = service.memoryMb ?? service.product.memoryMb;
+            const disk = service.diskMb ?? service.product.diskMb;
+            const cpu = service.cpuPercent ?? service.product.cpuPercent;
+            const cycle = service.cycle ?? service.product.cycle;
+            const price = service.priceCents ?? service.product.priceCents;
+            const svcCurrency = service.currency ?? service.product.currency;
+            const accent = category?.color || 'var(--accent)';
+            return (
+              <Link
+                key={service.id}
+                to={`/services/${service.id}`}
+                className={`client-home__service is-${service.status}`}
+                style={{ ['--service-color' as string]: accent }}
+              >
+                <CategoryMark
+                  icon={category?.icon}
+                  logoUrl={category?.logoUrl}
+                  color={category?.color}
+                  size={40}
+                  className="client-home__service-mark"
+                />
+                <span className="client-home__service-main">
+                  <small>{category?.name || service.panelEggName || 'Hosting'}</small>
+                  <strong>{service.name}</strong>
+                  <em>{planLabel(service)}</em>
+                </span>
+                <span className="client-home__service-specs" aria-label="Resources">
+                  <span><MemoryStick size={12} /> {formatRam(memory)}</span>
+                  <span><Cpu size={12} /> {cpu <= 0 ? 'Unlimited' : `${cpu}%`}</span>
+                  <span><HardDrive size={12} /> {formatDisk(disk)}</span>
+                </span>
+                <span className="client-home__service-meta">
+                  <span className={statusBadge(service.status)}>{service.status.replaceAll('_', ' ')}</span>
+                  <small>
+                    {service.nextDueAt
+                      ? `Renews ${new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
+                      : price > 0
+                        ? `${money(price, svcCurrency)} / ${cycle}`
+                        : cycle}
+                  </small>
+                </span>
+                <ArrowRight size={15} className="client-home__service-go" />
+              </Link>
+            );
+          })}
+
+          {data && !data.recentServices.length && (
+            <div className="client-home__empty">
+              <span><Server size={22} /></span>
+              <div>
+                <strong>No services yet</strong>
+                <p>Pick a game and launch your first server.</p>
+              </div>
+              <Link className="ds-btn ds-btn--primary ds-btn--sm" to="/game-hosting">
+                Browse plans
+              </Link>
             </div>
           )}
 
-          <div className="dashboard-service-list">
-            {(data?.recentServices ?? []).map((service) => {
-              const category = service.product.category;
-              const memory = service.memoryMb ?? service.product.memoryMb;
-              const disk = service.diskMb ?? service.product.diskMb;
-              const cpu = service.cpuPercent ?? service.product.cpuPercent;
-              const cycle = service.cycle ?? service.product.cycle;
-              const price = service.priceCents ?? service.product.priceCents;
-              const currency = service.currency ?? service.product.currency;
-              const accent = category?.color || 'var(--accent)';
-              return (
-                <Link
-                  key={service.id}
-                  to={`/services/${service.id}`}
-                  className={`dashboard-service is-${service.status}`}
-                  style={{ ['--service-color' as string]: accent }}
-                >
-                  <span className="dashboard-service__accent" />
-                  <CategoryMark
-                    icon={category?.icon}
-                    logoUrl={category?.logoUrl}
-                    color={category?.color}
-                    size={44}
-                    className="dashboard-service__mark"
-                  />
-                  <span className="dashboard-service__main">
-                    <small>{category?.name || service.panelEggName || 'Hosting'}</small>
-                    <strong>{service.name}</strong>
-                    <em>{planLabel(service)}</em>
-                  </span>
-                  <span className="dashboard-service__specs" aria-label="Resources">
-                    <span><MemoryStick size={12} /> {formatRam(memory)}</span>
-                    <span><Cpu size={12} /> {cpu <= 0 ? 'Unlimited' : `${cpu}%`}</span>
-                    <span><HardDrive size={12} /> {formatDisk(disk)}</span>
-                  </span>
-                  <span className="dashboard-service__meta">
-                    <span className={statusBadge(service.status)}>{service.status.replaceAll('_', ' ')}</span>
-                    <small>
-                      {service.nextDueAt
-                        ? `Renews ${new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
-                        : price > 0
-                          ? `${money(price, currency)} / ${cycle}`
-                          : cycle}
-                    </small>
-                    <small className={service.panelServerId ? 'is-linked' : 'is-unlinked'}>
-                      <ShieldCheck size={11} />
-                      {service.panelServerId ? 'Panel linked' : 'Not provisioned'}
-                    </small>
-                  </span>
-                  <ArrowRight size={15} />
-                </Link>
-              );
-            })}
-            {data && !data.recentServices.length && (
-              <div className="dashboard-empty">
-                <span><Server size={24} /></span>
+          {!data && (
+            <div className="client-home__loading">
+              {loadError ? 'Could not load services.' : 'Loading services…'}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className="client-home__split">
+        <section className="client-home__block">
+          <div className="client-home__block-head">
+            <div>
+              <h2>Invoices</h2>
+              <p>Recent billing activity.</p>
+            </div>
+            <Link to="/invoices">
+              View all <ArrowRight size={14} />
+            </Link>
+          </div>
+          <div className="client-home__invoice-list">
+            {(data?.recentInvoices ?? []).map((invoice) => (
+              <Link key={invoice.id} to={`/invoices/${invoice.id}`} className="client-home__invoice">
+                <span className="client-home__invoice-id">
+                  <strong>{invoice.number}</strong>
+                  <small>{invoice.service?.name || 'Hosting invoice'}</small>
+                </span>
+                <time dateTime={invoice.createdAt}>
+                  {new Date(invoice.createdAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                  })}
+                </time>
+                <span className={statusBadge(invoice.status)}>{invoice.status}</span>
+                <strong className="client-home__invoice-amount">
+                  {money(invoice.totalCents, invoice.currency)}
+                </strong>
+              </Link>
+            ))}
+            {data && !data.recentInvoices.length && (
+              <div className="client-home__empty is-compact">
+                <span><Receipt size={20} /></span>
                 <div>
-                  <strong>No hosting services yet</strong>
-                  <p>Choose a game and launch your first server in a few clicks.</p>
+                  <strong>No invoices yet</strong>
+                  <p>Payment history will show up here.</p>
                 </div>
-                <Link className="ds-btn ds-btn--primary ds-btn--sm" to="/game-hosting">
-                  Browse plans
-                </Link>
               </div>
             )}
-            {!data && <div className="dashboard-loading">Loading your services…</div>}
+            {!data && (
+              <div className="client-home__loading is-compact">
+                {loadError ? 'Could not load invoices.' : 'Loading invoices…'}
+              </div>
+            )}
           </div>
         </section>
 
-        <aside className="dashboard-side-stack">
-          <section className="dashboard-credit-card">
-            <div className="dashboard-credit-card__top">
-              <span><CirclePoundSterling size={18} /> Account credit</span>
-              <Gift size={18} />
+        <section className="client-home__block client-home__credit">
+          <div className="client-home__block-head">
+            <div>
+              <h2>Account credit</h2>
+              <p>Applied automatically at checkout.</p>
             </div>
-            <strong>{money(creditBalance, 'GBP')}</strong>
-            <small>Available to spend</small>
-            <form onSubmit={(e) => void redeemCoupon(e)}>
-              <label htmlFor="dashboard-coupon">Have a credit code?</label>
-              <div>
-                <input
-                  id="dashboard-coupon"
-                  value={couponCode}
-                  placeholder="ENTER CODE"
-                  maxLength={64}
-                  onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                />
-                <button type="submit" disabled={redeemBusy || !couponCode.trim()}>
-                  {redeemBusy ? '…' : 'Redeem'}
-                </button>
-              </div>
-            </form>
-            {redeemMsg && <p className="dashboard-credit-card__success">{redeemMsg}</p>}
-            {redeemErr && <p className="dashboard-credit-card__error">{redeemErr}</p>}
-          </section>
-
-          <section className="dashboard-panel dashboard-account">
-            <div className="dashboard-panel__header">
-              <div>
-                <span className="dashboard-panel__eyebrow">Account</span>
-                <h2>At a glance</h2>
-              </div>
-            </div>
-            <div className="dashboard-account__row">
-              <span><CalendarDays size={15} /> Member since</span>
-              <strong>
-                {data?.memberSince
-                  ? new Date(data.memberSince).toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
-                  : '—'}
-              </strong>
-            </div>
-            <div className="dashboard-account__row">
-              <span><Server size={15} /> Panel link</span>
-              <strong className={data?.panelLinked === true ? 'is-good' : 'is-warning'}>
-                {data == null ? 'Checking…' : data.panelLinked === true ? 'Connected' : data.panelStatus === 'unreachable' ? 'Unreachable' : 'Needs attention'}
-              </strong>
-            </div>
-            <Link to="/profile" className="dashboard-account__link">
-              Manage account <ArrowRight size={14} />
-            </Link>
-          </section>
-        </aside>
-      </div>
-
-      <section className="dashboard-panel dashboard-invoices">
-        <div className="dashboard-panel__header">
-          <div>
-            <span className="dashboard-panel__eyebrow">Billing activity</span>
-            <h2>Recent invoices</h2>
           </div>
-          <Link to="/invoices">View all <ArrowRight size={14} /></Link>
-        </div>
-        <div className="dashboard-invoice-list">
-          {(data?.recentInvoices ?? []).map((invoice) => (
-            <Link key={invoice.id} to={`/invoices/${invoice.id}`} className="dashboard-invoice">
-              <span className="dashboard-invoice__icon"><CreditCard size={17} /></span>
-              <span className="dashboard-invoice__name">
-                <strong>{invoice.number}</strong>
-                <small>{invoice.service?.name || 'Hosting invoice'}</small>
-              </span>
-              <span className="dashboard-invoice__date">
-                <Clock3 size={13} />
-                {new Date(invoice.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}
-              </span>
-              <span className={statusBadge(invoice.status)}>{invoice.status}</span>
-              <strong className="dashboard-invoice__amount">{money(invoice.totalCents, invoice.currency)}</strong>
-              <ArrowRight size={15} />
-            </Link>
-          ))}
-          {data && !data.recentInvoices.length && (
-            <div className="dashboard-empty dashboard-empty--invoice">
-              <span><Receipt size={24} /></span>
-              <div>
-                <strong>No billing activity</strong>
-                <p>Your invoices and payment history will appear here.</p>
-              </div>
+          <div className="client-home__credit-balance">
+            <Wallet size={18} />
+            <strong>{money(creditBalance, currency)}</strong>
+          </div>
+          <form className="client-home__redeem" onSubmit={(e) => void redeemCoupon(e)}>
+            <label htmlFor="client-home-coupon">Redeem a credit code</label>
+            <div>
+              <input
+                id="client-home-coupon"
+                value={couponCode}
+                placeholder="ENTER CODE"
+                maxLength={64}
+                onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+              />
+              <button type="submit" disabled={redeemBusy || !couponCode.trim()}>
+                {redeemBusy ? '…' : 'Redeem'}
+              </button>
             </div>
-          )}
-          {!data && <div className="dashboard-loading">Loading billing activity…</div>}
-        </div>
-      </section>
+          </form>
+          {redeemMsg && <p className="client-home__redeem-msg is-ok">{redeemMsg}</p>}
+          {redeemErr && <p className="client-home__redeem-msg is-err">{redeemErr}</p>}
+        </section>
+      </div>
     </div>
   );
 }

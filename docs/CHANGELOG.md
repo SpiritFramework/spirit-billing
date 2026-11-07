@@ -25,6 +25,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Changed
 
+- Client dashboard rebuilt as **Client home**: quiet intro, attention notices, compact pulse strip, services-first list, invoices + credit redeem — replaces the marketing hero / metric-card stack
 - Login / register rebuilt as a full-bleed auth stage: hero brand, server-rack horizon, and a single interaction panel (replaces the old split-card shell)
 - Admin Settings rebuilt: section rail + flat form workspace (replaces metric cards / boxed tabs / nested card chrome)
 - Settings → Brand studio rebuilt around Theme look / Colors / Identity / Layout & polish / Assets, with Atmosphere / Navigation / Server cards canvas previews
@@ -38,6 +39,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Fixed
 
+- Update now re-applies `chmod -R a+rX` on `billing-api/dist` + `node_modules` after rebuild so `User=spirit-billing` can read new files (fixes crash-loop `EACCES …/dist/lib/*.js`) (installer **v1.3.4**)
 - Update always **verifies** API deps (package files + `import('fastify')` / `@prisma/client`) and rebuilds when anything is missing or broken — not only when the source stamp changes (installer **v1.3.3**)
 - Installer prompts (domain / Panel URL / API key) were skipped under `sudo` when stdin was not a TTY — now always use `/dev/tty` (installer **v1.3.1**)
 - Password changes no longer fail with “Could not sync changes to the game panel” for elevated Panel accounts — billing password still updates; Panel password must be changed in the panel
