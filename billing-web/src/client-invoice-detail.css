@@ -406,6 +406,162 @@
   white-space: nowrap;
 }
 
+.client-invoice-detail__getting {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 72%, transparent),
+      color-mix(in srgb, var(--bg) 38%, transparent)
+    );
+}
+
+.client-invoice-detail__getting-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.client-invoice-detail__getting-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.12rem;
+}
+
+.client-invoice-detail__getting-head small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.client-invoice-detail__getting-head strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.client-invoice-detail__getting-head > span {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.client-invoice-detail__getting-head > span em {
+  font-style: normal;
+  color: var(--muted);
+  font-family: var(--font-body);
+  font-size: 0.72rem;
+  font-weight: 550;
+  text-transform: lowercase;
+}
+
+.client-invoice-detail__getting-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.client-invoice-detail__resource-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding: 0.45rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+}
+
+.client-invoice-detail__resource-rail > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border-radius: 0.65rem;
+  color: color-mix(in srgb, var(--accent) 72%, var(--text));
+}
+
+.client-invoice-detail__resource-rail > span > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.06rem;
+}
+
+.client-invoice-detail__resource-rail em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.92rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-invoice-detail__resource-rail small {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 650;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.client-invoice-detail__extras {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.client-invoice-detail__extras > span {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.28rem 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.client-invoice-detail__features {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.client-invoice-detail__features li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.45rem;
+  color: color-mix(in srgb, var(--text) 88%, var(--muted));
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.client-invoice-detail__features li svg {
+  margin-top: 0.12rem;
+  color: color-mix(in srgb, var(--accent) 78%, #86efac);
+  flex-shrink: 0;
+}
+
 .client-invoice-detail__totals {
   display: grid;
   gap: 0.4rem;
@@ -651,5 +807,9 @@
   .client-invoice-detail__intro-actions .client-home__btn {
     flex: 1 1 auto;
     justify-content: center;
+  }
+
+  .client-invoice-detail__resource-rail {
+    grid-template-columns: 1fr;
   }
 }

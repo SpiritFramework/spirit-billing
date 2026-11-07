@@ -7,8 +7,11 @@ import {
   CheckCircle2,
   CircleDollarSign,
   Clock3,
+  Cpu,
   FileText,
   Gamepad2,
+  HardDrive,
+  MemoryStick,
   ReceiptText,
   Search,
   Server,
@@ -18,20 +21,26 @@ import {
   X,
 } from 'lucide-react';
 import { api, ApiError, money } from '../../lib/api';
+import { formatCpuPercent, formatDiskMb, formatMemoryMb } from '../../lib/resources';
 import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
 
-type UpgradeProduct = {
+type InvoiceProduct = {
   id: string;
   name: string;
   description?: string;
+  features?: string[];
   priceCents: number;
   currency: string;
   cycle: string;
   memoryMb?: number;
   diskMb?: number;
   cpuPercent?: number;
+  backupLimit?: number;
+  databaseLimit?: number;
 };
+
+type UpgradeProduct = InvoiceProduct;
 
 type Invoice = {
   id: string;
@@ -55,7 +64,14 @@ type Invoice = {
     id: string;
     name: string;
     status: string;
-    product?: { id?: string; name: string; cycle: string; priceCents: number; currency: string };
+    memoryMb?: number | null;
+    diskMb?: number | null;
+    cpuPercent?: number | null;
+    priceCents?: number | null;
+    currency?: string | null;
+    cycle?: string | null;
+    nextDueAt?: string | null;
+    product?: InvoiceProduct | null;
   } | null;
   paymentInstructions?: string;
   companyName?: string;
@@ -565,7 +581,22 @@ export function InvoiceDetailPage() {
       : undefined;
   const isUpgrade = Boolean(invoice.isUpgrade && invoice.upgradeToProduct);
   const upgrade = invoice.upgradeToProduct;
-  const currentPlan = invoice.service?.product?.name;
+  const currentPlan = invoice.service?.product;
+  const featuredProduct = isUpgrade && upgrade ? upgrade : currentPlan;
+  const planMemory = isUpgrade
+    ? upgrade?.memoryMb
+    : invoice.service?.memoryMb ?? currentPlan?.memoryMb;
+  const planDisk = isUpgrade
+    ? upgrade?.diskMb
+    : invoice.service?.diskMb ?? currentPlan?.diskMb;
+  const planCpu = isUpgrade
+    ? upgrade?.cpuPercent
+    : invoice.service?.cpuPercent ?? currentPlan?.cpuPercent;
+  const planFeatures = Array.isArray(featuredProduct?.features)
+    ? featuredProduct.features.filter(Boolean).slice(0, 8)
+    : [];
+  const planDescription = (featuredProduct?.description || '').trim();
+  const planCycle = featuredProduct?.cycle || invoice.service?.cycle || 'monthly';
   const kind = invoiceKindLabel(invoice);
   const issuedLabel = new Date(invoice.createdAt || invoice.dueAt).toLocaleDateString(undefined, {
     day: 'numeric',
@@ -587,12 +618,14 @@ export function InvoiceDetailPage() {
   const itemTitle =
     isUpgrade && upgrade
       ? `Upgrade to ${upgrade.name}`
-      : invoice.service?.name || 'Hosting service';
+      : invoice.service?.name || featuredProduct?.name || 'Hosting service';
   const itemDetail =
     isUpgrade && upgrade
-      ? `${invoice.service?.name || 'Service'}${currentPlan ? ` · from ${currentPlan}` : ''} · ${upgrade.cycle}`
-      : invoice.description || invoice.service?.product?.name || 'Managed game hosting';
-  const itemBilling = isUpgrade ? 'Upgrade' : invoice.service?.product?.cycle || 'One-time';
+      ? `${invoice.service?.name || 'Service'}${currentPlan?.name ? ` · from ${currentPlan.name}` : ''} · ${upgrade.cycle}`
+      : invoice.description || featuredProduct?.name || 'Managed game hosting';
+  const itemBilling = isUpgrade ? 'Upgrade' : planCycle || 'One-time';
+  const hasResources =
+    typeof planMemory === 'number' || typeof planCpu === 'number' || typeof planDisk === 'number';
 
   return (
     <div className={`client-invoice-detail is-${statusKey}`}>
@@ -724,7 +757,7 @@ export function InvoiceDetailPage() {
               <div>
                 <strong>Plan upgrade</strong>
                 <p>
-                  {currentPlan || 'Current plan'}
+                  {currentPlan?.name || 'Current plan'}
                   {' → '}
                   <em>{upgrade.name}</em>
                   {typeof upgrade.memoryMb === 'number' &&
@@ -732,8 +765,8 @@ export function InvoiceDetailPage() {
                   typeof upgrade.diskMb === 'number' ? (
                     <>
                       {' '}
-                      · {Math.round(upgrade.memoryMb / 1024)} GB RAM · {upgrade.cpuPercent}% CPU ·{' '}
-                      {Math.round(upgrade.diskMb / 1024)} GB disk
+                      · {formatMemoryMb(upgrade.memoryMb)} · {formatCpuPercent(upgrade.cpuPercent)} ·{' '}
+                      {formatDiskMb(upgrade.diskMb)}
                     </>
                   ) : null}
                 </p>
@@ -744,10 +777,15 @@ export function InvoiceDetailPage() {
           <section className="client-invoice-detail__panel">
             <div className="client-invoice-detail__panel-head">
               <div>
-                <h2>Charges</h2>
-                <p>What this invoice covers.</p>
+                <h2>What you&apos;re getting</h2>
+                <p>
+                  {isUpgrade
+                    ? 'Resources and plan details after this upgrade.'
+                    : 'Plan details covered by this invoice.'}
+                </p>
               </div>
             </div>
+
             <div className="client-invoice-detail__items">
               <div className="client-invoice-detail__item">
                 <span className="client-invoice-detail__item-mark" aria-hidden>
@@ -763,6 +801,91 @@ export function InvoiceDetailPage() {
                 </strong>
               </div>
             </div>
+
+            {(featuredProduct || hasResources || planDescription || planFeatures.length > 0) && (
+              <div className="client-invoice-detail__getting">
+                <div className="client-invoice-detail__getting-head">
+                  <div>
+                    <small>{isUpgrade ? 'Upgrading to' : 'Plan'}</small>
+                    <strong>{featuredProduct?.name || invoice.service?.name || 'Hosting plan'}</strong>
+                  </div>
+                  <span>
+                    {money(
+                      featuredProduct?.priceCents ?? invoice.totalCents,
+                      featuredProduct?.currency || invoice.currency,
+                    )}
+                    <em> / {planCycle}</em>
+                  </span>
+                </div>
+
+                {planDescription ? (
+                  <p className="client-invoice-detail__getting-copy">{planDescription}</p>
+                ) : null}
+
+                {hasResources ? (
+                  <div className="client-invoice-detail__resource-rail" aria-label="Plan resources">
+                    {typeof planMemory === 'number' ? (
+                      <span>
+                        <MemoryStick size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{formatMemoryMb(planMemory)}</em>
+                          <small>RAM</small>
+                        </span>
+                      </span>
+                    ) : null}
+                    {typeof planCpu === 'number' ? (
+                      <span>
+                        <Cpu size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{formatCpuPercent(planCpu)}</em>
+                          <small>CPU</small>
+                        </span>
+                      </span>
+                    ) : null}
+                    {typeof planDisk === 'number' ? (
+                      <span>
+                        <HardDrive size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{formatDiskMb(planDisk)}</em>
+                          <small>Disk</small>
+                        </span>
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {(typeof featuredProduct?.backupLimit === 'number' ||
+                  typeof featuredProduct?.databaseLimit === 'number') && (
+                  <div className="client-invoice-detail__extras">
+                    {typeof featuredProduct?.backupLimit === 'number' ? (
+                      <span>
+                        {featuredProduct.backupLimit <= 0
+                          ? 'Unlimited backups'
+                          : `${featuredProduct.backupLimit} backup${featuredProduct.backupLimit === 1 ? '' : 's'}`}
+                      </span>
+                    ) : null}
+                    {typeof featuredProduct?.databaseLimit === 'number' ? (
+                      <span>
+                        {featuredProduct.databaseLimit <= 0
+                          ? 'Unlimited databases'
+                          : `${featuredProduct.databaseLimit} database${featuredProduct.databaseLimit === 1 ? '' : 's'}`}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
+
+                {planFeatures.length > 0 ? (
+                  <ul className="client-invoice-detail__features">
+                    {planFeatures.map((feature) => (
+                      <li key={feature}>
+                        <CheckCircle2 size={13} aria-hidden />
+                        <span>{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            )}
 
             <div className="client-invoice-detail__totals">
               <div>

@@ -390,9 +390,8 @@ export function ClientLayout() {
   const clientNavLinks = (
     <>
       <NavLink to="/dashboard" end><LayoutDashboard size={15} /> Dashboard</NavLink>
-      <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
-      <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
       <NavLink to="/services"><Server size={15} /> Services</NavLink>
+      <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
       <NavLink to="/invoices"><Receipt size={15} /> Invoices</NavLink>
       {(branding.ticketsEnabled !== false) && (
         <NavLink to="/tickets"><MessageSquare size={15} /> Support</NavLink>
@@ -464,17 +463,19 @@ export function ClientLayout() {
             <nav className="ds-nav">{clientNavLinks}</nav>
           ) : (
             <>
-              <NavSection label="Account">
+              <NavSection label="Overview">
                 <NavLink to="/dashboard" end><LayoutDashboard size={15} /> Dashboard</NavLink>
-                <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
               </NavSection>
               <NavSection label="Hosting">
-                <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
                 <NavLink to="/services"><Server size={15} /> Services</NavLink>
+                <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
                 <NavLink to="/invoices"><Receipt size={15} /> Invoices</NavLink>
                 {(branding.ticketsEnabled !== false) && (
                   <NavLink to="/tickets"><MessageSquare size={15} /> Support</NavLink>
                 )}
+              </NavSection>
+              <NavSection label="Account">
+                <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
               </NavSection>
               {isStaffOrAdmin(user.role) && (
                 <NavSection label="Admin">

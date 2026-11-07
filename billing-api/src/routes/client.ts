@@ -1061,7 +1061,17 @@ export async function clientRoutes(app: FastifyInstance) {
       where: { id, userId: request.user!.id },
       include: {
         service: {
-          include: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+            memoryMb: true,
+            diskMb: true,
+            cpuPercent: true,
+            priceCents: true,
+            currency: true,
+            cycle: true,
+            nextDueAt: true,
             product: { select: productPublicSelect },
           },
         },
@@ -1078,9 +1088,17 @@ export async function clientRoutes(app: FastifyInstance) {
 
     return {
       ...invoice,
+      service: invoice.service
+        ? {
+            ...invoice.service,
+            product: invoice.service.product
+              ? withProductFeatures(invoice.service.product)
+              : null,
+          }
+        : null,
       isUpgrade: Boolean(invoice.upgradeToProductId),
       canCancelUpgrade: Boolean(invoice.upgradeToProductId && invoice.status === 'unpaid'),
-      upgradeToProduct,
+      upgradeToProduct: upgradeToProduct ? withProductFeatures(upgradeToProduct) : null,
       companyName: await getSetting('company_name', getConfig().companyName),
       tagline: await getSetting('brand_tagline', 'Billing'),
       invoiceFooter: await getSetting('invoice_footer', ''),

@@ -2,11 +2,13 @@ import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
+  ArrowRight,
   CheckCircle2,
   Clock3,
   ImagePlus,
   LifeBuoy,
   MessageCircle,
+  MessageSquare,
   Paperclip,
   Plus,
   RefreshCw,
@@ -26,6 +28,7 @@ import { useBranding } from '../../context/BrandingContext';
 
 type TicketStatus = 'open' | 'answered' | 'awaiting_customer' | 'closed';
 type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
+type TicketFilter = 'all' | TicketStatus;
 
 type TicketAttachment = {
   url: string;
@@ -82,7 +85,10 @@ type TicketDetail = TicketSummary & {
 };
 
 function ticketStatusLabel(status: TicketStatus) {
-  return status.replaceAll('_', ' ');
+  if (status === 'awaiting_customer') return 'Needs you';
+  if (status === 'answered') return 'Answered';
+  if (status === 'closed') return 'Closed';
+  return 'Open';
 }
 
 function ticketStatusTone(status: TicketStatus) {
@@ -93,7 +99,10 @@ function ticketStatusTone(status: TicketStatus) {
 }
 
 function ticketPriorityLabel(priority: TicketPriority) {
-  return priority;
+  if (priority === 'urgent') return 'Urgent';
+  if (priority === 'high') return 'High';
+  if (priority === 'low') return 'Low';
+  return 'Normal';
 }
 
 function ticketPriorityTone(priority: TicketPriority) {
@@ -101,6 +110,26 @@ function ticketPriorityTone(priority: TicketPriority) {
   if (priority === 'high') return 'is-high';
   if (priority === 'low') return 'is-low';
   return 'is-normal';
+}
+
+function ticketStatusRank(status: TicketStatus) {
+  if (status === 'awaiting_customer') return 0;
+  if (status === 'open') return 1;
+  if (status === 'answered') return 2;
+  return 3;
+}
+
+function sortTickets(a: TicketSummary, b: TicketSummary) {
+  const rank = ticketStatusRank(a.status) - ticketStatusRank(b.status);
+  if (rank !== 0) return rank;
+  return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+}
+
+function ticketRowIcon(status: TicketStatus) {
+  if (status === 'awaiting_customer') return Clock3;
+  if (status === 'answered') return LifeBuoy;
+  if (status === 'closed') return CheckCircle2;
+  return MessageCircle;
 }
 
 const PRIORITY_OPTIONS: { value: TicketPriority; label: string; description: string }[] = [
@@ -120,6 +149,14 @@ function formatDay(value: string) {
     weekday: 'short',
     day: 'numeric',
     month: 'short',
+  });
+}
+
+function formatUpdated(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
   });
 }
 
@@ -145,7 +182,7 @@ export function TicketsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | TicketStatus>('all');
+  const [filter, setFilter] = useState<TicketFilter>('all');
   const [creating, setCreating] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
@@ -205,6 +242,18 @@ export function TicketsPage() {
     }
   }
 
+  function resetCompose() {
+    setCreating(false);
+    setForm({
+      subject: '',
+      categoryId: '',
+      serviceId: '',
+      priority: 'normal',
+      body: '',
+    });
+    setPendingAttachments([]);
+  }
+
   async function onCreate(event: FormEvent) {
     event.preventDefault();
     setSubmitting(true);
@@ -229,66 +278,101 @@ export function TicketsPage() {
     }
   }
 
-  const visible = tickets.filter((ticket) => {
-    const haystack = `${ticket.number} ${ticket.subject} ${ticket.category?.name ?? ''} ${ticket.service?.name ?? ''}`.toLowerCase();
-    const matchesQuery = haystack.includes(query.trim().toLowerCase());
-    const matchesFilter = filter === 'all' || ticket.status === filter;
-    return matchesQuery && matchesFilter;
-  });
-
-  const openCount = tickets.filter((t) => t.status === 'open').length;
-  const answeredCount = tickets.filter((t) => t.status === 'answered').length;
-  const awaitingCount = tickets.filter((t) => t.status === 'awaiting_customer').length;
+  const openTickets = tickets.filter((ticket) => ticket.status === 'open');
+  const answeredTickets = tickets.filter((ticket) => ticket.status === 'answered');
+  const awaitingTickets = tickets.filter((ticket) => ticket.status === 'awaiting_customer');
+  const closedTickets = tickets.filter((ticket) => ticket.status === 'closed');
+  const filterCounts: Record<TicketFilter, number> = {
+    all: tickets.length,
+    open: openTickets.length,
+    answered: answeredTickets.length,
+    awaiting_customer: awaitingTickets.length,
+    closed: closedTickets.length,
+  };
+  const visibleTickets = tickets
+    .filter((ticket) => {
+      const haystack = `${ticket.number} ${ticket.subject} ${ticket.category?.name ?? ''} ${ticket.service?.name ?? ''}`.toLowerCase();
+      const matchesQuery = haystack.includes(query.trim().toLowerCase());
+      const matchesFilter = filter === 'all' || ticket.status === filter;
+      return matchesQuery && matchesFilter;
+    })
+    .sort(sortTickets);
+  const nextAwaiting = [...awaitingTickets].sort(
+    (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+  )[0];
 
   if (disabled) {
     return (
-      <div className="support-v3">
-        <header className="support-v3__hero">
-          <div>
-            <span>Support</span>
-            <h1>Help desk</h1>
-            <p>Ticket support is temporarily unavailable.</p>
+      <div className="client-tickets">
+        <header className="client-tickets__intro">
+          <div className="client-tickets__intro-copy">
+            <p>Support</p>
+            <h1>Tickets</h1>
+            <span>Ticket support is temporarily unavailable.</span>
           </div>
         </header>
-        <div className="support-v3__empty">
-          <LifeBuoy size={30} />
-          <h3>Tickets disabled</h3>
-          <p>Please reach out through another support channel while submissions are turned off.</p>
+        <div className="client-tickets__empty">
+          <span aria-hidden>
+            <LifeBuoy size={20} />
+          </span>
+          <strong>Tickets disabled</strong>
+          <p>Reach out through another support channel while submissions are turned off.</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="support-v3">
-      <header className="support-v3__hero">
-        <div>
-          <span>Support</span>
-          <h1>Help desk</h1>
-          <p>Chat with SpiritHost staff about billing, servers, and account issues.</p>
+    <div className="client-tickets">
+      <header className="client-tickets__intro">
+        <div className="client-tickets__intro-copy">
+          <p>Support</p>
+          <h1>Tickets</h1>
+          <span>Chat with staff about billing, servers, and account issues.</span>
         </div>
-        {!creating && (
-          <button type="button" className="support-v3__cta" onClick={() => setCreating(true)}>
-            <Plus size={15} /> New ticket
-          </button>
-        )}
+        <div className="client-tickets__intro-actions">
+          {!creating ? (
+            <button
+              type="button"
+              className="client-home__btn client-home__btn--primary client-home__btn--cta"
+              onClick={() => setCreating(true)}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <Plus size={15} />
+              </span>
+              <span>New ticket</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="client-home__btn client-home__btn--ghost client-home__btn--cta"
+              onClick={resetCompose}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <X size={15} />
+              </span>
+              <span>Cancel</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {error && <div className="ds-alert ds-alert--error">{error}</div>}
 
-      {creating && (
-        <section className="support-v3__compose-panel">
-          <header>
+      {creating ? (
+        <section className="client-tickets__compose">
+          <div className="client-tickets__compose-head">
             <div>
-              <span>New request</span>
               <h2>Open a ticket</h2>
+              <p>Tell us what&apos;s going on and we&apos;ll pick it up from there.</p>
             </div>
-            <button type="button" aria-label="Cancel" onClick={() => setCreating(false)}>
+            <button type="button" className="client-tickets__compose-close" onClick={resetCompose} aria-label="Cancel">
               <X size={16} />
             </button>
-          </header>
-          <form onSubmit={onCreate}>
-            <div className="support-v3__compose-grid">
+          </div>
+          <form className="client-tickets__compose-form" onSubmit={onCreate}>
+            <div className="client-tickets__compose-grid">
               <label>
                 <span>Subject</span>
                 <input
@@ -314,21 +398,23 @@ export function TicketsPage() {
                   }))}
                 />
               </label>
-            <label>
-              <span>Priority</span>
-              <ThemedSelect
-                ariaLabel="Ticket priority"
-                value={form.priority}
-                onChange={(priority) => setForm({ ...form, priority: priority as TicketPriority })}
-                options={PRIORITY_OPTIONS.map((option) => ({
-                  value: option.value,
-                  label: option.label,
-                  description: option.description,
-                }))}
-              />
-            </label>
-            <label className="is-full">
-              <span>Related service <em>Optional</em></span>
+              <label>
+                <span>Priority</span>
+                <ThemedSelect
+                  ariaLabel="Ticket priority"
+                  value={form.priority}
+                  onChange={(priority) => setForm({ ...form, priority: priority as TicketPriority })}
+                  options={PRIORITY_OPTIONS.map((option) => ({
+                    value: option.value,
+                    label: option.label,
+                    description: option.description,
+                  }))}
+                />
+              </label>
+              <label className="is-full">
+                <span>
+                  Related service <em>Optional</em>
+                </span>
                 <ThemedSelect
                   ariaLabel="Related service"
                   value={form.serviceId}
@@ -357,7 +443,7 @@ export function TicketsPage() {
               attachments={pendingAttachments}
               onClear={() => setPendingAttachments([])}
             />
-            <footer>
+            <div className="client-tickets__compose-actions">
               <input
                 ref={fileRef}
                 type="file"
@@ -367,144 +453,285 @@ export function TicketsPage() {
               />
               <button
                 type="button"
-                className="support-v3__ghost"
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
                 disabled={uploading || pendingAttachments.length >= 5}
                 onClick={() => fileRef.current?.click()}
               >
-                <ImagePlus size={14} /> {uploading ? 'Uploading…' : 'Add screenshot'}
+                <ImagePlus size={14} />
+                {uploading ? 'Uploading…' : 'Add screenshot'}
               </button>
               <button
                 type="submit"
-                className="support-v3__cta"
+                className="client-home__btn client-home__btn--primary client-home__btn--sm"
                 disabled={submitting || !form.subject.trim() || !form.body.trim()}
               >
-                <Send size={14} /> {submitting ? 'Opening…' : 'Open ticket'}
+                <Send size={14} />
+                {submitting ? 'Opening…' : 'Open ticket'}
               </button>
-            </footer>
+            </div>
           </form>
         </section>
-      )}
+      ) : null}
 
-      <section className="support-v3__metrics">
-        <article>
-          <span className="is-sky"><Ticket size={17} /></span>
-          <div><small>Total</small><strong>{tickets.length}</strong></div>
-        </article>
-        <article>
-          <span className="is-amber"><MessageCircle size={17} /></span>
-          <div><small>Open</small><strong>{openCount}</strong></div>
-        </article>
-        <article>
-          <span className="is-mint"><LifeBuoy size={17} /></span>
-          <div><small>Answered</small><strong>{answeredCount}</strong></div>
-        </article>
-        <article>
-          <span className="is-rose"><Clock3 size={17} /></span>
-          <div><small>Needs you</small><strong>{awaitingCount}</strong></div>
-        </article>
-      </section>
+      <div className="client-tickets__pulse" aria-label="Ticket snapshot">
+        <button
+          type="button"
+          className={`client-tickets__pulse-item${filter === 'all' ? ' is-active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          <span className="client-tickets__pulse-copy">
+            <small>Total</small>
+            <strong>{loading ? '—' : tickets.length}</strong>
+            <span>All conversations</span>
+          </span>
+          <span className="client-tickets__pulse-icon is-total" aria-hidden>
+            <Ticket size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-tickets__pulse-item${filter === 'open' ? ' is-active' : ''}`}
+          onClick={() => setFilter('open')}
+        >
+          <span className="client-tickets__pulse-copy">
+            <small>Open</small>
+            <strong className={openTickets.length > 0 ? 'is-warn' : undefined}>
+              {loading ? '—' : openTickets.length}
+            </strong>
+            <span>Waiting on staff</span>
+          </span>
+          <span className="client-tickets__pulse-icon is-open" aria-hidden>
+            <MessageCircle size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-tickets__pulse-item${filter === 'answered' ? ' is-active' : ''}`}
+          onClick={() => setFilter('answered')}
+        >
+          <span className="client-tickets__pulse-copy">
+            <small>Answered</small>
+            <strong className="is-ok">{loading ? '—' : answeredTickets.length}</strong>
+            <span>Staff replied</span>
+          </span>
+          <span className="client-tickets__pulse-icon is-answered" aria-hidden>
+            <LifeBuoy size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-tickets__pulse-item${filter === 'awaiting_customer' ? ' is-active' : ''}`}
+          onClick={() => setFilter('awaiting_customer')}
+        >
+          <span className="client-tickets__pulse-copy">
+            <small>Needs you</small>
+            <strong className={awaitingTickets.length > 0 ? 'is-alert' : undefined}>
+              {loading ? '—' : awaitingTickets.length}
+            </strong>
+            <span>Your reply needed</span>
+          </span>
+          <span className="client-tickets__pulse-icon is-waiting" aria-hidden>
+            <Clock3 size={17} />
+          </span>
+        </button>
+      </div>
 
-      <section className="support-v3__inbox">
-        <header>
-          <div>
-            <span>Your tickets</span>
+      <section className="client-tickets__panel">
+        <div className="client-tickets__panel-head">
+          <div className="client-tickets__panel-copy">
             <h2>Conversations</h2>
+            <p>
+              {loading
+                ? 'Loading tickets…'
+                : query.trim() || filter !== 'all'
+                  ? `${visibleTickets.length} match${visibleTickets.length === 1 ? '' : 'es'}`
+                  : `${tickets.length} ticket${tickets.length === 1 ? '' : 's'}`}
+            </p>
           </div>
-          <label>
-            <Search size={14} />
+          <label className="client-tickets__search">
+            <Search size={15} aria-hidden />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search tickets…"
+              placeholder="Search number, subject, or service…"
+              aria-label="Search tickets"
             />
           </label>
-          <div className="support-v3__filters">
-            {([
-              ['all', 'All'],
-              ['open', 'Open'],
-              ['answered', 'Answered'],
-              ['awaiting_customer', 'Needs you'],
-              ['closed', 'Closed'],
-            ] as const).map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={filter === value ? 'is-active' : ''}
-                onClick={() => setFilter(value)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </header>
+        </div>
 
-        <div className="support-v3__ticket-list">
-          {visible.map((ticket) => (
+        <div className="client-tickets__filters" role="group" aria-label="Filter by status">
+          {([
+            ['all', 'All'],
+            ['open', 'Open'],
+            ['answered', 'Answered'],
+            ['awaiting_customer', 'Needs you'],
+            ['closed', 'Closed'],
+          ] as const).map(([value, label]) => (
             <button
               type="button"
-              key={ticket.id}
-              className={`support-v3__ticket-card ${ticketStatusTone(ticket.status)}`}
-              onClick={() => navigate(`/tickets/${ticket.id}`)}
-              style={ticket.category?.color ? { ['--ticket-accent' as string]: ticket.category.color } : undefined}
+              key={value}
+              className={filter === value ? 'is-active' : undefined}
+              onClick={() => setFilter(value)}
             >
-              <span className="support-v3__ticket-rail" aria-hidden />
-              <span className="support-v3__ticket-mark">
-                {ticket.category ? (
-                  <CategoryMark
-                    color={ticket.category.color}
-                    icon={ticket.category.icon || 'life-buoy'}
-                    size={44}
-                  />
-                ) : (
-                  <span className="support-v3__ticket-fallback"><Ticket size={18} /></span>
-                )}
-              </span>
-              <span className="support-v3__ticket-body">
-                <span className="support-v3__ticket-kicker">
-                  <small>{ticket.number}</small>
-                  {ticket.category && <em>{ticket.category.name}</em>}
-                  <span className={`support-v3__priority ${ticketPriorityTone(ticket.priority)}`}>
-                    {ticketPriorityLabel(ticket.priority)}
-                  </span>
-                </span>
-                <strong>{ticket.subject}</strong>
-                <span className="support-v3__ticket-card-meta">
-                  {ticket.service ? (
-                    <span><Server size={12} /> {ticket.service.name}</span>
-                  ) : (
-                    <span><MessageCircle size={12} /> {(ticket._count?.messages ?? 0)} messages</span>
-                  )}
-                  <time>{formatDay(ticket.updatedAt)}</time>
-                </span>
-              </span>
-              <span className={`support-v3__status ${ticketStatusTone(ticket.status)}`}>
-                {ticketStatusLabel(ticket.status)}
-              </span>
+              {label}
+              <em>{loading ? '—' : filterCounts[value]}</em>
             </button>
           ))}
+        </div>
 
-          {!loading && !visible.length && (
-            <div className="support-v3__empty is-grid">
-              <LifeBuoy size={28} />
-              <h3>{tickets.length ? 'No matching tickets' : 'No tickets yet'}</h3>
+        {!loading && awaitingTickets.length > 0 && filter === 'all' && !query.trim() ? (
+          <div className="client-tickets__attention">
+            <span className="client-tickets__attention-copy">
+              <Clock3 size={15} aria-hidden />
+              <span>
+                <strong>
+                  {awaitingTickets.length} ticket{awaitingTickets.length === 1 ? '' : 's'} need
+                  {awaitingTickets.length === 1 ? 's' : ''} your reply
+                </strong>
+                <small>
+                  {nextAwaiting
+                    ? `${nextAwaiting.number} · updated ${formatUpdated(nextAwaiting.updatedAt)}`
+                    : 'Staff is waiting on your response'}
+                </small>
+              </span>
+            </span>
+            <div className="client-tickets__attention-actions">
+              <button
+                type="button"
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                onClick={() => setFilter('awaiting_customer')}
+              >
+                Show needing reply
+              </button>
+              {nextAwaiting ? (
+                <Link
+                  className="client-home__btn client-home__btn--primary client-home__btn--sm"
+                  to={`/tickets/${nextAwaiting.id}`}
+                >
+                  Reply now
+                  <ArrowRight size={13} />
+                </Link>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="client-tickets__list">
+          {visibleTickets.map((ticket) => {
+            const statusTone = ticketStatusTone(ticket.status);
+            const RowIcon = ticketRowIcon(ticket.status);
+            const messageCount = ticket._count?.messages ?? 0;
+            return (
+              <Link
+                key={ticket.id}
+                to={`/tickets/${ticket.id}`}
+                className={`client-tickets__row ${statusTone}`}
+                style={
+                  ticket.category?.color
+                    ? { ['--ticket-tone' as string]: ticket.category.color }
+                    : undefined
+                }
+              >
+                <span className="client-tickets__row-mark" aria-hidden>
+                  {ticket.category ? (
+                    <CategoryMark
+                      color={ticket.category.color}
+                      icon={ticket.category.icon || 'life-buoy'}
+                      size={28}
+                    />
+                  ) : (
+                    <RowIcon size={16} />
+                  )}
+                </span>
+                <span className="client-tickets__row-body">
+                  <span className="client-tickets__row-main">
+                    <span className="client-tickets__row-title">
+                      <strong>{ticket.subject}</strong>
+                    </span>
+                    <span className="client-tickets__row-meta">
+                      <span className={`client-tickets__status ${statusTone}`}>
+                        {ticketStatusLabel(ticket.status)}
+                      </span>
+                      <span className="client-tickets__row-meta-item">{ticket.number}</span>
+                      {ticket.category ? (
+                        <span className="client-tickets__row-meta-item">{ticket.category.name}</span>
+                      ) : null}
+                      {ticket.service ? (
+                        <span className="client-tickets__row-meta-item">
+                          <Server size={11} aria-hidden />
+                          {ticket.service.name}
+                        </span>
+                      ) : (
+                        <span className="client-tickets__row-meta-item">
+                          <MessageSquare size={11} aria-hidden />
+                          {messageCount} message{messageCount === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      <span className={`client-tickets__priority ${ticketPriorityTone(ticket.priority)}`}>
+                        {ticketPriorityLabel(ticket.priority)}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="client-tickets__row-rail">
+                    <span className="client-tickets__row-date">
+                      <small>Updated</small>
+                      <strong>{formatUpdated(ticket.updatedAt)}</strong>
+                    </span>
+                    <span className="client-tickets__row-go" aria-hidden>
+                      <ArrowRight size={14} strokeWidth={2} />
+                    </span>
+                  </span>
+                </span>
+              </Link>
+            );
+          })}
+
+          {!loading && !visibleTickets.length ? (
+            <div className="client-tickets__empty">
+              <span aria-hidden>
+                <LifeBuoy size={20} />
+              </span>
+              <strong>{tickets.length ? 'No matching tickets' : 'No tickets yet'}</strong>
               <p>
                 {tickets.length
-                  ? 'Try another search or filter.'
-                  : 'Start a conversation when you need help from our team.'}
+                  ? 'Try another search or status filter.'
+                  : 'Open a ticket when you need help from our team.'}
               </p>
-              {!tickets.length && !creating && (
-                <button type="button" className="support-v3__cta" onClick={() => setCreating(true)}>
-                  <Plus size={13} /> New ticket
+              {tickets.length ? (
+                <button
+                  type="button"
+                  className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                  onClick={() => {
+                    setQuery('');
+                    setFilter('all');
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="client-home__btn client-home__btn--primary client-home__btn--cta client-home__btn--sm"
+                  onClick={() => setCreating(true)}
+                >
+                  <span className="client-home__btn-icon" aria-hidden>
+                    <Plus size={13} />
+                  </span>
+                  <span>New ticket</span>
                 </button>
               )}
             </div>
-          )}
-          {loading && (
-            <div className="support-v3__empty is-grid">
-              <RefreshCw size={24} className="support-v3__spin" />
-              <h3>Loading tickets…</h3>
+          ) : null}
+
+          {loading ? (
+            <div className="client-tickets__empty">
+              <span aria-hidden>
+                <RefreshCw size={18} className="client-tickets__spin" />
+              </span>
+              <strong>Loading tickets…</strong>
+              <p>Fetching your support conversations.</p>
             </div>
-          )}
+          ) : null}
         </div>
       </section>
     </div>
@@ -525,6 +752,7 @@ export function TicketDetailPage() {
   const [closing, setClosing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const disabled = branding.ticketsEnabled === false;
 
@@ -611,17 +839,27 @@ export function TicketDetailPage() {
 
   if (disabled) {
     return (
-      <div className="ticket-chat">
-        <Link to="/tickets" className="ticket-chat__back"><ArrowLeft size={14} /> All tickets</Link>
-        <div className="ticket-chat__empty"><LifeBuoy size={28} /><h3>Tickets disabled</h3></div>
+      <div className="client-ticket-detail">
+        <Link to="/tickets" className="client-ticket-detail__back">
+          <ArrowLeft size={14} /> All tickets
+        </Link>
+        <div className="client-ticket-detail__empty">
+          <span aria-hidden>
+            <LifeBuoy size={20} />
+          </span>
+          <strong>Tickets disabled</strong>
+          <p>Support tickets are temporarily unavailable.</p>
+        </div>
       </div>
     );
   }
 
   if (error && !ticket) {
     return (
-      <div className="ticket-chat">
-        <Link to="/tickets" className="ticket-chat__back"><ArrowLeft size={14} /> All tickets</Link>
+      <div className="client-ticket-detail">
+        <Link to="/tickets" className="client-ticket-detail__back">
+          <ArrowLeft size={14} /> All tickets
+        </Link>
         <div className="ds-alert ds-alert--error">{error}</div>
       </div>
     );
@@ -629,199 +867,406 @@ export function TicketDetailPage() {
 
   if (!ticket) {
     return (
-      <div className="ticket-chat">
-        <div className="ticket-chat__empty">
-          <RefreshCw size={24} className="support-v3__spin" />
-          <h3>Opening conversation…</h3>
-        </div>
+      <div className="client-ticket-detail">
+        <div className="client-ticket-detail__loading">Opening conversation…</div>
       </div>
     );
   }
 
   const closed = ticket.status === 'closed';
+  const statusTone = ticketStatusTone(ticket.status);
+  const statusLabel = ticketStatusLabel(ticket.status);
+  const priorityLabel = ticketPriorityLabel(ticket.priority);
+  const priorityTone = ticketPriorityTone(ticket.priority);
+  const openedLabel = formatUpdated(ticket.createdAt);
+  const updatedLabel = formatUpdated(ticket.updatedAt);
+  const StatusIcon = ticketRowIcon(ticket.status);
+  const waitingOnYou = ticket.status === 'awaiting_customer';
   const accent = ticket.category?.color;
 
   return (
     <div
-      className="ticket-chat"
-      style={accent ? { ['--ticket-accent' as string]: accent } : undefined}
+      className={`client-ticket-detail ${statusTone}`}
+      style={accent ? { ['--ticket-tone' as string]: accent } : undefined}
     >
-      <Link to="/tickets" className="ticket-chat__back"><ArrowLeft size={14} /> All tickets</Link>
+      <Link to="/tickets" className="client-ticket-detail__back">
+        <ArrowLeft size={14} /> All tickets
+      </Link>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
+      {error ? <div className="ds-alert ds-alert--error">{error}</div> : null}
 
-      <header className="ticket-chat__hero">
-        <div className="ticket-chat__hero-glow" aria-hidden />
-        <CategoryMark
-          color={ticket.category?.color}
-          icon={ticket.category?.icon || 'life-buoy'}
-          size={58}
-          className="ticket-chat__hero-mark"
-        />
-        <div className="ticket-chat__hero-copy">
-          <span>
-            {ticket.number}
-            {ticket.category ? ` · ${ticket.category.name}` : ''}
-          </span>
-          <h1>{ticket.subject}</h1>
-          <div className="ticket-chat__hero-meta">
-            <span className={`support-v3__status ${ticketStatusTone(ticket.status)}`}>
-              {ticketStatusLabel(ticket.status)}
-            </span>
-            <span className={`support-v3__priority ${ticketPriorityTone(ticket.priority)}`}>
-              {ticketPriorityLabel(ticket.priority)}
-            </span>
-            {ticket.service && (
-              <Link to={`/services/${ticket.service.id}`} className="ticket-chat__pill is-link">
-                <Server size={12} /> {ticket.service.name}
-              </Link>
+      <header className="client-ticket-detail__intro">
+        <div className="client-ticket-detail__intro-main">
+          <span className={`client-ticket-detail__mark ${statusTone}`} aria-hidden>
+            {ticket.category ? (
+              <CategoryMark
+                color={ticket.category.color}
+                icon={ticket.category.icon || 'life-buoy'}
+                size={28}
+              />
+            ) : (
+              <StatusIcon size={20} />
             )}
-            <span className="ticket-chat__pill">
-              <MessageCircle size={12} /> {ticket.messages.length} messages
+          </span>
+          <div className="client-ticket-detail__intro-copy">
+            <p>Support ticket</p>
+            <h1>{ticket.subject}</h1>
+            <span className="client-ticket-detail__intro-meta">
+              <span className={`client-ticket-detail__status ${statusTone}`}>{statusLabel}</span>
+              <span className="client-ticket-detail__chip">{ticket.number}</span>
+              {ticket.category ? (
+                <span className="client-ticket-detail__chip">{ticket.category.name}</span>
+              ) : null}
+              <span className={`client-ticket-detail__priority ${priorityTone}`}>{priorityLabel}</span>
             </span>
           </div>
         </div>
+        <div className="client-ticket-detail__intro-actions">
+          {!closed ? (
+            <>
+              <button
+                type="button"
+                className="client-home__btn client-home__btn--primary client-home__btn--cta"
+                onClick={() => composerRef.current?.focus()}
+              >
+                <span className="client-home__btn-icon" aria-hidden>
+                  <Send size={15} />
+                </span>
+                <span>Reply</span>
+                <ArrowRight size={14} className="client-home__btn-arrow" />
+              </button>
+              <button
+                type="button"
+                className="client-home__btn client-home__btn--ghost client-home__btn--cta"
+                onClick={() => setCloseOpen(true)}
+              >
+                <span className="client-home__btn-icon" aria-hidden>
+                  <CheckCircle2 size={15} />
+                </span>
+                <span>Close ticket</span>
+              </button>
+            </>
+          ) : (
+            <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to="/tickets">
+              <span className="client-home__btn-icon" aria-hidden>
+                <Plus size={15} />
+              </span>
+              <span>New ticket</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
+          )}
+        </div>
       </header>
 
-      <div className="ticket-chat__layout">
-        <section className="ticket-chat__panel">
-          <div className="ticket-chat__thread">
-            {ticket.messages.map((message, index) => {
-              const staff = message.author.role === 'admin' || message.author.role === 'staff';
-              const mine = message.author.id === user?.id;
-              const name = authorName(message.author);
-              const prev = ticket.messages[index - 1];
-              const showDay =
-                !prev ||
-                new Date(prev.createdAt).toDateString() !== new Date(message.createdAt).toDateString();
+      <div className="client-ticket-detail__pulse" aria-label="Ticket snapshot">
+        <div className="client-ticket-detail__pulse-item">
+          <span className="client-ticket-detail__pulse-copy">
+            <small>Status</small>
+            <strong className={waitingOnYou ? 'is-alert' : ticket.status === 'answered' ? 'is-ok' : ticket.status === 'open' ? 'is-warn' : undefined}>
+              {statusLabel}
+            </strong>
+            <span>{waitingOnYou ? 'Your reply needed' : closed ? 'Conversation ended' : 'In progress'}</span>
+          </span>
+          <span className={`client-ticket-detail__pulse-icon ${statusTone}`} aria-hidden>
+            <StatusIcon size={17} />
+          </span>
+        </div>
+        <div className="client-ticket-detail__pulse-item">
+          <span className="client-ticket-detail__pulse-copy">
+            <small>Priority</small>
+            <strong className={ticket.priority === 'urgent' || ticket.priority === 'high' ? 'is-warn' : undefined}>
+              {priorityLabel}
+            </strong>
+            <span>Request urgency</span>
+          </span>
+          <span className={`client-ticket-detail__pulse-icon is-priority ${priorityTone}`} aria-hidden>
+            <Ticket size={17} />
+          </span>
+        </div>
+        <div className="client-ticket-detail__pulse-item">
+          <span className="client-ticket-detail__pulse-copy">
+            <small>Messages</small>
+            <strong>{ticket.messages.length}</strong>
+            <span>In this thread</span>
+          </span>
+          <span className="client-ticket-detail__pulse-icon is-messages" aria-hidden>
+            <MessageSquare size={17} />
+          </span>
+        </div>
+        <div className="client-ticket-detail__pulse-item">
+          <span className="client-ticket-detail__pulse-copy">
+            <small>Updated</small>
+            <strong>{updatedLabel}</strong>
+            <span>Opened {openedLabel}</span>
+          </span>
+          <span className="client-ticket-detail__pulse-icon is-date" aria-hidden>
+            <Clock3 size={17} />
+          </span>
+        </div>
+      </div>
 
-              return (
-                <div key={message.id} className="ticket-chat__block">
-                  {showDay && (
-                    <div className="ticket-chat__day"><span>{formatDay(message.createdAt)}</span></div>
-                  )}
-                  <article className={`ticket-chat__msg ${staff ? 'is-staff' : 'is-client'}`}>
-                    <TicketAvatar name={name} avatarUrl={message.author.avatarUrl} />
-                    <div className="ticket-chat__bubble">
-                      <header>
-                        <strong>{mine ? 'You' : name}{staff ? ' · Support' : ''}</strong>
-                        <time>{formatTime(message.createdAt)}</time>
-                      </header>
-                      <p>{message.body}</p>
-                      <TicketAttachments attachments={message.attachments} />
-                    </div>
-                  </article>
-                </div>
-              );
-            })}
-            <div ref={threadEndRef} />
-          </div>
+      {waitingOnYou ? (
+        <div className="client-ticket-detail__attention">
+          <span className="client-ticket-detail__attention-copy">
+            <Clock3 size={15} aria-hidden />
+            <span>
+              <strong>Support is waiting on your reply</strong>
+              <small>Add any details they asked for so we can keep helping.</small>
+            </span>
+          </span>
+          <button
+            type="button"
+            className="client-home__btn client-home__btn--primary client-home__btn--sm"
+            onClick={() => composerRef.current?.focus()}
+          >
+            Write reply
+            <ArrowRight size={13} />
+          </button>
+        </div>
+      ) : null}
 
-          {!closed ? (
-            <form className="ticket-chat__composer" onSubmit={onReply}>
-              <TicketAttachments
-                attachments={pendingAttachments}
-                onClear={() => setPendingAttachments([])}
-              />
-              <div className="ticket-chat__composer-bar">
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(event) => void onUpload(event.target.files)}
-                />
-                <button
-                  type="button"
-                  className="ticket-chat__attach"
-                  disabled={uploading || pendingAttachments.length >= 5}
-                  onClick={() => fileRef.current?.click()}
-                  aria-label="Add image"
-                >
-                  <Paperclip size={16} />
-                </button>
-                <textarea
-                  rows={2}
-                  required
-                  maxLength={5000}
-                  value={reply}
-                  placeholder="Write your reply to support…"
-                  onChange={(event) => setReply(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === 'Enter' && !event.shiftKey) {
-                      event.preventDefault();
-                      void sendReply();
-                    }
-                  }}
-                />
-                <button type="submit" className="ticket-chat__send" disabled={sending || !reply.trim()}>
-                  <Send size={15} />
-                  <span>{sending ? 'Sending…' : 'Send'}</span>
-                </button>
-              </div>
-              <div className="ticket-chat__composer-footer">
-                <small>Enter to send · Shift+Enter for a new line</small>
-                <button
-                  type="button"
-                  className="ticket-chat__close-btn"
-                  onClick={() => setCloseOpen(true)}
-                >
-                  <CheckCircle2 size={14} /> Close ticket
-                </button>
-              </div>
-            </form>
-          ) : (
-            <div className="ticket-chat__closed">
-              <LifeBuoy size={18} />
+      <div className="client-ticket-detail__layout">
+        <div className="client-ticket-detail__primary">
+          <section className="client-ticket-detail__panel">
+            <div className="client-ticket-detail__panel-head">
               <div>
-                <strong>This ticket is closed</strong>
-                <p>Open a new ticket if you still need help from our team.</p>
+                <h2>Conversation</h2>
+                <p>
+                  {ticket.messages.length} message{ticket.messages.length === 1 ? '' : 's'} with support
+                </p>
               </div>
-              <Link to="/tickets" className="support-v3__cta">New ticket</Link>
             </div>
-          )}
-        </section>
 
-        <aside className="ticket-chat__side">
-          <div className="ticket-chat__side-card">
-            <header><Ticket size={14} /><span>Details</span></header>
-            <dl>
-              <div><dt>Opened</dt><dd>{formatDay(ticket.createdAt)}</dd></div>
-              <div><dt>Updated</dt><dd>{formatDay(ticket.updatedAt)}</dd></div>
-              <div><dt>Priority</dt><dd className="is-cap">{ticket.priority}</dd></div>
-              <div><dt>Status</dt><dd className="is-cap">{ticketStatusLabel(ticket.status)}</dd></div>
-            </dl>
-          </div>
-          {ticket.service && (
-            <div className="ticket-chat__side-card">
-              <header><Server size={14} /><span>Linked service</span></header>
-              <strong>{ticket.service.name}</strong>
-              <em className="is-cap">{ticket.service.status.replaceAll('_', ' ')}</em>
-              <Link to={`/services/${ticket.service.id}`} className="ticket-chat__side-link">
-                Open service
-              </Link>
+            <div className="client-ticket-detail__thread">
+              {ticket.messages.map((message, index) => {
+                const staff = message.author.role === 'admin' || message.author.role === 'staff';
+                const mine = message.author.id === user?.id;
+                const name = authorName(message.author);
+                const prev = ticket.messages[index - 1];
+                const showDay =
+                  !prev ||
+                  new Date(prev.createdAt).toDateString() !== new Date(message.createdAt).toDateString();
+
+                return (
+                  <div key={message.id} className="client-ticket-detail__block">
+                    {showDay ? (
+                      <div className="client-ticket-detail__day">
+                        <span>{formatDay(message.createdAt)}</span>
+                      </div>
+                    ) : null}
+                    <article
+                      className={`client-ticket-detail__msg ${staff ? 'is-staff' : 'is-client'}${mine ? ' is-mine' : ''}`}
+                    >
+                      <TicketAvatar
+                        name={name}
+                        avatarUrl={message.author.avatarUrl}
+                        className="client-ticket-detail__avatar"
+                      />
+                      <div className="client-ticket-detail__bubble">
+                        <header>
+                          <strong>
+                            {mine ? 'You' : name}
+                            {!mine && staff ? ' · Support' : ''}
+                          </strong>
+                          <time>{formatTime(message.createdAt)}</time>
+                        </header>
+                        <p>{message.body}</p>
+                        <TicketAttachments attachments={message.attachments} />
+                      </div>
+                    </article>
+                  </div>
+                );
+              })}
+              <div ref={threadEndRef} />
             </div>
-          )}
-          {ticket.category && (
-            <div className="ticket-chat__side-card">
-              <header><LifeBuoy size={14} /><span>Category</span></header>
-              <div className="ticket-chat__side-cat">
+
+            {!closed ? (
+              <form className="client-ticket-detail__composer" onSubmit={onReply}>
+                <TicketAttachments
+                  attachments={pendingAttachments}
+                  onClear={() => setPendingAttachments([])}
+                />
+                <div className="client-ticket-detail__composer-bar">
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept="image/*"
+                    hidden
+                    onChange={(event) => void onUpload(event.target.files)}
+                  />
+                  <button
+                    type="button"
+                    className="client-ticket-detail__attach"
+                    disabled={uploading || pendingAttachments.length >= 5}
+                    onClick={() => fileRef.current?.click()}
+                    aria-label="Add image"
+                  >
+                    <Paperclip size={16} />
+                  </button>
+                  <textarea
+                    ref={composerRef}
+                    rows={2}
+                    required
+                    maxLength={5000}
+                    value={reply}
+                    placeholder="Write your reply to support…"
+                    onChange={(event) => setReply(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        void sendReply();
+                      }
+                    }}
+                  />
+                  <button
+                    type="submit"
+                    className="client-ticket-detail__send"
+                    disabled={sending || !reply.trim()}
+                  >
+                    <Send size={15} />
+                    <span>{sending ? 'Sending…' : 'Send'}</span>
+                  </button>
+                </div>
+                <div className="client-ticket-detail__composer-footer">
+                  <small>Enter to send · Shift+Enter for a new line</small>
+                  <button type="button" className="client-ticket-detail__close-link" onClick={() => setCloseOpen(true)}>
+                    <CheckCircle2 size={14} /> Close ticket
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="client-ticket-detail__closed">
+                <span aria-hidden>
+                  <LifeBuoy size={18} />
+                </span>
+                <div>
+                  <strong>This ticket is closed</strong>
+                  <p>Open a new ticket if you still need help from our team.</p>
+                </div>
+                <Link className="client-home__btn client-home__btn--primary client-home__btn--sm" to="/tickets">
+                  New ticket
+                  <ArrowRight size={13} />
+                </Link>
+              </div>
+            )}
+          </section>
+        </div>
+
+        <aside className="client-ticket-detail__aside">
+          <section className="client-ticket-detail__side">
+            <div className="client-ticket-detail__side-head">
+              <span className={`client-ticket-detail__status ${statusTone}`}>{statusLabel}</span>
+              <div>
+                <small>Ticket</small>
+                <strong>{ticket.number}</strong>
+              </div>
+            </div>
+            <dl className="client-ticket-detail__facts">
+              <div>
+                <dt>Opened</dt>
+                <dd>{openedLabel}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{updatedLabel}</dd>
+              </div>
+              <div>
+                <dt>Priority</dt>
+                <dd>
+                  <span className={`client-ticket-detail__priority ${priorityTone}`}>{priorityLabel}</span>
+                </dd>
+              </div>
+              <div>
+                <dt>Messages</dt>
+                <dd>{ticket.messages.length}</dd>
+              </div>
+            </dl>
+          </section>
+
+          {ticket.category ? (
+            <section className="client-ticket-detail__side">
+              <div className="client-ticket-detail__side-head">
+                <LifeBuoy size={16} />
+                <div>
+                  <small>Category</small>
+                  <strong>{ticket.category.name}</strong>
+                </div>
+              </div>
+              {ticket.category.description ? (
+                <p className="client-ticket-detail__side-note">{ticket.category.description}</p>
+              ) : (
+                <p className="client-ticket-detail__side-note">Routed to the matching support queue.</p>
+              )}
+              <div className="client-ticket-detail__side-cat">
                 <CategoryMark
                   color={ticket.category.color}
                   icon={ticket.category.icon || 'life-buoy'}
                   size={36}
                 />
+                <span>{ticket.category.name}</span>
+              </div>
+            </section>
+          ) : null}
+
+          {ticket.service ? (
+            <section className="client-ticket-detail__side">
+              <div className="client-ticket-detail__side-head">
+                <Server size={16} />
                 <div>
-                  <strong>{ticket.category.name}</strong>
-                  {ticket.category.description && <p>{ticket.category.description}</p>}
+                  <small>Linked service</small>
+                  <strong>{ticket.service.name}</strong>
                 </div>
               </div>
-            </div>
-          )}
-          {!closed && (
-            <button type="button" className="ticket-chat__close-side" onClick={() => setCloseOpen(true)}>
-              <CheckCircle2 size={14} /> Close ticket
-            </button>
+              <p className="client-ticket-detail__side-note">
+                Status: {ticket.service.status.replaceAll('_', ' ')}
+              </p>
+              <Link
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                to={`/services/${ticket.service.id}`}
+              >
+                Open service
+                <ArrowRight size={13} />
+              </Link>
+            </section>
+          ) : null}
+
+          {!closed ? (
+            <section className="client-ticket-detail__side is-danger">
+              <div className="client-ticket-detail__side-head">
+                <CheckCircle2 size={16} />
+                <div>
+                  <small>Resolve</small>
+                  <strong>Close this ticket</strong>
+                </div>
+              </div>
+              <p className="client-ticket-detail__side-note">
+                Mark it resolved when you no longer need help on this request.
+              </p>
+              <button
+                type="button"
+                className="client-ticket-detail__danger-btn"
+                onClick={() => setCloseOpen(true)}
+              >
+                Close ticket
+              </button>
+            </section>
+          ) : (
+            <section className="client-ticket-detail__side is-success">
+              <div className="client-ticket-detail__side-head">
+                <CheckCircle2 size={16} />
+                <div>
+                  <small>Complete</small>
+                  <strong>Ticket closed</strong>
+                </div>
+              </div>
+              <p className="client-ticket-detail__side-note">
+                This conversation is finished. Open a new ticket anytime.
+              </p>
+              <Link className="client-home__btn client-home__btn--ghost client-home__btn--sm" to="/tickets">
+                Back to tickets
+                <ArrowRight size={13} />
+              </Link>
+            </section>
           )}
         </aside>
       </div>
