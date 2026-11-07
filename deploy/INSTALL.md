@@ -12,23 +12,35 @@ Same pattern as Spirit-Panel: download the bootstrap script, then run it.
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-sudo bash /tmp/spirit-billing.sh
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 ```
 
-> **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo` (`/dev/fd/…: No such file or directory`). Download to a file, or pipe: `curl … | sudo bash -s -- install --domain billing.example.com -y`.
+That single command installs (first run) or updates (later runs): packages, MariaDB, nginx, build, systemd, health check. If DNS already points at the server, Let's Encrypt is enabled automatically. Panel can be wired in the same run:
+
+```bash
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
+  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY -y
+```
+
+Interactive menu (no flags): pick **Auto install / Auto update** — defaults do the rest.
+
+> **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo` (`/dev/fd/…: No such file or directory`). Download to a file, or pipe: `curl … | sudo bash -s -- auto --domain billing.example.com -y`.
 
 ### Non-interactive
 
 ```bash
-# First install (DNS can point after; add --with-ssl when ready)
-sudo bash /tmp/spirit-billing.sh install --domain billing.example.com -y
+# Fully automatic install-or-update
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 
-# With Let's Encrypt in the same run (A/AAAA must already point here)
-sudo bash /tmp/spirit-billing.sh install --domain billing.example.com --with-ssl -y
+# Force Let's Encrypt even if DNS check is unsure
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com --with-ssl -y
 
 # Later updates (keeps /opt/spirit-billing/.env + database)
-sudo bash /tmp/spirit-billing.sh update -y
-sudo bash /home/Spirit-Billing/scripts/spirit.sh update -y   # after first install
+sudo bash /tmp/spirit-billing.sh auto -y
+sudo bash /home/Spirit-Billing/scripts/spirit.sh auto -y
+
+# Enable TLS after DNS is ready
+sudo bash /home/Spirit-Billing/scripts/spirit.sh ssl
 ```
 
 ### Channels
@@ -46,11 +58,14 @@ sudo bash /tmp/spirit-billing.sh update --ref V1.0.0.0 -y
 ### What the bootstrap does
 
 1. Clones or updates **`/home/Spirit-Billing`** from GitHub  
-2. **Install** → runs `deploy/install.sh` into `/opt/spirit-billing` + `/var/www/spirit-billing`  
-3. **Update** → backs up `.env`, ticket uploads, and a DB dump (percent-decoded `DATABASE_URL`, root-socket fallback), pulls the selected ref, runs `deploy/update.sh`  
-4. Skips npm rebuild when commit + lockfiles + Prisma schema are unchanged (override with `--force-build`)  
-5. Preserves `billing-api/uploads/` across syncs; polls `/health` after restart  
-6. Menu also covers **status**, **restart**, **logs**, **uninstall**
+2. **`auto`** → install if missing, otherwise update (no extra prompts with `-y`)  
+3. Detects domain from existing `.env` / nginx when possible  
+4. Auto-enables Let's Encrypt when DNS already points here (`--no-ssl` to skip, `--with-ssl` to force)  
+5. Optional `--panel-url` / `--panel-key` / `--admin-email` written straight into `.env`  
+6. **Update** → backs up `.env`, ticket uploads, and a DB dump; pulls the selected ref; runs `deploy/update.sh`  
+7. Skips npm rebuild when commit + lockfiles + Prisma schema are unchanged (`--force-build` to override)  
+8. Preserves `billing-api/uploads/`; polls `/health`; prints admin URL + password on first install  
+9. Menu also covers **ssl**, **status**, **restart**, **logs**, **uninstall**
 
 ### Installer tests
 
@@ -60,18 +75,12 @@ From a checkout (Git Bash / Linux):
 bash scripts/spirit.test.sh
 ```
 
-After install:
-
-```bash
-sudo nano /opt/spirit-billing/.env          # Panel API URL + Application key
-sudo bash /tmp/spirit-billing.sh restart
-# Admin password (first install only): /opt/spirit-billing/.adminpass — delete after login
-```
+After install the script prints the admin URL and password. Only edit `.env` if you did not pass `--panel-url` / `--panel-key`.
 
 If DNS was not ready during install:
 
 ```bash
-sudo certbot --nginx -d billing.example.com
+sudo bash /home/Spirit-Billing/scripts/spirit.sh ssl
 ```
 
 ---

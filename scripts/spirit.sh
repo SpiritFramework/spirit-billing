@@ -8,6 +8,14 @@
 # Do NOT use: sudo bash <(curl ...)
 # sudo closes inherited fds, so /dev/fd/N from process substitution vanishes.
 #
+# Fully automatic (recommended):
+#   curl -fsSL …/scripts/spirit.sh -o /tmp/spirit-billing.sh
+#   sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
+#
+# Or with Panel wired up in the same run:
+#   sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
+#     --panel-url https://panel.example.com --panel-key YOUR_KEY -y
+#
 # Interactive menu by default. Non-interactive:
 #   sudo bash /tmp/spirit-billing.sh install --domain billing.example.com -y
 #   sudo bash /tmp/spirit-billing.sh update -y
@@ -21,7 +29,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.1.0"
+SCRIPT_VERSION="1.2.0"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -41,9 +49,17 @@ CHANNEL=""
 REF_OVERRIDE=""
 DOMAIN=""
 WITH_SSL=0
+NO_SSL=0
+AUTO_SSL=1
 FORCE_BUILD=0
+PANEL_URL=""
+PANEL_WEB_URL=""
+PANEL_KEY=""
+ADMIN_EMAIL=""
+CERTBOT_EMAIL=""
 CMD=""
 LATEST_TAG_RESOLVED=""
+AUTO_MODE=0
 
 # ---------------------------------------------------------------------------
 # Output
@@ -164,6 +180,134 @@ ask() {
   fi
   read -r reply || true
   echo "${reply:-$default}"
+}
+
+# Prefer silent "yes" when auto / -y / non-interactive.
+want_auto() {
+  [[ "$ASSUME_YES" == "1" || "$AUTO_MODE" == "1" || ! -t 0 ]]
+}
+
+domain_from_url() {
+  local url="$1"
+  url="${url#https://}"
+  url="${url#http://}"
+  url="${url%%/*}"
+  url="${url%%:*}"
+  printf '%s' "$url"
+}
+
+detect_domain() {
+  local d=""
+  if [[ -f "${APP_ROOT}/.env" ]]; then
+    d="$(env_get BILLING_URL 2>/dev/null || true)"
+    d="$(domain_from_url "$d")"
+  fi
+  if [[ -z "$d" && -f /etc/nginx/sites-available/spirit-billing ]]; then
+    d="$(grep -E '^\s*server_name\s+' /etc/nginx/sites-available/spirit-billing 2>/dev/null \
+      | head -n1 | awk '{print $2}' | tr -d ';\r')"
+    [[ "$d" == "_" || "$d" == "localhost" ]] && d=""
+  fi
+  if [[ -z "$d" ]]; then
+    d="$(hostname -f 2>/dev/null || hostname 2>/dev/null || true)"
+    case "$d" in
+      ""|localhost|localhost.localdomain) d="" ;;
+    esac
+    # Reject bare IPs / dotted-quad hostnames
+    if [[ "$d" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then d=""; fi
+  fi
+  printf '%s' "$d"
+}
+
+public_ipv4() {
+  local ip=""
+  ip="$(curl -4 -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)"
+  [[ -z "$ip" ]] && ip="$(curl -4 -fsS --max-time 5 https://ifconfig.me/ip 2>/dev/null || true)"
+  [[ -z "$ip" ]] && ip="$(curl -4 -fsS --max-time 5 https://icanhazip.com 2>/dev/null || true)"
+  ip="$(printf '%s' "$ip" | tr -d '[:space:]')"
+  [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+  printf '%s' "$ip"
+}
+
+# True when DOMAIN's public A record matches this host's public IPv4.
+dns_points_here() {
+  local host="$1" want got=""
+  [[ -n "$host" ]] || return 1
+  want="$(public_ipv4)" || return 1
+  if command -v dig >/dev/null 2>&1; then
+    got="$(dig +short A "$host" 2>/dev/null | grep -E '^[0-9.]+$' | head -n1 || true)"
+  elif command -v getent >/dev/null 2>&1; then
+    got="$(getent ahostsv4 "$host" 2>/dev/null | awk '{print $1}' | head -n1 || true)"
+  else
+    got="$(python3 - <<PY 2>/dev/null || true
+import socket
+try:
+  print(socket.getaddrinfo("$host", None, socket.AF_INET)[0][4][0])
+except Exception:
+  pass
+PY
+)"
+  fi
+  [[ -n "$got" && "$got" == "$want" ]]
+}
+
+resolve_domain() {
+  if [[ -n "$DOMAIN" ]]; then
+    return 0
+  fi
+  DOMAIN="$(detect_domain)"
+  if [[ -n "$DOMAIN" ]]; then
+    info "Detected domain: ${DOMAIN}"
+    return 0
+  fi
+  if want_auto; then
+    die "Domain required for first install. Re-run with --domain billing.example.com"
+  fi
+  DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "")"
+  [[ -n "$DOMAIN" ]] || die "Domain is required."
+}
+
+maybe_enable_ssl() {
+  [[ "$NO_SSL" == "1" ]] && { WITH_SSL=0; return 0; }
+  [[ "$WITH_SSL" == "1" ]] && return 0
+  [[ "$AUTO_SSL" != "1" ]] && return 0
+  [[ -n "$DOMAIN" ]] || return 0
+  if [[ -f "/etc/letsencrypt/live/${DOMAIN}/fullchain.pem" ]]; then
+    info "TLS cert already present for ${DOMAIN}"
+    WITH_SSL=0
+    return 0
+  fi
+  if dns_points_here "$DOMAIN"; then
+    ok "DNS for ${DOMAIN} points here — enabling Let's Encrypt"
+    WITH_SSL=1
+  else
+    info "DNS for ${DOMAIN} not pointing here yet — skipping SSL (run: sudo bash $0 ssl)"
+    WITH_SSL=0
+  fi
+}
+
+print_finish_card() {
+  local url scheme adminpass=""
+  scheme="http"
+  [[ -f "/etc/letsencrypt/live/${DOMAIN:-x}/fullchain.pem" || "$WITH_SSL" == "1" ]] && scheme="https"
+  url="${scheme}://${DOMAIN:-localhost}"
+  [[ -f "${APP_ROOT}/.adminpass" ]] && adminpass="$(tr -d '\r\n' < "${APP_ROOT}/.adminpass")"
+  echo
+  printf '  %s────────────────────────────────────────%s\n' "$C_CYAN" "$C_RESET"
+  ok "Spirit Billing is ready"
+  info "URL:    ${url}"
+  if [[ -n "$adminpass" ]]; then
+    info "Admin:  ${url}/admin"
+    info "Pass:   ${adminpass}"
+    info "Delete ${APP_ROOT}/.adminpass after first login"
+  fi
+  if [[ -z "$(env_get PANEL_APPLICATION_API_KEY 2>/dev/null || true)" && -z "$PANEL_KEY" ]]; then
+    info "Optional: set Panel link with --panel-url / --panel-key, or edit ${APP_ROOT}/.env"
+  fi
+  if [[ "$WITH_SSL" != "1" && ! -f "/etc/letsencrypt/live/${DOMAIN:-x}/fullchain.pem" ]]; then
+    info "TLS later: sudo bash ${CHECKOUT}/scripts/spirit.sh ssl"
+  fi
+  printf '  %s────────────────────────────────────────%s\n' "$C_CYAN" "$C_RESET"
+  echo
 }
 
 acquire_lock() {
@@ -327,8 +471,9 @@ ensure_checkout() {
     fi
     if [[ -n "$(repo_git status --porcelain 2>/dev/null)" ]]; then
       warn "Local changes in ${CHECKOUT}"
-      if confirm "Stash local changes and continue?" "y"; then
+      if want_auto || confirm "Stash local changes and continue?" "y"; then
         repo_git stash push -u -m "spirit-billing-installer $(date -u +%Y%m%dT%H%M%SZ)" || true
+        ok "Stashed local changes"
       else
         die "Update cancelled — clean or stash ${CHECKOUT} first."
       fi
@@ -383,6 +528,12 @@ run_deploy() {
   if [[ "$action" == "update" && "$FORCE_BUILD" == "1" ]]; then
     extra+=(--force-build)
   fi
+  [[ "$WITH_SSL" == "1" ]] && extra+=(--with-ssl)
+  [[ -n "$PANEL_URL" ]] && extra+=(--panel-url "$PANEL_URL")
+  [[ -n "$PANEL_WEB_URL" ]] && extra+=(--panel-web-url "$PANEL_WEB_URL")
+  [[ -n "$PANEL_KEY" ]] && extra+=(--panel-key "$PANEL_KEY")
+  [[ -n "$ADMIN_EMAIL" ]] && extra+=(--admin-email "$ADMIN_EMAIL")
+  [[ -n "$CERTBOT_EMAIL" ]] && extra+=(--email "$CERTBOT_EMAIL")
   bash "${CHECKOUT}/deploy/spirit-billing.sh" "$action" --repo-dir "$CHECKOUT" "${extra[@]}" "$@"
 }
 
@@ -447,7 +598,11 @@ backup_before_update() {
   fi
 
   if ! dump_database "$dest"; then
-    confirm "Continue update without a database backup?" "n" || die "Update cancelled. Backup folder: ${dest}"
+    if want_auto; then
+      warn "Continuing without database dump (auto mode). Backup folder: ${dest}"
+    else
+      confirm "Continue update without a database backup?" "n" || die "Update cancelled. Backup folder: ${dest}"
+    fi
   fi
   info "Backup folder: ${dest}"
 }
@@ -469,70 +624,78 @@ cmd_install() {
   require_root
   detect_os
   acquire_lock
-  phase_begin 4 "starting services"
+  phase_begin 5 "starting services"
 
-  if [[ -z "$DOMAIN" ]]; then
-    DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "")"
-  fi
-  [[ -n "$DOMAIN" ]] || die "Domain is required."
+  resolve_domain
 
   if [[ -z "$CHANNEL" ]]; then
-    if [[ -t 0 ]]; then
+    if want_auto; then
+      CHANNEL="$(read_saved_channel 2>/dev/null || echo dev)"
+    else
       local choice
-      choice="$(ask "Channel — release or dev" "dev")"
+      choice="$(ask "Channel — release or dev" "$(read_saved_channel 2>/dev/null || echo dev)")"
       case "$choice" in
         release|dev) CHANNEL="$choice" ;;
         *) CHANNEL="dev" ;;
       esac
-    else
-      CHANNEL="dev"
     fi
   fi
+  case "$CHANNEL" in release|dev) ;; *) CHANNEL="dev" ;; esac
+
+  if [[ -z "$PANEL_URL" ]] && ! want_auto && [[ -t 0 ]]; then
+    PANEL_URL="$(ask "Spirit-Panel URL (blank to skip)" "")"
+    if [[ -n "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
+      PANEL_KEY="$(ask "Panel Application API key (blank to skip)" "")"
+    fi
+  fi
+  [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
+
+  maybe_enable_ssl
 
   if is_installed; then
     warn "Existing install detected at ${APP_ROOT}"
-    confirm "Re-run install sync (keeps .env)?" "y" || die "Cancelled."
+    if ! want_auto; then
+      confirm "Re-run install sync (keeps .env)?" "y" || die "Cancelled."
+    fi
   fi
 
   phase "Fetch source"
   ensure_checkout
   phase "Install packages + build"
-  local extra=()
-  [[ "$WITH_SSL" == "1" ]] && extra+=(--with-ssl)
-  run_deploy install --domain "$DOMAIN" "${extra[@]}"
+  run_deploy install --domain "$DOMAIN"
   phase "Verify"
   poll_health || true
   phase "Done"
-  ok "Install finished"
-  info "Admin password (first install): ${APP_ROOT}/.adminpass — delete after login"
-  info "Edit Panel link: ${APP_ROOT}/.env  then: sudo bash ${CHECKOUT}/scripts/spirit.sh restart"
-  info "Docs: https://${LINK_DOCS}"
+  print_finish_card
 }
 
 cmd_update() {
   require_root
   detect_os
   acquire_lock
-  is_installed || die "No install at ${APP_ROOT}. Run: sudo bash $0 install --domain your.domain"
+  is_installed || die "No install at ${APP_ROOT}. Run: sudo bash $0 auto --domain your.domain -y"
   phase_begin 5 "restarting API"
 
   if [[ -z "$CHANNEL" ]]; then
     CHANNEL="$(read_saved_channel || true)"
-    if [[ -z "$CHANNEL" ]]; then
-      if [[ -t 0 ]]; then
-        CHANNEL="$(ask "Channel — release or dev" "dev")"
-      else
-        CHANNEL="dev"
-      fi
-    fi
+    [[ -z "$CHANNEL" ]] && CHANNEL="dev"
   fi
   case "$CHANNEL" in release|dev) ;; *) CHANNEL="dev" ;; esac
+
+  # Domain optional on update — useful for SSL / panel flags
+  if [[ -z "$DOMAIN" ]]; then
+    DOMAIN="$(detect_domain)"
+  fi
+  [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
+  maybe_enable_ssl
 
   local from to
   from="$(repo_git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   to="$(resolve_target_ref)"
   info "Update ${from} → ${to} (channel=${CHANNEL})"
-  confirm "Continue update?" "y" || die "Cancelled."
+  if ! want_auto; then
+    confirm "Continue update?" "y" || die "Cancelled."
+  fi
 
   phase "Backup"
   backup_before_update
@@ -545,8 +708,71 @@ cmd_update() {
   phase "Done"
   ok "Update finished"
   [[ -n "${LAST_BACKUP:-}" ]] && info "Backup kept at ${LAST_BACKUP}"
-  systemctl --no-pager --full status "$SERVICE_NAME" || true
-  echo
+  if [[ -n "$DOMAIN" ]]; then
+    print_finish_card
+  else
+    systemctl --no-pager --full status "$SERVICE_NAME" || true
+    echo
+  fi
+}
+
+cmd_auto() {
+  AUTO_MODE=1
+  ASSUME_YES=1
+  require_root
+  detect_os
+  if is_installed; then
+    info "Existing install found — running automatic update"
+    cmd_update
+  else
+    info "No install found — running automatic install"
+    cmd_install
+  fi
+}
+
+cmd_ssl() {
+  require_root
+  detect_os
+  is_installed || die "Install Spirit Billing first."
+  if [[ -z "$DOMAIN" ]]; then
+    DOMAIN="$(detect_domain)"
+  fi
+  [[ -n "$DOMAIN" ]] || die "Pass --domain billing.example.com"
+  if ! dns_points_here "$DOMAIN"; then
+    warn "DNS for ${DOMAIN} does not appear to point at this server yet."
+    confirm "Try certbot anyway?" "n" || die "Cancelled. Point DNS A/AAAA to this host, then re-run."
+  fi
+  local email_args=(--non-interactive --agree-tos)
+  if [[ -n "$CERTBOT_EMAIL" ]]; then
+    email_args+=(--email "$CERTBOT_EMAIL")
+  elif [[ -n "$ADMIN_EMAIL" ]]; then
+    email_args+=(--email "$ADMIN_EMAIL")
+  else
+    email_args+=(--register-unsafely-without-email)
+  fi
+  step "Requesting Let's Encrypt certificate for ${DOMAIN}"
+  command -v certbot >/dev/null 2>&1 || apt-get install -y certbot python3-certbot-nginx
+  certbot --nginx -d "$DOMAIN" "${email_args[@]}" \
+    || die "certbot failed — check DNS and nginx, then retry."
+  if [[ -f "${CHECKOUT}/deploy/nginx/spirit-billing.conf" ]]; then
+    sed "s/billing.example.com/${DOMAIN}/g" \
+      "${CHECKOUT}/deploy/nginx/spirit-billing.conf" > /etc/nginx/sites-available/spirit-billing
+  elif [[ -f "${APP_ROOT}/deploy/nginx/spirit-billing.conf" ]]; then
+    sed "s/billing.example.com/${DOMAIN}/g" \
+      "${APP_ROOT}/deploy/nginx/spirit-billing.conf" > /etc/nginx/sites-available/spirit-billing
+  fi
+  nginx -t && systemctl reload nginx
+  # Keep public URL https in .env
+  if [[ -f "${APP_ROOT}/.env" ]]; then
+    sed -i \
+      -e "s|^BILLING_URL=.*|BILLING_URL=https://${DOMAIN}|" \
+      -e "s|^CORS_ORIGINS=.*|CORS_ORIGINS=https://${DOMAIN}|" \
+      "${APP_ROOT}/.env"
+    systemctl restart "$SERVICE_NAME" || true
+  fi
+  WITH_SSL=1
+  ok "TLS enabled for ${DOMAIN}"
+  print_finish_card
 }
 
 cmd_status() {
@@ -611,11 +837,25 @@ usage() {
 Spirit-Billing installer v${SCRIPT_VERSION}
 
 Usage:
-  sudo bash $0                          Interactive menu
+  sudo bash $0                          Interactive menu (defaults to auto update/install)
+  sudo bash $0 auto --domain HOST [-y]  Fully automatic install-or-update
   sudo bash $0 install --domain HOST [-y] [--with-ssl] [--channel release|dev] [--ref REF]
   sudo bash $0 update [-y] [--channel release|dev] [--ref REF] [--force-build]
+  sudo bash $0 ssl [--domain HOST]      Issue / renew Let's Encrypt cert
   sudo bash $0 status | restart | logs | uninstall
   sudo bash $0 --version
+
+Panel (optional, written into .env during install/update):
+  --panel-url URL       Spirit-Panel base URL
+  --panel-web-url URL   Panel web URL (defaults to --panel-url)
+  --panel-key KEY       Application API key
+  --admin-email EMAIL   Seed admin email + certbot contact
+  --email EMAIL         Certbot contact email
+
+SSL:
+  --with-ssl            Force Let's Encrypt this run
+  --no-ssl              Never attempt certbot
+  (default)             Auto-enable SSL when DNS already points here
 
 --ref REF     Overrides --channel for this run only (exact tag or branch).
 --force-build Rebuild npm packages even when the source stamp is unchanged.
@@ -628,39 +868,44 @@ Environment:
 
 Download (safe):
   curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-  sudo bash /tmp/spirit-billing.sh
+  sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 EOF
 }
 
 menu() {
   banner
   if is_installed; then
-    printf '  %s1)%s Update\n' "$C_BOLD" "$C_RESET"
+    local det
+    det="$(detect_domain)"
+    [[ -n "$det" ]] && info "Detected install · domain ${det}"
+    printf '  %s1)%s Auto update (recommended)\n' "$C_BOLD" "$C_RESET"
     printf '  %s2)%s Status\n' "$C_BOLD" "$C_RESET"
     printf '  %s3)%s Restart\n' "$C_BOLD" "$C_RESET"
-    printf '  %s4)%s Logs\n' "$C_BOLD" "$C_RESET"
-    printf '  %s5)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
-    printf '  %s6)%s Uninstall\n' "$C_BOLD" "$C_RESET"
+    printf '  %s4)%s Enable SSL\n' "$C_BOLD" "$C_RESET"
+    printf '  %s5)%s Logs\n' "$C_BOLD" "$C_RESET"
+    printf '  %s6)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
+    printf '  %s7)%s Uninstall\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
     case "$choice" in
-      1) CMD="update" ;;
+      1) CMD="auto" ;;
       2) CMD="status" ;;
       3) CMD="restart" ;;
-      4) CMD="logs" ;;
-      5) CMD="install" ;;
-      6) CMD="uninstall" ;;
+      4) CMD="ssl" ;;
+      5) CMD="logs" ;;
+      6) CMD="install" ;;
+      7) CMD="uninstall" ;;
       0) exit 0 ;;
       *) die "Invalid choice" ;;
     esac
   else
-    printf '  %s1)%s Install\n' "$C_BOLD" "$C_RESET"
+    printf '  %s1)%s Auto install (recommended)\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
     case "$choice" in
-      1) CMD="install" ;;
+      1) CMD="auto" ;;
       0) exit 0 ;;
       *) die "Invalid choice" ;;
     esac
@@ -670,7 +915,7 @@ menu() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      install|update|status|restart|logs|uninstall|help|-h|--help)
+      install|update|auto|ssl|status|restart|logs|uninstall|help|-h|--help)
         CMD="$1"
         shift
         [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]] && { usage; exit 0; }
@@ -683,8 +928,14 @@ parse_args() {
       --domain) DOMAIN="${2:-}"; shift 2 ;;
       --channel) CHANNEL="${2:-}"; shift 2 ;;
       --ref) REF_OVERRIDE="${2:-}"; shift 2 ;;
-      --with-ssl) WITH_SSL=1; shift ;;
+      --with-ssl) WITH_SSL=1; AUTO_SSL=0; shift ;;
+      --no-ssl) NO_SSL=1; AUTO_SSL=0; WITH_SSL=0; shift ;;
       --force-build) FORCE_BUILD=1; shift ;;
+      --panel-url) PANEL_URL="${2:-}"; shift 2 ;;
+      --panel-web-url) PANEL_WEB_URL="${2:-}"; shift 2 ;;
+      --panel-key) PANEL_KEY="${2:-}"; shift 2 ;;
+      --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
+      --email) CERTBOT_EMAIL="${2:-}"; shift 2 ;;
       --checkout) CHECKOUT="${2:-}"; shift 2 ;;
       *)
         die "Unknown argument: $1 (try --help)"
@@ -697,11 +948,18 @@ main() {
   parse_args "$@"
   if [[ -z "$CMD" ]]; then
     require_root
-    menu
+    # Non-interactive bare run → fully automatic
+    if [[ ! -t 0 ]] || [[ "$ASSUME_YES" == "1" ]]; then
+      CMD="auto"
+    else
+      menu
+    fi
   fi
   case "$CMD" in
     install) cmd_install ;;
     update) cmd_update ;;
+    auto) cmd_auto ;;
+    ssl) cmd_ssl ;;
     status) cmd_status ;;
     restart) cmd_restart ;;
     logs) cmd_logs ;;

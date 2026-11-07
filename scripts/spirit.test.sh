@@ -166,6 +166,9 @@ expect_contains "$(cat "$TARGET")" "curl -fsSL https://raw.githubusercontent.com
 expect_contains "$(cat "$TARGET")" "Do NOT use: sudo bash <(curl" "no process sub"
 expect_contains "$(cat "$TARGET")" "--channel release|dev" "help channel"
 expect_contains "$(cat "$TARGET")" "Overrides --channel" "help ref"
+expect_contains "$(cat "$TARGET")" "cmd_auto" "auto command"
+expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
+expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
 expect_not_contains "$(cat "$TARGET")" "@{u}" "no upstream fallthrough"
 done_test
 
@@ -174,27 +177,33 @@ expect_contains "$(cat "$UPDATE_SH")" "--exclude 'uploads'" "exclude uploads"
 expect_contains "$(cat "$UPDATE_SH")" ".spirit-build-stamp" "stamp"
 expect_contains "$(cat "$UPDATE_SH")" "--force-build" "force-build"
 expect_contains "$(cat "$UPDATE_SH")" "poll_health" "health"
+expect_contains "$(cat "$UPDATE_SH")" "--panel-url" "update panel"
 done_test
 
-it "install.sh preserves uploads"
+it "install.sh preserves uploads and accepts panel flags"
 expect_contains "$(cat "$REPO_ROOT/deploy/install.sh")" "--exclude 'uploads'" "install uploads"
 expect_contains "$(cat "$REPO_ROOT/deploy/install.sh")" "Checking API health" "install health"
+expect_contains "$(cat "$REPO_ROOT/deploy/install.sh")" "apply_optional_env" "panel env"
+expect_contains "$(cat "$REPO_ROOT/deploy/install.sh")" "--panel-key" "panel key flag"
 done_test
 
 # ---------------------------------------------------------------------------
 section "CLI"
 setup_sandbox
 out="$(run_spirit --help)"
-it "help lists install and update"
+it "help lists auto install update and ssl"
 expect_contains "$out" "install" "help"
 expect_contains "$out" "update" "help"
+expect_contains "$out" "auto" "help"
+expect_contains "$out" "ssl" "help"
 expect_contains "$out" "--domain" "help"
+expect_contains "$out" "--panel-url" "help"
 expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.1.0"
-expect_contains "$out" "1.1.0" "version"
+it "prints script version 1.2.0"
+expect_contains "$out" "1.2.0" "version"
 done_test
 teardown_sandbox
 
@@ -428,6 +437,138 @@ setup_sandbox
 out="$(run_spirit status 2>&1 || true)"
 it "status warns when not installed"
 expect_contains "$out" "Not installed" "status"
+done_test
+teardown_sandbox
+
+# ---------------------------------------------------------------------------
+section "Domain / auto helpers"
+setup_sandbox
+APP_ROOT="$SANDBOX/app"
+mkdir -p "$APP_ROOT" "$SANDBOX/etc/nginx/sites-available"
+printf 'BILLING_URL=https://billing.example.com\n' > "$APP_ROOT/.env"
+printf 'server_name billing.example.com;\n' > "$SANDBOX/etc/nginx/sites-available/spirit-billing"
+eval "$(sed -n \
+  '/^env_get()/,/^}/p;/^domain_from_url()/,/^}/p;/^detect_domain()/,/^}/p;/^want_auto()/,/^}/p;/^public_ipv4()/,/^}/p;/^dns_points_here()/,/^}/p' \
+  "$TARGET")"
+# Point detect_domain at sandboxed nginx
+detect_domain() {
+  local d=""
+  if [[ -f "${APP_ROOT}/.env" ]]; then
+    d="$(env_get BILLING_URL 2>/dev/null || true)"
+    d="$(domain_from_url "$d")"
+  fi
+  if [[ -z "$d" && -f "$SANDBOX/etc/nginx/sites-available/spirit-billing" ]]; then
+    d="$(grep -E '^\s*server_name\s+' "$SANDBOX/etc/nginx/sites-available/spirit-billing" 2>/dev/null \
+      | head -n1 | awk '{print $2}' | tr -d ';\r')"
+  fi
+  printf '%s' "$d"
+}
+
+it "domain_from_url strips scheme and path"
+expect_eq "$(domain_from_url 'https://billing.example.com/admin')" "billing.example.com" "url"
+done_test
+
+it "detect_domain reads BILLING_URL"
+expect_eq "$(detect_domain)" "billing.example.com" "detect"
+done_test
+
+it "want_auto is true with ASSUME_YES"
+ASSUME_YES=1; AUTO_MODE=0
+want_auto
+expect_eq "$?" "0" "assume yes"
+ASSUME_YES=0; AUTO_MODE=1
+want_auto
+expect_eq "$?" "0" "auto mode"
+done_test
+
+# Stub public IP + dig for dns_points_here
+_stub dig <<'EOF'
+echo "203.0.113.10"
+exit 0
+EOF
+_stub curl <<'EOF'
+[[ "$*" == *ipify* || "$*" == *ifconfig* || "$*" == *icanhazip* ]] && { echo "203.0.113.10"; exit 0; }
+exit 0
+EOF
+it "dns_points_here matches public A record"
+dns_points_here "billing.example.com"
+expect_eq "$?" "0" "dns match"
+done_test
+
+_stub dig <<'EOF'
+echo "198.51.100.1"
+exit 0
+EOF
+it "dns_points_here rejects mismatched A record"
+if dns_points_here "billing.example.com"; then
+  TEST_ERRORS+="      expected dns mismatch"$'\n'
+fi
+done_test
+teardown_sandbox
+
+# ---------------------------------------------------------------------------
+section "Auto chooses update when installed"
+setup_sandbox
+mkdir -p "$SANDBOX/app/billing-api" "$SANDBOX/checkout/deploy" \
+  "$SANDBOX/checkout/billing-api" "$SANDBOX/checkout/billing-web" "$SANDBOX/checkout/scripts"
+printf 'NODE_ENV=production\n' > "$SANDBOX/app/.env"
+echo '{}' > "$SANDBOX/app/billing-api/package.json"
+# Minimal deploy shim that records the action
+cat > "$SANDBOX/checkout/deploy/spirit-billing.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'DEPLOY %s\n' "$*" >> "${CMDLOG}"
+exit 0
+EOF
+chmod +x "$SANDBOX/checkout/deploy/spirit-billing.sh"
+cp "$TARGET" "$SANDBOX/checkout/scripts/spirit.sh"
+# Fake git checkout
+(
+  cd "$SANDBOX/checkout"
+  git init -q
+  git config user.email t@t.com
+  git config user.name t
+  echo ok > billing-api/package.json
+  echo ok > billing-web/package.json
+  echo ok > deploy/install.sh
+  echo ok > deploy/update.sh
+  git add -A && git commit -q -m init
+)
+# Patch run_spirit paths already; stub mysqldump etc exist
+# Force ASSUME_YES auto path without actually apt-getting: source cmd_auto decision
+is_installed() { [[ -f "${APP_ROOT}/.env" && -f "${APP_ROOT}/billing-api/package.json" ]]; }
+APP_ROOT="$SANDBOX/app"
+CHECKOUT="$SANDBOX/checkout"
+it "is_installed true when .env and package.json exist"
+is_installed
+expect_eq "$?" "0" "installed"
+done_test
+
+# Bare invocation with -y selects auto (matches main())
+it "assume-yes default command is auto"
+CMD=""
+ASSUME_YES=1
+if [[ -z "$CMD" ]]; then
+  if [[ ! -t 0 ]] || [[ "$ASSUME_YES" == "1" ]]; then
+    CMD="auto"
+  fi
+fi
+expect_eq "$CMD" "auto" "default cmd"
+done_test
+teardown_sandbox
+
+# ---------------------------------------------------------------------------
+section "env_set_key (install/update)"
+setup_sandbox
+envf="$SANDBOX/test.env"
+printf 'PANEL_API_URL=https://old.example.com\nOTHER=1\n' > "$envf"
+eval "$(sed -n '/^env_set_key()/,/^}/p' "$REPO_ROOT/deploy/install.sh")"
+env_set_key "$envf" PANEL_API_URL "https://panel.example.com"
+env_set_key "$envf" PANEL_APPLICATION_API_KEY 'key"with"quotes'
+it "env_set_key replaces and appends quoted values"
+expect_contains "$(cat "$envf")" 'PANEL_API_URL="https://panel.example.com"' "panel url"
+expect_contains "$(cat "$envf")" 'PANEL_APPLICATION_API_KEY="key\"with\"quotes"' "panel key"
+expect_contains "$(cat "$envf")" 'OTHER=1' "preserves other"
+expect_not_contains "$(cat "$envf")" "old.example.com" "removed old"
 done_test
 teardown_sandbox
 

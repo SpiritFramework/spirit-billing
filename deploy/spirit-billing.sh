@@ -10,6 +10,8 @@
 #
 # Auto mode (install if missing, otherwise update):
 #   sudo bash deploy/spirit-billing.sh auto --domain client.example.com [--repo-dir PATH]
+# Prefer the GitHub bootstrap for fully automatic installs:
+#   sudo bash scripts/spirit.sh auto --domain client.example.com -y
 #
 # WinSCP / zip workflow example:
 #   sudo unzip -o Spirit-Billing.zip -d /home/Spirit-Billing

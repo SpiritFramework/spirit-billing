@@ -14,6 +14,11 @@
 #   --skip-db              Skip MariaDB database creation
 #   --skip-seed            Skip admin seed
 #   --with-ssl             Run certbot after nginx is up (DNS must point here)
+#   --panel-url URL        Write PANEL_API_URL (+ PANEL_WEB_URL if unset)
+#   --panel-web-url URL    Write PANEL_WEB_URL
+#   --panel-key KEY        Write PANEL_APPLICATION_API_KEY
+#   --admin-email EMAIL    Write ADMIN_EMAIL (seed)
+#   --email EMAIL          Certbot contact email
 
 set -euo pipefail
 
@@ -23,6 +28,11 @@ SKIP_PACKAGES=0
 SKIP_DB=0
 SKIP_SEED=0
 WITH_SSL=0
+PANEL_URL=""
+PANEL_WEB_URL=""
+PANEL_KEY=""
+ADMIN_EMAIL=""
+CERTBOT_EMAIL=""
 APP_ROOT="/opt/spirit-billing"
 WEB_ROOT="/var/www/spirit-billing"
 APP_USER="spirit-billing"
@@ -78,10 +88,17 @@ while [[ $# -gt 0 ]]; do
     --skip-db) SKIP_DB=1; shift ;;
     --skip-seed) SKIP_SEED=1; shift ;;
     --with-ssl) WITH_SSL=1; shift ;;
+    --panel-url) PANEL_URL="${2:-}"; shift 2 ;;
+    --panel-web-url) PANEL_WEB_URL="${2:-}"; shift 2 ;;
+    --panel-key) PANEL_KEY="${2:-}"; shift 2 ;;
+    --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
+    --email) CERTBOT_EMAIL="${2:-}"; shift 2 ;;
     -h|--help) usage ;;
     *) die "Unknown argument: $1" ;;
   esac
 done
+
+[[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root: sudo bash deploy/install.sh --domain billing.example.com"
 [[ -n "$DOMAIN" ]] || die "Missing --domain (e.g. billing.example.com)"
@@ -177,6 +194,38 @@ sync_application() {
     "$APP_ROOT/scripts/spirit.sh"
 }
 
+env_set_key() {
+  local file="$1" key="$2" val="$3" tmp
+  tmp="$(mktemp)"
+  # Drop existing key (if any), then append a safely quoted value
+  grep -vE "^${key}=" "$file" > "$tmp" || true
+  # Escape embedded double-quotes only
+  val="${val//\"/\\\"}"
+  printf '%s="%s"\n' "$key" "$val" >> "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
+apply_optional_env() {
+  local env_file="$APP_ROOT/.env"
+  [[ -f "$env_file" ]] || return 0
+  if [[ -n "$PANEL_URL" ]]; then
+    env_set_key "$env_file" PANEL_API_URL "$PANEL_URL"
+    log "Set PANEL_API_URL"
+  fi
+  if [[ -n "$PANEL_WEB_URL" ]]; then
+    env_set_key "$env_file" PANEL_WEB_URL "$PANEL_WEB_URL"
+    log "Set PANEL_WEB_URL"
+  fi
+  if [[ -n "$PANEL_KEY" ]]; then
+    env_set_key "$env_file" PANEL_APPLICATION_API_KEY "$PANEL_KEY"
+    log "Set PANEL_APPLICATION_API_KEY"
+  fi
+  if [[ -n "$ADMIN_EMAIL" ]]; then
+    env_set_key "$env_file" ADMIN_EMAIL "$ADMIN_EMAIL"
+  fi
+}
+
 ensure_env() {
   local env_file="$APP_ROOT/.env"
   if [[ -f "$env_file" ]]; then
@@ -200,6 +249,10 @@ ensure_env() {
       -e "s|CHANGE_ME_DB_PASSWORD|${dbpass}|g" \
       "$env_file"
 
+    if [[ -n "$ADMIN_EMAIL" ]]; then
+      env_set_key "$env_file" ADMIN_EMAIL "$ADMIN_EMAIL"
+    fi
+
     # Store generated DB password for MariaDB setup
     printf '%s\n' "$dbpass" > "$APP_ROOT/.dbpass"
     chmod 600 "$APP_ROOT/.dbpass"
@@ -212,6 +265,8 @@ ensure_env() {
     warn "Generated secrets written to $env_file"
     warn "One-time admin password saved at $APP_ROOT/.adminpass (delete after first login)"
   fi
+
+  apply_optional_env
 
   strip_crlf "$env_file"
   # Quote unquoted values that contain spaces (common WinSCP/template pitfall)
@@ -336,16 +391,30 @@ configure_firewall() {
 maybe_ssl() {
   if [[ "$WITH_SSL" -eq 1 ]]; then
     log "Requesting Let's Encrypt certificate for $DOMAIN"
-    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --register-unsafely-without-email \
-      || certbot --nginx -d "$DOMAIN" --agree-tos
+    local email_args=(--non-interactive --agree-tos)
+    if [[ -n "$CERTBOT_EMAIL" ]]; then
+      email_args+=(--email "$CERTBOT_EMAIL")
+    elif [[ -n "$ADMIN_EMAIL" ]]; then
+      email_args+=(--email "$ADMIN_EMAIL")
+    else
+      email_args+=(--register-unsafely-without-email)
+    fi
+    if ! certbot --nginx -d "$DOMAIN" "${email_args[@]}"; then
+      warn "certbot failed — continuing on HTTP. Fix DNS, then: sudo bash ${APP_ROOT}/scripts/spirit.sh ssl"
+      return 0
+    fi
     # Switch to full HTTPS template after certbot
     sed "s/billing.example.com/${DOMAIN}/g" \
       "$APP_ROOT/deploy/nginx/spirit-billing.conf" > /etc/nginx/sites-available/spirit-billing
     nginx -t && systemctl reload nginx
+    # Ensure public URLs use https
+    sed -i \
+      -e "s|^BILLING_URL=.*|BILLING_URL=https://${DOMAIN}|" \
+      -e "s|^CORS_ORIGINS=.*|CORS_ORIGINS=https://${DOMAIN}|" \
+      "$APP_ROOT/.env"
   else
     warn "SSL not enabled yet. After DNS points to this server:"
-    warn "  sudo certbot --nginx -d ${DOMAIN}"
-    warn "  Then copy deploy/nginx/spirit-billing.conf (or re-run install with --with-ssl)"
+    warn "  sudo bash ${APP_ROOT}/scripts/spirit.sh ssl --domain ${DOMAIN}"
   fi
 }
 
@@ -370,18 +439,16 @@ Permissions (locks)
 
 Next steps
 ----------
-  1. Edit ${APP_ROOT}/.env — set PANEL_API_URL, PANEL_WEB_URL, PANEL_APPLICATION_API_KEY
-  2. sudo systemctl restart spirit-billing
-  3. Point DNS A/AAAA for ${DOMAIN} to this server
-  4. sudo certbot --nginx -d ${DOMAIN}
-  5. Login at https://${DOMAIN}/admin  (password in ${APP_ROOT}/.adminpass)
-  6. rm -f ${APP_ROOT}/.adminpass ${APP_ROOT}/.dbpass
+  1. Login at https://${DOMAIN}/admin  (password in ${APP_ROOT}/.adminpass)
+  2. rm -f ${APP_ROOT}/.adminpass ${APP_ROOT}/.dbpass
+  3. If Panel was not passed on the CLI, set PANEL_* in ${APP_ROOT}/.env and restart
+  4. If SSL was skipped: point DNS here, then sudo bash ${APP_ROOT}/scripts/spirit.sh ssl
 
 Useful commands
 ---------------
-  sudo systemctl status spirit-billing
-  sudo journalctl -u spirit-billing -f
-  sudo nginx -t && sudo systemctl reload nginx
+  sudo bash ${APP_ROOT}/scripts/spirit.sh status
+  sudo bash ${APP_ROOT}/scripts/spirit.sh update -y
+  sudo bash ${APP_ROOT}/scripts/spirit.sh ssl
   curl -sS http://127.0.0.1:3001/health
 
 Docs: ${APP_ROOT}/deploy/INSTALL.md

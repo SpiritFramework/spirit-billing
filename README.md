@@ -225,17 +225,10 @@ GitHub: https://github.com/SpiritFramework/spirit-billing
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-sudo bash /tmp/spirit-billing.sh
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 ```
 
-Non-interactive:
-
-```bash
-sudo bash /tmp/spirit-billing.sh install --domain billing.example.com -y
-sudo bash /tmp/spirit-billing.sh update -y
-```
-
-The script clones into `/home/Spirit-Billing`, installs the live app under `/opt/spirit-billing`, and keeps `.env` + the database across updates. Prefer `--channel release` once you publish GitHub Releases.
+That installs on first run and updates on later runs (keeps `.env` + database). DNS-ready hosts get Let's Encrypt automatically. Optional Panel wiring in the same command: `--panel-url` / `--panel-key`. Prefer `--channel release` once you publish GitHub Releases.
 
 Installer self-tests:
 

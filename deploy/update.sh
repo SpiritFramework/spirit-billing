@@ -5,6 +5,8 @@
 #   sudo bash scripts/spirit.sh update -y
 #
 # Usage: sudo bash deploy/update.sh [--repo-dir PATH] [--skip-web] [--skip-api] [--force-build]
+#   [--panel-url URL] [--panel-web-url URL] [--panel-key KEY] [--admin-email EMAIL]
+#   [--with-ssl] [--email EMAIL]
 #
 # Does not rotate secrets or recreate the database.
 # Ticket uploads under billing-api/uploads/ are preserved.
@@ -15,6 +17,12 @@ REPO_DIR=""
 SKIP_WEB=0
 SKIP_API=0
 FORCE_BUILD=0
+WITH_SSL=0
+PANEL_URL=""
+PANEL_WEB_URL=""
+PANEL_KEY=""
+ADMIN_EMAIL=""
+CERTBOT_EMAIL=""
 APP_ROOT="/opt/spirit-billing"
 WEB_ROOT="/var/www/spirit-billing"
 APP_GROUP="spirit-billing"
@@ -145,15 +153,94 @@ sync_tree() {
   chmod -R u+rwX,g+rX "$APP_ROOT/billing-api/uploads"
 }
 
+env_set_key() {
+  local file="$1" key="$2" val="$3" tmp
+  tmp="$(mktemp)"
+  grep -vE "^${key}=" "$file" > "$tmp" || true
+  val="${val//\"/\\\"}"
+  printf '%s="%s"\n' "$key" "$val" >> "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+}
+
+apply_optional_env() {
+  local env_file="$APP_ROOT/.env"
+  [[ -f "$env_file" ]] || return 0
+  local changed=0
+  if [[ -n "$PANEL_URL" ]]; then
+    env_set_key "$env_file" PANEL_API_URL "$PANEL_URL"
+    changed=1
+  fi
+  if [[ -n "$PANEL_WEB_URL" ]]; then
+    env_set_key "$env_file" PANEL_WEB_URL "$PANEL_WEB_URL"
+    changed=1
+  fi
+  if [[ -n "$PANEL_KEY" ]]; then
+    env_set_key "$env_file" PANEL_APPLICATION_API_KEY "$PANEL_KEY"
+    changed=1
+  fi
+  if [[ -n "$ADMIN_EMAIL" ]]; then
+    env_set_key "$env_file" ADMIN_EMAIL "$ADMIN_EMAIL"
+    changed=1
+  fi
+  if [[ "$changed" -eq 1 ]]; then
+    chown root:"$APP_GROUP" "$env_file"
+    chmod 640 "$env_file"
+    log "Updated Panel / admin settings in .env"
+  fi
+}
+
+domain_from_env() {
+  local url d
+  url="$(grep -E '^BILLING_URL=' "$APP_ROOT/.env" | head -n1 | cut -d= -f2- | tr -d '\r"')"
+  d="${url#https://}"; d="${d#http://}"; d="${d%%/*}"; d="${d%%:*}"
+  printf '%s' "$d"
+}
+
+maybe_ssl_update() {
+  [[ "$WITH_SSL" -eq 1 ]] || return 0
+  local domain
+  domain="$(domain_from_env)"
+  [[ -n "$domain" ]] || { warn "Cannot enable SSL — BILLING_URL domain unknown"; return 0; }
+  log "Requesting Let's Encrypt certificate for $domain"
+  local email_args=(--non-interactive --agree-tos)
+  if [[ -n "$CERTBOT_EMAIL" ]]; then
+    email_args+=(--email "$CERTBOT_EMAIL")
+  elif [[ -n "$ADMIN_EMAIL" ]]; then
+    email_args+=(--email "$ADMIN_EMAIL")
+  else
+    email_args+=(--register-unsafely-without-email)
+  fi
+  command -v certbot >/dev/null 2>&1 || apt-get install -y certbot python3-certbot-nginx
+  if certbot --nginx -d "$domain" "${email_args[@]}"; then
+    sed "s/billing.example.com/${domain}/g" \
+      "$APP_ROOT/deploy/nginx/spirit-billing.conf" > /etc/nginx/sites-available/spirit-billing
+    nginx -t && systemctl reload nginx
+    env_set_key "$APP_ROOT/.env" BILLING_URL "https://${domain}"
+    env_set_key "$APP_ROOT/.env" CORS_ORIGINS "https://${domain}"
+  else
+    warn "certbot failed during update — site left as-is"
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --repo-dir) REPO_DIR="${2:-}"; shift 2 ;;
     --skip-web) SKIP_WEB=1; shift ;;
     --skip-api) SKIP_API=1; shift ;;
     --force-build) FORCE_BUILD=1; shift ;;
+    --with-ssl) WITH_SSL=1; shift ;;
+    --panel-url) PANEL_URL="${2:-}"; shift 2 ;;
+    --panel-web-url) PANEL_WEB_URL="${2:-}"; shift 2 ;;
+    --panel-key) PANEL_KEY="${2:-}"; shift 2 ;;
+    --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
+    --email) CERTBOT_EMAIL="${2:-}"; shift 2 ;;
+    --domain) shift 2 ;; # accepted/ignored — domain comes from .env on update
     *) die "Unknown argument: $1" ;;
   esac
 done
+
+[[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
 
 [[ "$(id -u)" -eq 0 ]] || die "Run as root"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -167,6 +254,8 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die "Another update is running"
 
 sync_tree
+apply_optional_env
+maybe_ssl_update
 
 BUILD=0
 if needs_build; then
