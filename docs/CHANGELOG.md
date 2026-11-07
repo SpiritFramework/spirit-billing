@@ -23,6 +23,8 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Fixed
 
+- Installer prompts (domain / Panel URL / API key) were skipped under `sudo` when stdin was not a TTY — now always use `/dev/tty` (installer **v1.3.1**)
+
 ### Security
 
 ---

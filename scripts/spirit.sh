@@ -19,7 +19,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.3.0"
+SCRIPT_VERSION="1.3.1"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -150,37 +150,58 @@ checkout_ready() {
   [[ -f "${CHECKOUT}/deploy/install.sh" && -d "${CHECKOUT}/billing-api" && -d "${CHECKOUT}/billing-web" ]]
 }
 
+# Prefer the controlling terminal so prompts work under sudo / $(...).
+tty_in() {
+  if [[ -r /dev/tty ]]; then
+    echo /dev/tty
+  elif [[ -t 0 ]]; then
+    echo /dev/stdin
+  else
+    return 1
+  fi
+}
+
+can_prompt() {
+  # Tests / CI can force non-interactive behaviour.
+  [[ "${SPIRIT_BILLING_FORCE_UNATTENDED:-0}" == "1" ]] && return 1
+  [[ "$ASSUME_YES" == "1" ]] && return 1
+  tty_in >/dev/null 2>&1
+}
+
 confirm() {
-  local prompt="$1" default="${2:-n}" reply hint="[y/N]"
+  local prompt="$1" default="${2:-n}" reply hint="[y/N]" tty
   [[ "$ASSUME_YES" == "1" ]] && return 0
-  [[ ! -t 0 ]] && return 1
+  tty="$(tty_in)" || return 1
   [[ "$default" == "y" ]] && hint="[Y/n]"
-  printf '  %s %s ' "$prompt" "$hint" >/dev/tty 2>/dev/null || printf '  %s %s ' "$prompt" "$hint"
-  read -r reply || return 1
+  printf '  %s %s ' "$prompt" "$hint" >"$tty"
+  read -r reply <"$tty" || return 1
   reply="${reply:-$default}"
   [[ "$reply" =~ ^[Yy]$ ]]
 }
 
 ask() {
-  local prompt="$1" default="${2:-}" reply
-  [[ ! -t 0 ]] && { echo "$default"; return; }
-  if [[ -n "$default" ]]; then
-    printf '  %s [%s]: ' "$prompt" "$default" >/dev/tty 2>/dev/null || printf '  %s [%s]: ' "$prompt" "$default"
-  else
-    printf '  %s: ' "$prompt" >/dev/tty 2>/dev/null || printf '  %s: ' "$prompt"
+  local prompt="$1" default="${2:-}" reply tty
+  if ! tty="$(tty_in)"; then
+    echo "$default"
+    return
   fi
-  read -r reply || true
+  if [[ -n "$default" ]]; then
+    printf '  %s [%s]: ' "$prompt" "$default" >"$tty"
+  else
+    printf '  %s: ' "$prompt" >"$tty"
+  fi
+  read -r reply <"$tty" || true
   echo "${reply:-$default}"
 }
 
 # Soft confirms (stash / continue update) — quiet during auto flows.
 want_auto() {
-  [[ "$ASSUME_YES" == "1" || "$AUTO_MODE" == "1" || ! -t 0 ]]
+  [[ "$ASSUME_YES" == "1" || "$AUTO_MODE" == "1" ]]
 }
 
-# Fully unattended: explicit -y or no TTY. Interactive "auto" still asks config questions.
+# Fully unattended: only explicit -y, or no usable terminal for questions.
 unattended() {
-  [[ "$ASSUME_YES" == "1" || ! -t 0 ]]
+  ! can_prompt
 }
 
 domain_from_url() {
@@ -247,39 +268,46 @@ PY
 }
 
 resolve_domain() {
+  local detected=""
   if [[ -n "$DOMAIN" ]]; then
-    return 0
-  fi
-  DOMAIN="$(detect_domain)"
-  if [[ -n "$DOMAIN" ]]; then
-    info "Detected domain: ${DOMAIN}"
     if unattended; then
       return 0
     fi
-    DOMAIN="$(ask "Public billing domain" "$DOMAIN")"
+    # Still confirm when domain was passed somehow / detected earlier
+    DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "$DOMAIN")"
     [[ -n "$DOMAIN" ]] || die "Domain is required."
     return 0
   fi
+
+  detected="$(detect_domain)"
   if unattended; then
-    die "Domain required for first install. Re-run with --domain billing.example.com"
+    DOMAIN="$detected"
+    [[ -n "$DOMAIN" ]] || die "Domain required for first install. Re-run interactively, or pass --domain billing.example.com -y"
+    info "Using domain: ${DOMAIN}"
+    return 0
   fi
-  DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "")"
+
+  echo
+  info "This is the public hostname clients will use (BILLING_URL)."
+  DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "$detected")"
   [[ -n "$DOMAIN" ]] || die "Domain is required."
 }
 
-# Interactive questions for Panel link + import (skipped only with -y / no TTY).
+# Interactive questions for Panel link + import (skipped only with -y / no terminal).
 prompt_panel_options() {
   if unattended; then
     [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
     return 0
   fi
 
+  echo
+  info "Spirit-Panel connection (Application API)"
   if [[ -z "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
     if confirm "Connect Spirit-Panel now? (recommended if Panel is already live)" "y"; then
       PANEL_URL="$(ask "Spirit-Panel URL (https://panel.example.com)" "")"
       [[ -n "$PANEL_URL" ]] || warn "No Panel URL entered — skipping Panel link"
     else
-      info "Skipping Panel link — you can set it later in Admin → Settings or re-run with --panel-url"
+      info "Skipping Panel link — set it later in Admin → Settings"
     fi
   elif [[ -z "$PANEL_URL" ]]; then
     PANEL_URL="$(ask "Spirit-Panel URL (https://panel.example.com)" "")"
@@ -287,7 +315,7 @@ prompt_panel_options() {
 
   if [[ -n "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
     PANEL_KEY="$(ask "Panel Application API key (sp_…)" "")"
-    [[ -n "$PANEL_KEY" ]] || warn "No API key entered — set PANEL_APPLICATION_API_KEY in .env before syncing"
+    [[ -n "$PANEL_KEY" ]] || warn "No API key entered — set it in Admin → Settings before syncing"
   fi
 
   [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
@@ -756,15 +784,11 @@ cmd_update() {
 
 cmd_auto() {
   AUTO_MODE=1
-  # Keep interactive questions (domain / Panel / sync) unless -y or piped/non-TTY.
-  if unattended; then
-    ASSUME_YES=1
-  fi
+  # Never force -y just because AUTO_MODE — questions use /dev/tty.
   require_root
   detect_os
   if is_installed; then
-    info "Existing install found — running automatic update"
-    # Updates: only prompt for Panel sync when interactive and Panel is configured
+    info "Existing install found — update"
     if ! unattended && [[ "$SYNC_PANEL" != "1" ]]; then
       if panel_configured || [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
         if confirm "Sync existing Panel servers into Billing after update?" "n"; then
@@ -776,7 +800,7 @@ cmd_auto() {
     fi
     cmd_update
   else
-    info "No install found — running automatic install"
+    info "No install found — starting install (you will be asked for domain + Panel)"
     cmd_install
   fi
 }
@@ -1203,8 +1227,8 @@ main() {
   parse_args "$@"
   if [[ -z "$CMD" ]]; then
     require_root
-    if [[ ! -t 0 ]]; then
-      die "This installer uses an interactive number menu. Run:
+    if ! can_prompt; then
+      die "This installer uses an interactive number menu. Run from a real terminal:
 
   curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
   sudo bash /tmp/spirit-billing.sh

@@ -215,8 +215,8 @@ expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.3.0"
-expect_contains "$out" "1.3.0" "version"
+it "prints script version 1.3.1"
+expect_contains "$out" "1.3.1" "version"
 done_test
 
 out="$(run_spirit --help)"
@@ -552,18 +552,26 @@ want_auto
 expect_eq "$?" "0" "auto mode"
 done_test
 
-eval "$(sed -n '/^unattended()/,/^}/p' "$TARGET")"
-it "unattended is false for interactive auto without -y"
-ASSUME_YES=0
-# Force TTY check: unattended is ASSUME_YES || ! -t 0 — when stdin is not a tty in CI this may be true.
-# Verify ASSUME_YES alone controls the explicit path used by prompt_panel_options.
+eval "$(sed -n '/^tty_in()/,/^}/p;/^can_prompt()/,/^}/p;/^unattended()/,/^}/p' "$TARGET")"
+it "unattended is true with -y or FORCE_UNATTENDED"
 ASSUME_YES=1
+SPIRIT_BILLING_FORCE_UNATTENDED=0
 unattended
 expect_eq "$?" "0" "yes flag"
+ASSUME_YES=0
+SPIRIT_BILLING_FORCE_UNATTENDED=1
+unattended
+expect_eq "$?" "0" "force unattended"
+done_test
+
+it "ask/confirm read from /dev/tty helper"
+expect_contains "$(sed -n '/^ask()/,/^}/p' "$TARGET")" 'read -r reply <"$tty"' "ask tty"
+expect_contains "$(sed -n '/^confirm()/,/^}/p' "$TARGET")" 'read -r reply <"$tty"' "confirm tty"
 done_test
 
 it "prompt_panel_options exists for interactive panel questions"
-expect_contains "$(type prompt_panel_options 2>/dev/null || sed -n '/^prompt_panel_options()/,/^}/p' "$TARGET")" "Spirit-Panel URL" "panel ask"
+expect_contains "$(sed -n '/^prompt_panel_options()/,/^}/p' "$TARGET")" "Spirit-Panel URL" "panel ask"
+expect_contains "$(sed -n '/^resolve_domain()/,/^}/p' "$TARGET")" "Public billing domain" "billing domain ask"
 done_test
 
 # Stub public IP + dig for dns_points_here
@@ -628,9 +636,9 @@ is_installed
 expect_eq "$?" "0" "installed"
 done_test
 
-# Bare invocation without a command requires a TTY menu (no silent auto)
-it "bare run without TTY is rejected (menu required)"
-out="$(run_spirit 2>&1 || true)"
+# Bare invocation with no terminal is rejected (menu required)
+it "bare run without terminal is rejected (menu required)"
+out="$(SPIRIT_BILLING_FORCE_UNATTENDED=1 run_spirit 2>&1 || true)"
 expect_contains "$out" "interactive number menu" "menu required"
 expect_contains "$out" "sudo bash /tmp/spirit-billing.sh" "curl instructions"
 done_test
