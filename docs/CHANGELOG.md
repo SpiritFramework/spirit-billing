@@ -17,7 +17,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Changed
 
-- Login / register pages redesigned: brand-forward visual panel, cleaner form fields, soft motion, and a clearer mobile layout
+- Login / register rebuilt as a full-bleed auth stage: hero brand, server-rack horizon, and a single interaction panel (replaces the old split-card shell)
 - Install / update is **menu-only** by default:  
   `curl … -o /tmp/spirit-billing.sh` then `sudo bash /tmp/spirit-billing.sh`  
   (installer **v1.3.0**). Docs no longer push flag-heavy one-liners as the primary path.
