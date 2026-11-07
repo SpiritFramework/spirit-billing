@@ -170,6 +170,7 @@ expect_contains "$(cat "$TARGET")" "cmd_auto" "auto command"
 expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
 expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
 expect_contains "$(cat "$TARGET")" "cmd_sync_panel" "sync panel"
+expect_contains "$(cat "$TARGET")" "cmd_repair" "repair command"
 expect_contains "$(cat "$TARGET")" "--sync-panel" "sync flag"
 expect_contains "$(cat "$TARGET")" "prompt_panel_options" "asks panel"
 expect_contains "$(cat "$TARGET")" "unattended()" "unattended vs auto"
@@ -216,8 +217,8 @@ expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.3.1"
-expect_contains "$out" "1.3.1" "version"
+it "prints script version 1.3.2"
+expect_contains "$out" "1.3.2" "version"
 done_test
 
 out="$(run_spirit --help)"

@@ -19,7 +19,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.3.1"
+SCRIPT_VERSION="1.3.2"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -967,6 +967,35 @@ cmd_restart() {
   systemctl --no-pager --full status "$SERVICE_NAME" || true
 }
 
+# Reinstall API/web dependencies and rebuild — fixes missing fastify / crash loops.
+cmd_repair() {
+  require_root
+  detect_os
+  acquire_lock
+  is_installed || die "No install at ${APP_ROOT}."
+  phase_begin 4 "restarting API"
+  ensure_packages_minimal
+  if [[ ! -d "${CHECKOUT}/.git" ]] && ! checkout_ready; then
+    CHANNEL="$(read_saved_channel 2>/dev/null || echo dev)"
+    ensure_checkout
+  elif [[ -d "${CHECKOUT}/.git" ]]; then
+    CHANNEL="$(read_saved_channel 2>/dev/null || echo dev)"
+    ensure_checkout
+  fi
+  FORCE_BUILD=1
+  rm -f "${APP_ROOT}/.spirit-build-stamp"
+  phase "Force rebuild dependencies"
+  info "Removing broken node_modules (if any)…"
+  rm -rf "${APP_ROOT}/billing-api/node_modules" "${APP_ROOT}/billing-web/node_modules"
+  phase "Redeploy"
+  run_deploy update --force-build
+  phase "Verify"
+  poll_health || true
+  phase "Done"
+  ok "Repair finished"
+  systemctl --no-pager --full status "$SERVICE_NAME" || true
+}
+
 cmd_logs() {
   require_root
   journalctl -u "$SERVICE_NAME" -f
@@ -1130,10 +1159,11 @@ Pick a number in the menu (install, update, sync panel, SSL, status, …).
 The script then asks for domain / Panel URL / API key when needed.
 
 Advanced (optional CI / automation):
-  sudo bash $0 auto|install|update|sync-panel|ssl|status|restart|logs|uninstall …
+  sudo bash $0 auto|install|update|repair|sync-panel|ssl|status|restart|logs|uninstall …
   Flags: -y --domain HOST --panel-url URL --panel-key KEY --sync-panel
          --with-ssl --no-ssl --channel release|dev --ref REF --force-build
          --admin-email EMAIL --email EMAIL --checkout PATH
+  sudo bash $0 repair -y     # reinstall node_modules + rebuild (502 / missing fastify)
   sudo bash $0 --version | --help
 
 Environment:
@@ -1155,25 +1185,27 @@ menu() {
     det="$(detect_domain)"
     [[ -n "$det" ]] && info "Installed · domain ${det}"
     printf '  %s1)%s Update\n' "$C_BOLD" "$C_RESET"
-    printf '  %s2)%s Sync panel (import existing servers / users)\n' "$C_BOLD" "$C_RESET"
-    printf '  %s3)%s Status\n' "$C_BOLD" "$C_RESET"
-    printf '  %s4)%s Restart\n' "$C_BOLD" "$C_RESET"
-    printf '  %s5)%s Enable SSL (Let'\''s Encrypt)\n' "$C_BOLD" "$C_RESET"
-    printf '  %s6)%s Logs\n' "$C_BOLD" "$C_RESET"
-    printf '  %s7)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
-    printf '  %s8)%s Uninstall (full purge)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s2)%s Repair deps (fix missing fastify / 502 crash loop)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s3)%s Sync panel (import existing servers / users)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s4)%s Status\n' "$C_BOLD" "$C_RESET"
+    printf '  %s5)%s Restart\n' "$C_BOLD" "$C_RESET"
+    printf '  %s6)%s Enable SSL (Let'\''s Encrypt)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s7)%s Logs\n' "$C_BOLD" "$C_RESET"
+    printf '  %s8)%s Reinstall / repair install\n' "$C_BOLD" "$C_RESET"
+    printf '  %s9)%s Uninstall (full purge)\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
     case "$choice" in
       1) CMD="auto" ;;
-      2) CMD="sync-panel" ;;
-      3) CMD="status" ;;
-      4) CMD="restart" ;;
-      5) CMD="ssl" ;;
-      6) CMD="logs" ;;
-      7) CMD="install" ;;
-      8) CMD="uninstall" ;;
+      2) CMD="repair" ;;
+      3) CMD="sync-panel" ;;
+      4) CMD="status" ;;
+      5) CMD="restart" ;;
+      6) CMD="ssl" ;;
+      7) CMD="logs" ;;
+      8) CMD="install" ;;
+      9) CMD="uninstall" ;;
       0) exit 0 ;;
       *) die "Invalid choice" ;;
     esac
@@ -1193,7 +1225,7 @@ menu() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      install|update|auto|sync-panel|ssl|status|restart|logs|uninstall|help|-h|--help)
+      install|update|auto|repair|sync-panel|ssl|status|restart|logs|uninstall|help|-h|--help)
         CMD="$1"
         shift
         [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]] && { usage; exit 0; }
@@ -1241,6 +1273,7 @@ main() {
     install) cmd_install ;;
     update) cmd_update ;;
     auto) cmd_auto ;;
+    repair) cmd_repair ;;
     sync-panel) cmd_sync_panel ;;
     ssl) cmd_ssl ;;
     status) cmd_status ;;

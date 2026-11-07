@@ -26,6 +26,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Installer prompts (domain / Panel URL / API key) were skipped under `sudo` when stdin was not a TTY — now always use `/dev/tty` (installer **v1.3.1**)
 - Password changes no longer fail with “Could not sync changes to the game panel” for elevated Panel accounts — billing password still updates; Panel password must be changed in the panel
 - Updater rebuilds when `node_modules` is missing/corrupt even if the source stamp is unchanged (fixes `Cannot find package …/fastify`)
+- Installer menu **Repair deps** / `spirit.sh repair` force-reinstalls `node_modules` and rebuilds (installer **v1.3.2**)
 
 ### Security
 
