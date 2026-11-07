@@ -1,35 +1,25 @@
 #!/usr/bin/env bash
 #
-# Spirit-Billing — one-command installer & updater
+# Spirit-Billing — installer & updater (interactive menu)
 #
 #   curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
 #   sudo bash /tmp/spirit-billing.sh
 #
+# That is the supported way to install and update. A number menu asks what to do
+# (install, update, sync panel, SSL, status, …) and then prompts for domain / Panel.
+#
 # Do NOT use: sudo bash <(curl ...)
 # sudo closes inherited fds, so /dev/fd/N from process substitution vanishes.
 #
-# Fully automatic (recommended):
-#   curl -fsSL …/scripts/spirit.sh -o /tmp/spirit-billing.sh
-#   sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
-#
-# Or with Panel wired up in the same run:
-#   sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
-#     --panel-url https://panel.example.com --panel-key YOUR_KEY -y
-#
-# Interactive menu by default. Non-interactive:
-#   sudo bash /tmp/spirit-billing.sh install --domain billing.example.com -y
-#   sudo bash /tmp/spirit-billing.sh update -y
-#   sudo bash /tmp/spirit-billing.sh update --channel release -y
-#   sudo bash /tmp/spirit-billing.sh status
+# Advanced / CI flags still work (see --help) but are optional.
 #
 # Channel (saved in ${CHECKOUT}/.spirit-channel):
 #   release  newest non-draft, non-prerelease GitHub Release tag
 #   dev      branch main
-# --ref REF overrides the channel for this run only.
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.2.2"
+SCRIPT_VERSION="1.3.0"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -1108,58 +1098,46 @@ usage() {
   cat <<EOF
 Spirit-Billing installer v${SCRIPT_VERSION}
 
-Usage:
-  sudo bash $0                          Interactive menu (defaults to auto update/install)
-  sudo bash $0 auto --domain HOST [-y]  Fully automatic install-or-update
-  sudo bash $0 install --domain HOST [-y] [--with-ssl] [--channel release|dev] [--ref REF]
-  sudo bash $0 update [-y] [--channel release|dev] [--ref REF] [--force-build]
-  sudo bash $0 sync-panel               Import existing Panel users/servers into Billing
-  sudo bash $0 ssl [--domain HOST]      Issue / renew Let's Encrypt cert
-  sudo bash $0 status | restart | logs | uninstall
-  sudo bash $0 --version
+Supported usage (interactive menu):
+  curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
+  sudo bash /tmp/spirit-billing.sh
 
-Panel (optional, written into .env during install/update):
-  --panel-url URL       Spirit-Panel base URL
-  --panel-web-url URL   Panel web URL (defaults to --panel-url)
-  --panel-key KEY       Application API key
-  --sync-panel          After install/update, import existing Panel servers + clients
-  --admin-email EMAIL   Seed admin email + certbot contact
-  --email EMAIL         Certbot contact email
+Pick a number in the menu (install, update, sync panel, SSL, status, …).
+The script then asks for domain / Panel URL / API key when needed.
 
-SSL:
-  --with-ssl            Force Let's Encrypt this run
-  --no-ssl              Never attempt certbot
-  (default)             Auto-enable SSL when DNS already points here
-
---ref REF     Overrides --channel for this run only (exact tag or branch).
---force-build Rebuild npm packages even when the source stamp is unchanged.
+Advanced (optional CI / automation):
+  sudo bash $0 auto|install|update|sync-panel|ssl|status|restart|logs|uninstall …
+  Flags: -y --domain HOST --panel-url URL --panel-key KEY --sync-panel
+         --with-ssl --no-ssl --channel release|dev --ref REF --force-build
+         --admin-email EMAIL --email EMAIL --checkout PATH
+  sudo bash $0 --version | --help
 
 Environment:
   SPIRIT_BILLING_REPO_URL     Git remote (default: ${REPO_URL})
   SPIRIT_BILLING_CHECKOUT     Clone path (default: ${CHECKOUT})
   SPIRIT_BILLING_APP_ROOT     Live app (default: ${APP_ROOT})
   SPIRIT_BILLING_BACKUP_DIR   Update backups (default: ${BACKUP_DIR})
-
-Download (safe):
-  curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-  sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 EOF
 }
 
 menu() {
   banner
+  printf '  %sRun this script any time with:%s\n' "$C_DIM" "$C_RESET"
+  printf '    curl -fsSL https://raw.githubusercontent.com/%s/main/scripts/spirit.sh -o /tmp/spirit-billing.sh\n' "$REPO_SLUG"
+  printf '    sudo bash /tmp/spirit-billing.sh\n\n'
+
   if is_installed; then
     local det
     det="$(detect_domain)"
-    [[ -n "$det" ]] && info "Detected install · domain ${det}"
-    printf '  %s1)%s Auto update (recommended)\n' "$C_BOLD" "$C_RESET"
-    printf '  %s2)%s Sync panel (import existing servers)\n' "$C_BOLD" "$C_RESET"
+    [[ -n "$det" ]] && info "Installed · domain ${det}"
+    printf '  %s1)%s Update\n' "$C_BOLD" "$C_RESET"
+    printf '  %s2)%s Sync panel (import existing servers / users)\n' "$C_BOLD" "$C_RESET"
     printf '  %s3)%s Status\n' "$C_BOLD" "$C_RESET"
     printf '  %s4)%s Restart\n' "$C_BOLD" "$C_RESET"
-    printf '  %s5)%s Enable SSL\n' "$C_BOLD" "$C_RESET"
+    printf '  %s5)%s Enable SSL (Let'\''s Encrypt)\n' "$C_BOLD" "$C_RESET"
     printf '  %s6)%s Logs\n' "$C_BOLD" "$C_RESET"
     printf '  %s7)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
-    printf '  %s8)%s Uninstall\n' "$C_BOLD" "$C_RESET"
+    printf '  %s8)%s Uninstall (full purge)\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
@@ -1176,7 +1154,7 @@ menu() {
       *) die "Invalid choice" ;;
     esac
   else
-    printf '  %s1)%s Auto install (recommended)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s1)%s Install Spirit-Billing\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
@@ -1225,12 +1203,15 @@ main() {
   parse_args "$@"
   if [[ -z "$CMD" ]]; then
     require_root
-    # Non-interactive bare run → fully automatic
-    if [[ ! -t 0 ]] || [[ "$ASSUME_YES" == "1" ]]; then
-      CMD="auto"
-    else
-      menu
+    if [[ ! -t 0 ]]; then
+      die "This installer uses an interactive number menu. Run:
+
+  curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
+  sudo bash /tmp/spirit-billing.sh
+
+(For CI only, pass a command: auto|install|update … with -y.)"
     fi
+    menu
   fi
   case "$CMD" in
     install) cmd_install ;;

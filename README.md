@@ -223,24 +223,18 @@ Branding, logo, accent colours, support email/URL, invoice due days, overdue sus
 Target: **Ubuntu 22.04 LTS** — nginx (TLS) → static SPA + API reverse proxy → MariaDB.  
 GitHub: https://github.com/SpiritFramework/spirit-billing
 
-### One-command install / update (like Spirit-Panel)
+### Install / update
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
+sudo bash /tmp/spirit-billing.sh
 ```
 
-That installs on first run and updates on later runs (keeps `.env` + database). DNS-ready hosts get Let's Encrypt automatically. Optional Panel wiring: `--panel-url` / `--panel-key`. If Panel was already live, add `--sync-panel` to import existing users/servers (or run `sync-panel` later). Prefer `--channel release` once you publish GitHub Releases.
-
-Installer self-tests:
-
-```bash
-bash scripts/spirit.test.sh
-```
+Use that every time. A number menu lets you install, update, sync Panel, enable SSL, check status, or uninstall. The script then asks for domain / Panel details as needed.
 
 Full guide — paths, nginx, systemd, troubleshooting:
 
-→ **[deploy/INSTALL.md](deploy/INSTALL.md)**
+→ **[deploy/INSTALL.md](deploy/INSTALL.md)** · Changelog: **[docs/CHANGELOG.md](docs/CHANGELOG.md)**
 
 | Path (default) | Purpose |
 |----------------|---------|

@@ -6,139 +6,56 @@ Repo: https://github.com/SpiritFramework/spirit-billing
 
 ---
 
-## One-command install / update (recommended)
-
-Same pattern as Spirit-Panel: download the bootstrap script, then run it.
+## Install / update (only supported method)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
+sudo bash /tmp/spirit-billing.sh
 ```
 
-That single command installs (first run) or updates (later runs): packages, MariaDB, nginx, build, systemd, health check. If DNS already points at the server, Let's Encrypt is enabled automatically. Panel can be wired in the same run:
+A **number menu** appears. Choose what you want:
 
-```bash
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
-  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY -y
-```
+| Fresh server | Already installed |
+|--------------|-------------------|
+| **1)** Install Spirit-Billing | **1)** Update |
+| **0)** Exit | **2)** Sync panel |
+| | **3)** Status |
+| | **4)** Restart |
+| | **5)** Enable SSL |
+| | **6)** Logs |
+| | **7)** Reinstall / repair |
+| | **8)** Uninstall (full purge) |
+| | **0)** Exit |
 
-If **Spirit-Panel was already live** (users + servers), import them in the same run:
+After you pick an option, the script asks for anything it still needs (billing domain, Spirit-Panel URL, Application API key, whether to sync existing Panel servers). Use the **same two commands** every time you update.
 
-```bash
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
-  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY \
-  --sync-panel -y
-```
+> **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo`. Always download to a file first.
 
-Or any time after install:
-
-```bash
-sudo bash /home/Spirit-Billing/scripts/spirit.sh sync-panel \
-  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY -y
-```
-
-That creates missing Billing client accounts (temporary passwords in `/opt/spirit-billing/.panel-import-passwords`), links them to Panel users, and imports servers as £0 custom services. Panel passwords are not changed.
-
-Interactive menu (no flags): pick **Auto install / Auto update** — it still asks for domain, Panel URL/API key, and whether to sync existing Panel servers. Use `-y` (or pipe without a TTY) for fully silent runs with CLI flags only.
-
-> **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo` (`/dev/fd/…: No such file or directory`). Download to a file, or pipe: `curl … | sudo bash -s -- auto --domain billing.example.com -y`.
-
-### Non-interactive
-
-```bash
-# Fully automatic install-or-update
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
-
-# Force Let's Encrypt even if DNS check is unsure
-sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com --with-ssl -y
-
-# Later updates (keeps /opt/spirit-billing/.env + database)
-sudo bash /tmp/spirit-billing.sh auto -y
-sudo bash /home/Spirit-Billing/scripts/spirit.sh auto -y
-
-# Enable TLS after DNS is ready
-sudo bash /home/Spirit-Billing/scripts/spirit.sh ssl
-```
-
-### Channels
-
-| Channel | Source |
-|---------|--------|
-| `dev` (default) | `main` branch |
-| `release` | Latest non-draft GitHub Release tag |
-
-```bash
-sudo bash /tmp/spirit-billing.sh update --channel release -y
-sudo bash /tmp/spirit-billing.sh update --ref V1.0.0.0 -y
-```
-
-### What the bootstrap does
+### What the menu runs do
 
 1. Clones or updates **`/home/Spirit-Billing`** from GitHub  
-2. **`auto`** → install if missing, otherwise update (no extra prompts with `-y`)  
-3. Detects domain from existing `.env` / nginx when possible  
-4. Auto-enables Let's Encrypt when DNS already points here (`--no-ssl` to skip, `--with-ssl` to force)  
-5. Optional `--panel-url` / `--panel-key` / `--admin-email` written straight into `.env`  
-6. **Update** → backs up `.env`, ticket uploads, and a DB dump; pulls the selected ref; runs `deploy/update.sh`  
-7. Skips npm rebuild when commit + lockfiles + Prisma schema are unchanged (`--force-build` to override)  
-8. Preserves `billing-api/uploads/`; polls `/health`; prints admin URL + password on first install  
-9. Menu also covers **ssl**, **status**, **restart**, **logs**, **uninstall** (full purge)
-
-### Full uninstall
-
-Removes the service, nginx site, app + web roots, git checkout, backups, MariaDB `spirit_billing` DB/user, system user, locks, and the billing Let's Encrypt cert. Does **not** remove nginx/MariaDB/Node packages or Spirit-Panel.
-
-```bash
-sudo bash /home/Spirit-Billing/scripts/spirit.sh uninstall -y
-# or:
-sudo bash /opt/spirit-billing/scripts/spirit.sh uninstall -y
-```
+2. **Install** — packages, MariaDB, nginx, build, systemd, health check; TLS if DNS already points here  
+3. **Update** — backup `.env` / uploads / DB dump, pull source, redeploy (keeps database)  
+4. **Sync panel** — import existing Panel users/servers; temp billing passwords in `/opt/spirit-billing/.panel-import-passwords`  
+5. **Uninstall** — removes service, nginx site, app trees, checkout, backups, MariaDB `spirit_billing`, system user, billing cert (not nginx/MariaDB/Node packages or Spirit-Panel)
 
 ### Installer tests
-
-From a checkout (Git Bash / Linux):
 
 ```bash
 bash scripts/spirit.test.sh
 ```
 
-After install the script prints the admin URL and password. Only edit `.env` if you did not pass `--panel-url` / `--panel-key`.
-
-If DNS was not ready during install:
-
-```bash
-sudo bash /home/Spirit-Billing/scripts/spirit.sh ssl
-```
-
 ---
 
-## Local helper (already-cloned tree)
+## Advanced / offline (optional)
 
-If the repo is already on the server:
-
-```bash
-sudo bash deploy/spirit-billing.sh install --domain billing.example.com
-sudo bash deploy/spirit-billing.sh update
-sudo bash deploy/spirit-billing.sh status
-sudo bash deploy/spirit-billing.sh restart
-sudo bash deploy/spirit-billing.sh logs
-```
-
-Optional flags for `update`:
-
-| Flag | Meaning |
-|------|---------|
-| `--repo-dir PATH` | Source tree to sync from (default: parent of `deploy/`) |
-| `--skip-web` | Only rebuild/restart API |
-| `--skip-api` | Only rebuild SPA |
-
-### Zip / WinSCP fallback
+Flags and `deploy/spirit-billing.sh` remain for CI or zip/WinSCP workflows. Prefer the curl + menu above for normal servers.
 
 ```bash
+# Zip fallback → then use the menu from the checkout copy
 sudo unzip -o Spirit-Billing.zip -d /home/Spirit-Billing
 sudo find /home/Spirit-Billing/deploy /home/Spirit-Billing/scripts -name '*.sh' -exec sed -i 's/\r$//' {} +
-cd /home/Spirit-Billing
-sudo bash deploy/spirit-billing.sh auto --domain billing.example.com --repo-dir /home/Spirit-Billing
+sudo bash /home/Spirit-Billing/scripts/spirit.sh
 ```
 
 ---

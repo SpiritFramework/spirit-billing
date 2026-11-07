@@ -7,12 +7,15 @@
 | [../deploy/INSTALL.md](../deploy/INSTALL.md) | Production install, update, sync-panel, uninstall |
 | [../README.md](../README.md) | Product overview and feature list |
 
+## Install / update
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
+sudo bash /tmp/spirit-billing.sh
+```
+
 ## Quick links
 
 ```bash
-# Installer self-tests
 bash scripts/spirit.test.sh
-
-# Changelog (this repo)
-# → docs/CHANGELOG.md
 ```

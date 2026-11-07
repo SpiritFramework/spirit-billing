@@ -164,8 +164,8 @@ section "Static checks"
 it "installer documents safe curl download (not process substitution)"
 expect_contains "$(cat "$TARGET")" "curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh" "curl"
 expect_contains "$(cat "$TARGET")" "Do NOT use: sudo bash <(curl" "no process sub"
+expect_contains "$(cat "$TARGET")" "Supported usage (interactive menu)" "menu first"
 expect_contains "$(cat "$TARGET")" "--channel release|dev" "help channel"
-expect_contains "$(cat "$TARGET")" "Overrides --channel" "help ref"
 expect_contains "$(cat "$TARGET")" "cmd_auto" "auto command"
 expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
 expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
@@ -173,6 +173,7 @@ expect_contains "$(cat "$TARGET")" "cmd_sync_panel" "sync panel"
 expect_contains "$(cat "$TARGET")" "--sync-panel" "sync flag"
 expect_contains "$(cat "$TARGET")" "prompt_panel_options" "asks panel"
 expect_contains "$(cat "$TARGET")" "unattended()" "unattended vs auto"
+expect_contains "$(cat "$TARGET")" "interactive number menu" "bare run needs menu"
 expect_contains "$(cat "$TARGET")" "drop_billing_database" "uninstall drops DB"
 expect_contains "$(cat "$TARGET")" "revoke_billing_certificate" "uninstall cert"
 expect_contains "$(cat "$TARGET")" "DROP DATABASE IF EXISTS" "sql drop"
@@ -214,8 +215,15 @@ expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.2.2"
-expect_contains "$out" "1.2.2" "version"
+it "prints script version 1.3.0"
+expect_contains "$out" "1.3.0" "version"
+done_test
+
+out="$(run_spirit --help)"
+it "help leads with curl + menu as supported usage"
+expect_contains "$out" "Supported usage (interactive menu)" "help menu"
+expect_contains "$out" "sudo bash /tmp/spirit-billing.sh" "help curl path"
+expect_contains "$out" "raw.githubusercontent.com/SpiritFramework/spirit-billing/main/scripts/spirit.sh" "help raw url"
 done_test
 teardown_sandbox
 
@@ -620,16 +628,11 @@ is_installed
 expect_eq "$?" "0" "installed"
 done_test
 
-# Bare invocation with -y selects auto (matches main())
-it "assume-yes default command is auto"
-CMD=""
-ASSUME_YES=1
-if [[ -z "$CMD" ]]; then
-  if [[ ! -t 0 ]] || [[ "$ASSUME_YES" == "1" ]]; then
-    CMD="auto"
-  fi
-fi
-expect_eq "$CMD" "auto" "default cmd"
+# Bare invocation without a command requires a TTY menu (no silent auto)
+it "bare run without TTY is rejected (menu required)"
+out="$(run_spirit 2>&1 || true)"
+expect_contains "$out" "interactive number menu" "menu required"
+expect_contains "$out" "sudo bash /tmp/spirit-billing.sh" "curl instructions"
 done_test
 teardown_sandbox
 

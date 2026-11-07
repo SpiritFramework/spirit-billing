@@ -17,6 +17,10 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Changed
 
+- Install / update is **menu-only** by default:  
+  `curl … -o /tmp/spirit-billing.sh` then `sudo bash /tmp/spirit-billing.sh`  
+  (installer **v1.3.0**). Docs no longer push flag-heavy one-liners as the primary path.
+
 ### Fixed
 
 ### Security
