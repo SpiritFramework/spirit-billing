@@ -6,6 +6,8 @@ It provides a branded web portal where customers browse plans, place orders, pay
 
 > Billing and Panel are **separate applications** with separate deploys. This repo contains only the billing API, web UI, and production scripts.
 
+**Docs:** [docs/](docs/) · **Changelog:** [docs/CHANGELOG.md](docs/CHANGELOG.md) · **Install:** [deploy/INSTALL.md](deploy/INSTALL.md)
+
 ---
 
 ## Preview
@@ -283,6 +285,17 @@ cd /opt/spirit-billing/billing-api
 npx prisma db push    # or migrate deploy if using migrations
 sudo systemctl restart spirit-billing
 ```
+
+---
+
+## Documentation
+
+| Doc | Description |
+|-----|-------------|
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Release history — add an entry for every update |
+| [docs/releasing.md](docs/releasing.md) | How to version, tag, and publish |
+| [docs/README.md](docs/README.md) | Docs index |
+| [deploy/INSTALL.md](deploy/INSTALL.md) | VPS install / update / sync-panel / uninstall |
 
 ---
 
