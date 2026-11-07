@@ -39,7 +39,7 @@ sudo bash /home/Spirit-Billing/scripts/spirit.sh sync-panel \
 
 That creates missing Billing client accounts (temporary passwords in `/opt/spirit-billing/.panel-import-passwords`), links them to Panel users, and imports servers as £0 custom services. Panel passwords are not changed.
 
-Interactive menu (no flags): pick **Auto install / Auto update**, or **Sync panel**.
+Interactive menu (no flags): pick **Auto install / Auto update** — it still asks for domain, Panel URL/API key, and whether to sync existing Panel servers. Use `-y` (or pipe without a TTY) for fully silent runs with CLI flags only.
 
 > **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo` (`/dev/fd/…: No such file or directory`). Download to a file, or pipe: `curl … | sudo bash -s -- auto --domain billing.example.com -y`.
 

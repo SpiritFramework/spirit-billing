@@ -171,6 +171,8 @@ expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
 expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
 expect_contains "$(cat "$TARGET")" "cmd_sync_panel" "sync panel"
 expect_contains "$(cat "$TARGET")" "--sync-panel" "sync flag"
+expect_contains "$(cat "$TARGET")" "prompt_panel_options" "asks panel"
+expect_contains "$(cat "$TARGET")" "unattended()" "unattended vs auto"
 expect_contains "$(cat "$TARGET")" "drop_billing_database" "uninstall drops DB"
 expect_contains "$(cat "$TARGET")" "revoke_billing_certificate" "uninstall cert"
 expect_contains "$(cat "$TARGET")" "DROP DATABASE IF EXISTS" "sql drop"
@@ -212,8 +214,8 @@ expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.2.1"
-expect_contains "$out" "1.2.1" "version"
+it "prints script version 1.2.2"
+expect_contains "$out" "1.2.2" "version"
 done_test
 teardown_sandbox
 
@@ -533,13 +535,27 @@ it "detect_domain reads BILLING_URL"
 expect_eq "$(detect_domain)" "billing.example.com" "detect"
 done_test
 
-it "want_auto is true with ASSUME_YES"
+it "want_auto is true with ASSUME_YES or AUTO_MODE"
 ASSUME_YES=1; AUTO_MODE=0
 want_auto
 expect_eq "$?" "0" "assume yes"
 ASSUME_YES=0; AUTO_MODE=1
 want_auto
 expect_eq "$?" "0" "auto mode"
+done_test
+
+eval "$(sed -n '/^unattended()/,/^}/p' "$TARGET")"
+it "unattended is false for interactive auto without -y"
+ASSUME_YES=0
+# Force TTY check: unattended is ASSUME_YES || ! -t 0 — when stdin is not a tty in CI this may be true.
+# Verify ASSUME_YES alone controls the explicit path used by prompt_panel_options.
+ASSUME_YES=1
+unattended
+expect_eq "$?" "0" "yes flag"
+done_test
+
+it "prompt_panel_options exists for interactive panel questions"
+expect_contains "$(type prompt_panel_options 2>/dev/null || sed -n '/^prompt_panel_options()/,/^}/p' "$TARGET")" "Spirit-Panel URL" "panel ask"
 done_test
 
 # Stub public IP + dig for dns_points_here

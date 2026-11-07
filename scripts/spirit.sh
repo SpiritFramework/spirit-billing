@@ -29,7 +29,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.2.1"
+SCRIPT_VERSION="1.2.2"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -183,9 +183,14 @@ ask() {
   echo "${reply:-$default}"
 }
 
-# Prefer silent "yes" when auto / -y / non-interactive.
+# Soft confirms (stash / continue update) — quiet during auto flows.
 want_auto() {
   [[ "$ASSUME_YES" == "1" || "$AUTO_MODE" == "1" || ! -t 0 ]]
+}
+
+# Fully unattended: explicit -y or no TTY. Interactive "auto" still asks config questions.
+unattended() {
+  [[ "$ASSUME_YES" == "1" || ! -t 0 ]]
 }
 
 domain_from_url() {
@@ -258,13 +263,50 @@ resolve_domain() {
   DOMAIN="$(detect_domain)"
   if [[ -n "$DOMAIN" ]]; then
     info "Detected domain: ${DOMAIN}"
+    if unattended; then
+      return 0
+    fi
+    DOMAIN="$(ask "Public billing domain" "$DOMAIN")"
+    [[ -n "$DOMAIN" ]] || die "Domain is required."
     return 0
   fi
-  if want_auto; then
+  if unattended; then
     die "Domain required for first install. Re-run with --domain billing.example.com"
   fi
   DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "")"
   [[ -n "$DOMAIN" ]] || die "Domain is required."
+}
+
+# Interactive questions for Panel link + import (skipped only with -y / no TTY).
+prompt_panel_options() {
+  if unattended; then
+    [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
+    return 0
+  fi
+
+  if [[ -z "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
+    if confirm "Connect Spirit-Panel now? (recommended if Panel is already live)" "y"; then
+      PANEL_URL="$(ask "Spirit-Panel URL (https://panel.example.com)" "")"
+      [[ -n "$PANEL_URL" ]] || warn "No Panel URL entered — skipping Panel link"
+    else
+      info "Skipping Panel link — you can set it later in Admin → Settings or re-run with --panel-url"
+    fi
+  elif [[ -z "$PANEL_URL" ]]; then
+    PANEL_URL="$(ask "Spirit-Panel URL (https://panel.example.com)" "")"
+  fi
+
+  if [[ -n "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
+    PANEL_KEY="$(ask "Panel Application API key (sp_…)" "")"
+    [[ -n "$PANEL_KEY" ]] || warn "No API key entered — set PANEL_APPLICATION_API_KEY in .env before syncing"
+  fi
+
+  [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
+
+  if [[ "$SYNC_PANEL" != "1" ]] && [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
+    if confirm "Panel already has users/servers — sync them into Billing after install?" "y"; then
+      SYNC_PANEL=1
+    fi
+  fi
 }
 
 maybe_enable_ssl() {
@@ -633,7 +675,7 @@ cmd_install() {
   resolve_domain
 
   if [[ -z "$CHANNEL" ]]; then
-    if want_auto; then
+    if unattended || [[ "$AUTO_MODE" == "1" ]]; then
       CHANNEL="$(read_saved_channel 2>/dev/null || echo dev)"
     else
       local choice
@@ -646,19 +688,7 @@ cmd_install() {
   fi
   case "$CHANNEL" in release|dev) ;; *) CHANNEL="dev" ;; esac
 
-  if [[ -z "$PANEL_URL" ]] && ! want_auto && [[ -t 0 ]]; then
-    PANEL_URL="$(ask "Spirit-Panel URL (blank to skip)" "")"
-    if [[ -n "$PANEL_URL" && -z "$PANEL_KEY" ]]; then
-      PANEL_KEY="$(ask "Panel Application API key (blank to skip)" "")"
-    fi
-  fi
-  [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
-
-  if [[ "$SYNC_PANEL" != "1" ]] && ! want_auto && [[ -t 0 ]] && [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
-    if confirm "Panel already has users/servers — import them into Billing after install?" "y"; then
-      SYNC_PANEL=1
-    fi
-  fi
+  prompt_panel_options
 
   maybe_enable_ssl
 
@@ -736,11 +766,24 @@ cmd_update() {
 
 cmd_auto() {
   AUTO_MODE=1
-  ASSUME_YES=1
+  # Keep interactive questions (domain / Panel / sync) unless -y or piped/non-TTY.
+  if unattended; then
+    ASSUME_YES=1
+  fi
   require_root
   detect_os
   if is_installed; then
     info "Existing install found — running automatic update"
+    # Updates: only prompt for Panel sync when interactive and Panel is configured
+    if ! unattended && [[ "$SYNC_PANEL" != "1" ]]; then
+      if panel_configured || [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
+        if confirm "Sync existing Panel servers into Billing after update?" "n"; then
+          SYNC_PANEL=1
+        fi
+      elif confirm "Connect / sync Spirit-Panel after update?" "n"; then
+        prompt_panel_options
+      fi
+    fi
     cmd_update
   else
     info "No install found — running automatic install"
