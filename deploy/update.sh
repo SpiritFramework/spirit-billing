@@ -93,19 +93,58 @@ write_stamp() {
   chmod 644 "$STAMP_FILE" 2>/dev/null || true
 }
 
-needs_build() {
-  [[ "$FORCE_BUILD" -eq 1 ]] && return 0
-  [[ ! -f "$STAMP_FILE" ]] && return 0
-  [[ ! -f "$APP_ROOT/billing-api/dist/index.js" ]] && return 0
-  [[ ! -f "$WEB_ROOT/index.html" ]] && return 0
-  # Stamp can be fresh while node_modules was deleted/corrupt — never skip then.
-  [[ ! -d "$APP_ROOT/billing-api/node_modules/fastify" ]] && return 0
-  [[ ! -d "$APP_ROOT/billing-api/node_modules/@prisma/client" ]] && return 0
-  [[ ! -d "$APP_ROOT/billing-web/node_modules" && ! -f "$WEB_ROOT/index.html" ]] && return 0
+# Return 0 when installed deps look loadable; 1 when missing/corrupt.
+deps_healthy() {
+  local api_nm="$APP_ROOT/billing-api/node_modules"
+  local web_nm="$APP_ROOT/billing-web/node_modules"
+  local pkg
+
+  for pkg in fastify @prisma/client bcryptjs zod; do
+    [[ -f "$api_nm/$pkg/package.json" ]] || return 1
+  done
+  # prisma CLI is re-added after prune; needed for db push on every update
+  [[ -f "$api_nm/prisma/package.json" || -x "$api_nm/.bin/prisma" ]] || return 1
+
+  # Directory present is not enough — confirm Node can resolve the runtime.
+  if ! (
+    cd "$APP_ROOT/billing-api" || exit 1
+    node --input-type=module -e "await import('fastify'); await import('@prisma/client');" >/dev/null 2>&1
+  ); then
+    return 1
+  fi
+
+  # Web tree is needed whenever we may rebuild; also if dist is missing.
+  if [[ "$SKIP_WEB" -eq 0 ]]; then
+    if [[ ! -f "$WEB_ROOT/index.html" ]]; then
+      [[ -f "$web_nm/vite/package.json" ]] || return 1
+      [[ -f "$web_nm/react/package.json" ]] || return 1
+    fi
+  fi
+
+  return 0
+}
+
+# Echo a short reason on stdout when a rebuild is required; empty = skip ok.
+build_reason() {
+  [[ "$FORCE_BUILD" -eq 1 ]] && { echo "forced (--force-build)"; return; }
+  [[ ! -f "$STAMP_FILE" ]] && { echo "no build stamp yet"; return; }
+  [[ ! -f "$APP_ROOT/billing-api/dist/index.js" ]] && { echo "API dist missing"; return; }
+  [[ "$SKIP_WEB" -eq 0 && ! -f "$WEB_ROOT/index.html" ]] && { echo "web dist missing"; return; }
+  if ! deps_healthy; then
+    echo "dependencies missing or broken"
+    return
+  fi
   local now prev
   now="$(compute_stamp)"
   prev="$(tr -d '\r\n' < "$STAMP_FILE" 2>/dev/null || true)"
-  [[ "$now" != "$prev" ]]
+  [[ "$now" != "$prev" ]] && { echo "source stamp changed"; return; }
+  echo ""
+}
+
+needs_build() {
+  local reason
+  reason="$(build_reason)"
+  [[ -n "$reason" ]]
 }
 
 poll_health() {
@@ -262,11 +301,12 @@ apply_optional_env
 maybe_ssl_update
 
 BUILD=0
-if needs_build; then
+BUILD_REASON="$(build_reason)"
+if [[ -n "$BUILD_REASON" ]]; then
   BUILD=1
-  log "Build required (source or lockfile/schema changed)"
+  log "Build required — $BUILD_REASON"
 else
-  log "Source stamp unchanged — skipping npm install/build (use --force-build to override)"
+  log "Deps healthy and source stamp unchanged — skipping npm install/build (use --force-build to override)"
 fi
 
 if [[ "$SKIP_API" -eq 0 ]]; then

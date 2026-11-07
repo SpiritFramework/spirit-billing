@@ -190,7 +190,8 @@ expect_contains "$(cat "$UPDATE_SH")" ".spirit-build-stamp" "stamp"
 expect_contains "$(cat "$UPDATE_SH")" "--force-build" "force-build"
 expect_contains "$(cat "$UPDATE_SH")" "poll_health" "health"
 expect_contains "$(cat "$UPDATE_SH")" "--panel-url" "update panel"
-expect_contains "$(cat "$UPDATE_SH")" "node_modules/fastify" "rebuild if deps missing"
+expect_contains "$(cat "$UPDATE_SH")" "deps_healthy" "verify deps on update"
+expect_contains "$(cat "$UPDATE_SH")" "import('fastify')" "load-check fastify on update"
 done_test
 
 it "install.sh preserves uploads and accepts panel flags"

@@ -24,6 +24,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Fixed
 
+- Update always **verifies** API deps (package files + `import('fastify')` / `@prisma/client`) and rebuilds when anything is missing or broken — not only when the source stamp changes (installer **v1.3.3**)
 - Installer prompts (domain / Panel URL / API key) were skipped under `sudo` when stdin was not a TTY — now always use `/dev/tty` (installer **v1.3.1**)
 - Password changes no longer fail with “Could not sync changes to the game panel” for elevated Panel accounts — billing password still updates; Panel password must be changed in the panel
 - Updater rebuilds when `node_modules` is missing/corrupt even if the source stamp is unchanged (fixes `Cannot find package …/fastify`)
