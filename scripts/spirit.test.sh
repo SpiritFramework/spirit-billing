@@ -171,6 +171,10 @@ expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
 expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
 expect_contains "$(cat "$TARGET")" "cmd_sync_panel" "sync panel"
 expect_contains "$(cat "$TARGET")" "--sync-panel" "sync flag"
+expect_contains "$(cat "$TARGET")" "drop_billing_database" "uninstall drops DB"
+expect_contains "$(cat "$TARGET")" "revoke_billing_certificate" "uninstall cert"
+expect_contains "$(cat "$TARGET")" "DROP DATABASE IF EXISTS" "sql drop"
+expect_contains "$(cat "$TARGET")" "userdel" "remove system user"
 expect_file "$REPO_ROOT/billing-api/scripts/sync-from-panel.ts"
 expect_contains "$(cat "$REPO_ROOT/billing-api/src/lib/sync-panel-services.ts")" "createMissingUsers" "create users"
 expect_not_contains "$(cat "$TARGET")" "@{u}" "no upstream fallthrough"
@@ -208,8 +212,59 @@ expect_contains "$out" "--force-build" "help"
 done_test
 
 out="$(run_spirit --version)"
-it "prints script version 1.2.0"
-expect_contains "$out" "1.2.0" "version"
+it "prints script version 1.2.1"
+expect_contains "$out" "1.2.1" "version"
+done_test
+teardown_sandbox
+
+# ---------------------------------------------------------------------------
+section "Uninstall purge helpers"
+setup_sandbox
+APP_ROOT="$SANDBOX/app"
+BACKUP_DIR="$SANDBOX/backups"
+mkdir -p "$APP_ROOT" "$SANDBOX/bin"
+printf 'DATABASE_URL="mysql://spirit_billing:secret@127.0.0.1:3306/spirit_billing"\n' > "$APP_ROOT/.env"
+_stub mysql <<'EOF'
+printf '%s\n' "$*" >> "$SANDBOX/mysql-args.log"
+# Accept root socket ping and heredoc drops
+exit 0
+EOF
+eval "$(sed -n \
+  '/^ok()/,/^}/p;/^info()/,/^}/p;/^warn()/,/^}/p;/^env_get()/,/^}/p;/^urldecode()/,/^}/p;/^cnf_escape()/,/^}/p;/^parse_database_url()/,/^}/p;/^drop_billing_database()/,/^}/p;/^revoke_billing_certificate()/,/^}/p' \
+  "$TARGET")"
+C_RESET=""; C_BOLD=""; C_DIM=""; C_CYAN=""; C_GREEN=""; C_YELLOW=""; C_RED=""
+
+it "drop_billing_database issues DROP via root socket"
+drop_billing_database >/dev/null
+expect_file "$SANDBOX/mysql-args.log"
+expect_contains "$(cat "$SANDBOX/mysql-args.log")" "--protocol=socket" "socket"
+done_test
+
+it "revoke_billing_certificate no-ops when cert missing"
+revoke_billing_certificate "billing.example.com"
+expect_eq "$?" "0" "noop"
+done_test
+
+mkdir -p "$SANDBOX/letsencrypt/live/billing.example.com"
+# Point function at sandbox by wrapping
+revoke_billing_certificate() {
+  local domain="$1"
+  [[ -n "$domain" ]] || return 0
+  if [[ ! -d "$SANDBOX/letsencrypt/live/${domain}" ]]; then
+    return 0
+  fi
+  if command -v certbot >/dev/null 2>&1; then
+    certbot delete --cert-name "$domain" --non-interactive
+  fi
+}
+_stub certbot <<'EOF'
+echo "$*" >> "$SANDBOX/certbot.log"
+exit 0
+EOF
+it "revoke_billing_certificate deletes when live cert exists"
+revoke_billing_certificate "billing.example.com"
+expect_file "$SANDBOX/certbot.log"
+expect_contains "$(cat "$SANDBOX/certbot.log")" "delete --cert-name billing.example.com" "certbot delete"
 done_test
 teardown_sandbox
 

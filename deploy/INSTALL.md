@@ -82,7 +82,17 @@ sudo bash /tmp/spirit-billing.sh update --ref V1.0.0.0 -y
 6. **Update** → backs up `.env`, ticket uploads, and a DB dump; pulls the selected ref; runs `deploy/update.sh`  
 7. Skips npm rebuild when commit + lockfiles + Prisma schema are unchanged (`--force-build` to override)  
 8. Preserves `billing-api/uploads/`; polls `/health`; prints admin URL + password on first install  
-9. Menu also covers **ssl**, **status**, **restart**, **logs**, **uninstall**
+9. Menu also covers **ssl**, **status**, **restart**, **logs**, **uninstall** (full purge)
+
+### Full uninstall
+
+Removes the service, nginx site, app + web roots, git checkout, backups, MariaDB `spirit_billing` DB/user, system user, locks, and the billing Let's Encrypt cert. Does **not** remove nginx/MariaDB/Node packages or Spirit-Panel.
+
+```bash
+sudo bash /home/Spirit-Billing/scripts/spirit.sh uninstall -y
+# or:
+sudo bash /opt/spirit-billing/scripts/spirit.sh uninstall -y
+```
 
 ### Installer tests
 

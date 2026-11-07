@@ -29,7 +29,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.2.0"
+SCRIPT_VERSION="1.2.1"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -915,21 +915,150 @@ cmd_logs() {
   journalctl -u "$SERVICE_NAME" -f
 }
 
+drop_billing_database() {
+  local dburl user pass host port db
+  dburl="$(env_get DATABASE_URL 2>/dev/null || true)"
+  db="spirit_billing"
+  user="spirit_billing"
+
+  if [[ -n "$dburl" ]]; then
+    local parts=()
+    if mapfile -t parts < <(parse_database_url "$dburl"); then
+      user="${parts[0]:-spirit_billing}"
+      pass="${parts[1]:-}"
+      host="${parts[2]:-127.0.0.1}"
+      port="${parts[3]:-3306}"
+      db="${parts[4]:-spirit_billing}"
+    fi
+  fi
+
+  command -v mysql >/dev/null 2>&1 || {
+    warn "mysql client not found — skip database drop"
+    return 1
+  }
+
+  # Prefer root socket (same as install); fall back to app credentials
+  if mysql --protocol=socket -u root -e "SELECT 1" >/dev/null 2>&1; then
+    mysql --protocol=socket -u root <<SQL
+DROP DATABASE IF EXISTS \`${db}\`;
+DROP USER IF EXISTS '${user}'@'localhost';
+DROP USER IF EXISTS '${user}'@'127.0.0.1';
+DROP USER IF EXISTS '${user}'@'%';
+FLUSH PRIVILEGES;
+SQL
+    ok "Dropped MariaDB database '${db}' and user '${user}'"
+    return 0
+  fi
+
+  if [[ -n "${pass:-}" ]]; then
+    local cnf
+    cnf="$(mktemp)"
+    umask 077
+    cat > "$cnf" <<EOF
+[client]
+user="$(cnf_escape "$user")"
+password="$(cnf_escape "$pass")"
+host="${host:-127.0.0.1}"
+port="${port:-3306}"
+EOF
+    if mysql --defaults-extra-file="$cnf" -e "DROP DATABASE IF EXISTS \`${db}\`;" 2>/dev/null; then
+      rm -f "$cnf"
+      # User drop usually needs admin — try root socket after
+      mysql --protocol=socket -u root -e "DROP USER IF EXISTS '${user}'@'localhost'; DROP USER IF EXISTS '${user}'@'127.0.0.1'; FLUSH PRIVILEGES;" 2>/dev/null || true
+      ok "Dropped MariaDB database '${db}'"
+      return 0
+    fi
+    rm -f "$cnf"
+  fi
+
+  warn "Could not drop MariaDB database '${db}' — remove it manually if needed"
+  return 1
+}
+
+revoke_billing_certificate() {
+  local domain="$1"
+  [[ -n "$domain" ]] || return 0
+  if [[ ! -d "/etc/letsencrypt/live/${domain}" ]]; then
+    return 0
+  fi
+  if command -v certbot >/dev/null 2>&1; then
+    certbot delete --cert-name "$domain" --non-interactive 2>/dev/null \
+      && ok "Removed Let's Encrypt cert for ${domain}" \
+      || warn "Could not delete cert for ${domain} (may be shared — left in place)"
+  else
+    warn "certbot not installed — left /etc/letsencrypt/live/${domain}"
+  fi
+}
+
 cmd_uninstall() {
   require_root
-  warn "This stops the service and removes nginx site + ${APP_ROOT}."
-  warn "Database and ${CHECKOUT} are left in place unless you confirm."
-  confirm "Uninstall Spirit-Billing application files?" "n" || die "Cancelled."
+  detect_os
+  acquire_lock
+  phase_begin 8 "removing billing"
+
+  local domain
+  domain="${DOMAIN:-$(detect_domain)}"
+
+  warn "This PERMANENTLY removes Spirit-Billing:"
+  info "  • systemd unit ${SERVICE_NAME}"
+  info "  • nginx site spirit-billing"
+  info "  • ${APP_ROOT} and ${WEB_ROOT}"
+  info "  • source checkout ${CHECKOUT}"
+  info "  • backups ${BACKUP_DIR}"
+  info "  • MariaDB database spirit_billing + DB user"
+  info "  • system user/group spirit-billing"
+  info "  • Let's Encrypt cert for ${domain:-<billing domain>} (if present)"
+  info "  • installer locks + journal unit logs"
+  warn "Spirit-Panel and shared packages (nginx/MariaDB/Node) are NOT removed."
+  confirm "Uninstall Spirit-Billing completely?" "n" || die "Cancelled."
+
+  phase "Stop service"
   systemctl disable --now "$SERVICE_NAME" 2>/dev/null || true
-  rm -f /etc/systemd/system/spirit-billing.service
-  systemctl daemon-reload || true
-  rm -f /etc/nginx/sites-enabled/spirit-billing /etc/nginx/sites-available/spirit-billing
-  nginx -t 2>/dev/null && systemctl reload nginx || true
-  rm -rf "$APP_ROOT" "$WEB_ROOT"
-  if confirm "Also delete source checkout ${CHECKOUT}?" "n"; then
-    rm -rf "$CHECKOUT"
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+
+  phase "Drop database"
+  # Must run while .env still exists
+  drop_billing_database || true
+
+  phase "Remove TLS cert"
+  revoke_billing_certificate "$domain"
+
+  phase "Remove nginx site"
+  rm -f /etc/nginx/sites-enabled/spirit-billing \
+        /etc/nginx/sites-available/spirit-billing
+  if command -v nginx >/dev/null 2>&1; then
+    nginx -t 2>/dev/null && systemctl reload nginx || true
   fi
-  ok "Uninstall complete (MariaDB data left intact)."
+
+  phase "Remove systemd unit"
+  rm -f /etc/systemd/system/spirit-billing.service \
+        /etc/systemd/system/multi-user.target.wants/spirit-billing.service
+  systemctl daemon-reload 2>/dev/null || true
+  systemctl reset-failed "$SERVICE_NAME" 2>/dev/null || true
+  journalctl --rotate 2>/dev/null || true
+  journalctl --vacuum-time=1s -u "$SERVICE_NAME" 2>/dev/null || true
+
+  phase "Remove files"
+  rm -rf "$APP_ROOT" "$WEB_ROOT" "$CHECKOUT" "$BACKUP_DIR"
+  rm -f /var/lock/spirit-billing.lock \
+        /var/lock/spirit-billing-install.lock \
+        /var/lock/spirit-billing-update.lock \
+        /tmp/spirit-billing.sh \
+        /tmp/spirit.sh
+
+  phase "Remove system user"
+  if id spirit-billing >/dev/null 2>&1; then
+    userdel spirit-billing 2>/dev/null \
+      || userdel -r spirit-billing 2>/dev/null \
+      || warn "Could not remove user spirit-billing"
+  fi
+  if getent group spirit-billing >/dev/null 2>&1; then
+    groupdel spirit-billing 2>/dev/null || true
+  fi
+
+  phase "Done"
+  ok "Spirit-Billing fully uninstalled"
+  info "Shared stack left installed: nginx, MariaDB server, Node.js, certbot (may be used by Spirit-Panel)"
 }
 
 usage() {

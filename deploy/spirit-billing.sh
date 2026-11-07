@@ -7,11 +7,14 @@
 #   sudo bash deploy/spirit-billing.sh status
 #   sudo bash deploy/spirit-billing.sh restart
 #   sudo bash deploy/spirit-billing.sh logs
+#   sudo bash deploy/spirit-billing.sh uninstall
 #
 # Auto mode (install if missing, otherwise update):
 #   sudo bash deploy/spirit-billing.sh auto --domain client.example.com [--repo-dir PATH]
 # Prefer the GitHub bootstrap for fully automatic installs:
 #   sudo bash scripts/spirit.sh auto --domain client.example.com -y
+# Full uninstall (DB + files + nginx + cert):
+#   sudo bash scripts/spirit.sh uninstall -y
 #
 # WinSCP / zip workflow example:
 #   sudo unzip -o Spirit-Billing.zip -d /home/Spirit-Billing
@@ -50,12 +53,14 @@ Commands:
   status    Show systemd + health
   restart   Restart spirit-billing
   logs      Tail API journal
+  uninstall Full purge via scripts/spirit.sh (DB, files, nginx, cert)
 
 Examples:
   sudo bash deploy/spirit-billing.sh install --domain client.spirithost.co.uk
   sudo bash deploy/spirit-billing.sh update --repo-dir /home/Spirit-Billing
   sudo bash deploy/spirit-billing.sh auto --domain client.spirithost.co.uk --repo-dir /home/Spirit-Billing
   sudo bash deploy/spirit-billing.sh status
+  sudo bash deploy/spirit-billing.sh uninstall
 
 Forward any install/update flags after the command (e.g. --skip-packages, --with-ssl, --skip-web).
 EOF
@@ -113,7 +118,14 @@ case "$CMD" in
   logs)
     journalctl -u spirit-billing -f
     ;;
+  uninstall)
+    BOOTSTRAP="$REPO_DIR/scripts/spirit.sh"
+    [[ -f "$BOOTSTRAP" ]] || BOOTSTRAP="/home/Spirit-Billing/scripts/spirit.sh"
+    [[ -f "$BOOTSTRAP" ]] || die "Missing scripts/spirit.sh — run: sudo bash /path/to/spirit.sh uninstall -y"
+    log "Delegating full uninstall to $BOOTSTRAP"
+    exec bash "$BOOTSTRAP" uninstall "$@"
+    ;;
   *)
-    die "Unknown command: $CMD (try: install | update | auto | status | restart | logs)"
+    die "Unknown command: $CMD (try: install | update | auto | status | restart | logs | uninstall)"
     ;;
 esac
