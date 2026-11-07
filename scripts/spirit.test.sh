@@ -169,6 +169,10 @@ expect_contains "$(cat "$TARGET")" "Overrides --channel" "help ref"
 expect_contains "$(cat "$TARGET")" "cmd_auto" "auto command"
 expect_contains "$(cat "$TARGET")" "dns_points_here" "auto ssl"
 expect_contains "$(cat "$TARGET")" "--panel-key" "panel key"
+expect_contains "$(cat "$TARGET")" "cmd_sync_panel" "sync panel"
+expect_contains "$(cat "$TARGET")" "--sync-panel" "sync flag"
+expect_file "$REPO_ROOT/billing-api/scripts/sync-from-panel.ts"
+expect_contains "$(cat "$REPO_ROOT/billing-api/src/lib/sync-panel-services.ts")" "createMissingUsers" "create users"
 expect_not_contains "$(cat "$TARGET")" "@{u}" "no upstream fallthrough"
 done_test
 
@@ -191,13 +195,15 @@ done_test
 section "CLI"
 setup_sandbox
 out="$(run_spirit --help)"
-it "help lists auto install update and ssl"
+it "help lists auto install update sync-panel and ssl"
 expect_contains "$out" "install" "help"
 expect_contains "$out" "update" "help"
 expect_contains "$out" "auto" "help"
+expect_contains "$out" "sync-panel" "help"
 expect_contains "$out" "ssl" "help"
 expect_contains "$out" "--domain" "help"
 expect_contains "$out" "--panel-url" "help"
+expect_contains "$out" "--sync-panel" "help"
 expect_contains "$out" "--force-build" "help"
 done_test
 

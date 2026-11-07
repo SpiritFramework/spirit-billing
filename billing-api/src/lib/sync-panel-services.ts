@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import {
   cleanupLegacyCustomEggProducts,
   ensureCustomProduct,
@@ -5,13 +6,16 @@ import {
   resolveCategoryForEgg,
 } from './custom-product.js';
 import { getDefaultCurrency } from './billing.js';
+import { hashPassword } from './auth.js';
 import { prisma } from './prisma.js';
 import {
+  getPanelUser,
   listPanelEggs,
   listPanelServers,
   PanelApiError,
   type PanelEgg,
   type PanelServer,
+  type PanelUser,
 } from '../services/panel.js';
 
 export type SyncSkipped = {
@@ -32,16 +36,75 @@ export type SyncImported = {
   categoryName: string | null;
 };
 
+export type SyncUserCreated = {
+  userId: string;
+  email: string;
+  username: string;
+  panelUserId: string | null;
+  temporaryPassword: string;
+};
+
+export type SyncUserLinked = {
+  userId: string;
+  email: string;
+  panelUserId: string;
+};
+
+export type SyncFromPanelOptions = {
+  /** Create billing client accounts for panel server owners that are missing in billing. */
+  createMissingUsers?: boolean;
+};
+
 export type SyncFromPanelResult = {
   imported: SyncImported[];
   skipped: SyncSkipped[];
   backfilled: Array<{ serviceId: string; panelServerId: string }>;
   updated: Array<{ serviceId: string; eggName: string | null; categoryName: string | null }>;
+  usersCreated: SyncUserCreated[];
+  usersLinked: SyncUserLinked[];
 };
+
+type BillingUserRef = { id: string; email: string; panelUserId: string | null };
 
 function ownerEmail(server: PanelServer): string | null {
   const email = server.owner?.email?.trim().toLowerCase();
   return email || null;
+}
+
+function sanitizeUsername(raw: string): string {
+  let u = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]/g, '')
+    .replace(/^[._-]+|[._-]+$/g, '')
+    .slice(0, 24);
+  if (u.length < 3) {
+    u = `user${randomBytes(3).toString('hex')}`;
+  }
+  return u;
+}
+
+function temporaryPassword(): string {
+  // Meets billing + typical panel rules: ≥16 chars, letter + number.
+  return `${randomBytes(12).toString('hex')}Aa1`;
+}
+
+async function allocateUsername(preferred: string): Promise<string> {
+  const base = sanitizeUsername(preferred);
+  const taken = await prisma.user.findUnique({
+    where: { username: base },
+    select: { id: true },
+  });
+  if (!taken) return base;
+  for (let i = 0; i < 8; i++) {
+    const candidate = sanitizeUsername(`${base}${randomBytes(2).toString('hex')}`);
+    const hit = await prisma.user.findUnique({
+      where: { username: candidate },
+      select: { id: true },
+    });
+    if (!hit) return candidate;
+  }
+  return sanitizeUsername(`u${randomBytes(6).toString('hex')}`);
 }
 
 async function eggMeta(server: PanelServer, eggsById: Map<string, PanelEgg>) {
@@ -57,7 +120,125 @@ async function eggMeta(server: PanelServer, eggsById: Map<string, PanelEgg>) {
   };
 }
 
-export async function syncPanelServersIntoBilling(): Promise<SyncFromPanelResult> {
+async function resolvePanelOwner(server: PanelServer): Promise<{
+  email: string | null;
+  panelUserId: string | null;
+  usernameHint: string | null;
+  firstName: string | null;
+  lastName: string | null;
+}> {
+  let panelUser: PanelUser | null = null;
+  if (server.ownerId) {
+    try {
+      panelUser = await getPanelUser(server.ownerId, { timeoutMs: 8_000 });
+    } catch {
+      panelUser = null;
+    }
+  }
+  const email =
+    panelUser?.email?.trim().toLowerCase() ||
+    ownerEmail(server) ||
+    null;
+  return {
+    email,
+    panelUserId: panelUser?.id ?? server.ownerId ?? null,
+    usernameHint: panelUser?.username ?? (email ? email.split('@')[0] : null),
+    firstName: panelUser?.firstName ?? null,
+    lastName: panelUser?.lastName ?? null,
+  };
+}
+
+/**
+ * Ensure a billing client exists for a panel owner. Never changes the panel password.
+ */
+async function ensureBillingUserForOwner(
+  owner: Awaited<ReturnType<typeof resolvePanelOwner>>,
+  maps: {
+    userByPanelId: Map<string, BillingUserRef>;
+    userByEmail: Map<string, BillingUserRef>;
+  },
+): Promise<{
+  user: BillingUserRef;
+  created?: SyncUserCreated;
+  linked?: SyncUserLinked;
+} | null> {
+  if (!owner.email) return null;
+
+  const byPanel = owner.panelUserId ? maps.userByPanelId.get(owner.panelUserId) : undefined;
+  if (byPanel) return { user: byPanel };
+
+  const byEmail = maps.userByEmail.get(owner.email);
+  if (byEmail) {
+    if (!byEmail.panelUserId && owner.panelUserId) {
+      const updated = await prisma.user.update({
+        where: { id: byEmail.id },
+        data: { panelUserId: owner.panelUserId },
+        select: { id: true, email: true, panelUserId: true },
+      });
+      maps.userByPanelId.set(owner.panelUserId, updated);
+      maps.userByEmail.set(updated.email, updated);
+      return {
+        user: updated,
+        linked: {
+          userId: updated.id,
+          email: updated.email,
+          panelUserId: owner.panelUserId,
+        },
+      };
+    }
+    return { user: byEmail };
+  }
+
+  if (owner.panelUserId) {
+    const clash = await prisma.user.findUnique({
+      where: { panelUserId: owner.panelUserId },
+      select: { id: true, email: true, panelUserId: true },
+    });
+    if (clash) {
+      maps.userByPanelId.set(owner.panelUserId, clash);
+      maps.userByEmail.set(clash.email.trim().toLowerCase(), clash);
+      return { user: clash };
+    }
+  }
+
+  const username = await allocateUsername(owner.usernameHint || owner.email.split('@')[0] || 'user');
+  const password = temporaryPassword();
+  const created = await prisma.user.create({
+    data: {
+      email: owner.email,
+      username,
+      firstName: owner.firstName,
+      lastName: owner.lastName,
+      role: 'client',
+      panelUserId: owner.panelUserId,
+      passwordHash: await hashPassword(password),
+    },
+    select: { id: true, email: true, panelUserId: true, username: true },
+  });
+  const ref: BillingUserRef = {
+    id: created.id,
+    email: created.email,
+    panelUserId: created.panelUserId,
+  };
+  maps.userByEmail.set(ref.email, ref);
+  if (ref.panelUserId) maps.userByPanelId.set(ref.panelUserId, ref);
+
+  return {
+    user: ref,
+    created: {
+      userId: created.id,
+      email: created.email,
+      username: created.username,
+      panelUserId: created.panelUserId,
+      temporaryPassword: password,
+    },
+  };
+}
+
+export async function syncPanelServersIntoBilling(
+  options: SyncFromPanelOptions = {},
+): Promise<SyncFromPanelResult> {
+  const createMissingUsers = options.createMissingUsers === true;
   let panelServers: PanelServer[];
   let panelEggs: PanelEgg[];
   try {
@@ -111,12 +292,16 @@ export async function syncPanelServersIntoBilling(): Promise<SyncFromPanelResult
     users.filter((u) => u.panelUserId).map((u) => [u.panelUserId as string, u]),
   );
   const userByEmail = new Map(users.map((u) => [u.email.trim().toLowerCase(), u]));
+  const maps = { userByPanelId, userByEmail };
 
   const imported: SyncImported[] = [];
   const skipped: SyncSkipped[] = [];
   const backfilled: Array<{ serviceId: string; panelServerId: string }> = [];
   const updated: Array<{ serviceId: string; eggName: string | null; categoryName: string | null }> = [];
+  const usersCreated: SyncUserCreated[] = [];
+  const usersLinked: SyncUserLinked[] = [];
   const metaCache = new Map<string, Awaited<ReturnType<typeof eggMeta>>>();
+  const ownerCache = new Map<string, Awaited<ReturnType<typeof resolvePanelOwner>>>();
 
   async function cachedMeta(server: PanelServer) {
     const key = server.eggId?.trim() || 'none';
@@ -125,6 +310,15 @@ export async function syncPanelServersIntoBilling(): Promise<SyncFromPanelResult
     const meta = await eggMeta(server, eggsById);
     metaCache.set(key, meta);
     return meta;
+  }
+
+  async function cachedOwner(server: PanelServer) {
+    const key = server.ownerId || ownerEmail(server) || server.id;
+    const hit = ownerCache.get(key);
+    if (hit) return hit;
+    const owner = await resolvePanelOwner(server);
+    ownerCache.set(key, owner);
+    return owner;
   }
 
   for (const server of panelServers) {
@@ -183,10 +377,36 @@ export async function syncPanelServersIntoBilling(): Promise<SyncFromPanelResult
       continue;
     }
 
-    const email = ownerEmail(server);
-    const user =
+    let email = ownerEmail(server);
+    let user =
       (server.ownerId ? userByPanelId.get(server.ownerId) : undefined) ||
       (email ? userByEmail.get(email) : undefined);
+
+    if (!user && createMissingUsers) {
+      try {
+        const owner = await cachedOwner(server);
+        email = owner.email;
+        const ensured = await ensureBillingUserForOwner(owner, maps);
+        if (ensured) {
+          user = ensured.user;
+          if (ensured.created && !usersCreated.some((u) => u.userId === ensured.created!.userId)) {
+            usersCreated.push(ensured.created);
+          }
+          if (ensured.linked && !usersLinked.some((u) => u.userId === ensured.linked!.userId)) {
+            usersLinked.push(ensured.linked);
+          }
+        }
+      } catch (err) {
+        skipped.push({
+          panelServerId: server.id,
+          name: server.name,
+          reason: 'import_failed',
+          email,
+          detail: err instanceof Error ? err.message : 'Could not create billing user',
+        });
+        continue;
+      }
+    }
 
     if (!user) {
       skipped.push({
@@ -257,5 +477,5 @@ export async function syncPanelServersIntoBilling(): Promise<SyncFromPanelResult
     }
   }
 
-  return { imported, skipped, backfilled, updated };
+  return { imported, skipped, backfilled, updated, usersCreated, usersLinked };
 }

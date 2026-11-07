@@ -57,6 +57,7 @@ PANEL_WEB_URL=""
 PANEL_KEY=""
 ADMIN_EMAIL=""
 CERTBOT_EMAIL=""
+SYNC_PANEL=0
 CMD=""
 LATEST_TAG_RESOLVED=""
 AUTO_MODE=0
@@ -302,6 +303,9 @@ print_finish_card() {
   fi
   if [[ -z "$(env_get PANEL_APPLICATION_API_KEY 2>/dev/null || true)" && -z "$PANEL_KEY" ]]; then
     info "Optional: set Panel link with --panel-url / --panel-key, or edit ${APP_ROOT}/.env"
+  fi
+  if panel_configured 2>/dev/null; then
+    info "Existing Panel servers: sudo bash ${CHECKOUT}/scripts/spirit.sh sync-panel -y"
   fi
   if [[ "$WITH_SSL" != "1" && ! -f "/etc/letsencrypt/live/${DOMAIN:-x}/fullchain.pem" ]]; then
     info "TLS later: sudo bash ${CHECKOUT}/scripts/spirit.sh ssl"
@@ -650,6 +654,12 @@ cmd_install() {
   fi
   [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
 
+  if [[ "$SYNC_PANEL" != "1" ]] && ! want_auto && [[ -t 0 ]] && [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
+    if confirm "Panel already has users/servers — import them into Billing after install?" "y"; then
+      SYNC_PANEL=1
+    fi
+  fi
+
   maybe_enable_ssl
 
   if is_installed; then
@@ -665,6 +675,10 @@ cmd_install() {
   run_deploy install --domain "$DOMAIN"
   phase "Verify"
   poll_health || true
+  if [[ "$SYNC_PANEL" == "1" ]]; then
+    phase "Sync existing Panel"
+    maybe_sync_panel_after_install
+  fi
   phase "Done"
   print_finish_card
 }
@@ -705,6 +719,10 @@ cmd_update() {
   run_deploy update
   phase "Verify"
   poll_health || true
+  if [[ "$SYNC_PANEL" == "1" ]]; then
+    phase "Sync existing Panel"
+    maybe_sync_panel_after_install
+  fi
   phase "Done"
   ok "Update finished"
   [[ -n "${LAST_BACKUP:-}" ]] && info "Backup kept at ${LAST_BACKUP}"
@@ -775,6 +793,88 @@ cmd_ssl() {
   print_finish_card
 }
 
+panel_configured() {
+  local key url
+  key="$(env_get PANEL_APPLICATION_API_KEY 2>/dev/null || true)"
+  url="$(env_get PANEL_API_URL 2>/dev/null || true)"
+  [[ -n "$key" && "$key" != *change* && -n "$url" && "$url" != *example.com* ]]
+}
+
+cmd_sync_panel() {
+  require_root
+  detect_os
+  is_installed || die "Install Spirit Billing first."
+  [[ -f "${APP_ROOT}/billing-api/package.json" ]] || die "Missing ${APP_ROOT}/billing-api"
+
+  if [[ -n "$PANEL_URL" || -n "$PANEL_KEY" ]]; then
+    [[ -n "$PANEL_URL" && -z "$PANEL_WEB_URL" ]] && PANEL_WEB_URL="$PANEL_URL"
+    # Persist panel settings into live .env before syncing
+    if [[ -n "$PANEL_URL" ]]; then
+      grep -vE '^PANEL_API_URL=' "${APP_ROOT}/.env" > "${APP_ROOT}/.env.tmp" || true
+      printf 'PANEL_API_URL="%s"\n' "$PANEL_URL" >> "${APP_ROOT}/.env.tmp"
+      mv "${APP_ROOT}/.env.tmp" "${APP_ROOT}/.env"
+    fi
+    if [[ -n "$PANEL_WEB_URL" ]]; then
+      grep -vE '^PANEL_WEB_URL=' "${APP_ROOT}/.env" > "${APP_ROOT}/.env.tmp" || true
+      printf 'PANEL_WEB_URL="%s"\n' "$PANEL_WEB_URL" >> "${APP_ROOT}/.env.tmp"
+      mv "${APP_ROOT}/.env.tmp" "${APP_ROOT}/.env"
+    fi
+    if [[ -n "$PANEL_KEY" ]]; then
+      grep -vE '^PANEL_APPLICATION_API_KEY=' "${APP_ROOT}/.env" > "${APP_ROOT}/.env.tmp" || true
+      printf 'PANEL_APPLICATION_API_KEY="%s"\n' "$PANEL_KEY" >> "${APP_ROOT}/.env.tmp"
+      mv "${APP_ROOT}/.env.tmp" "${APP_ROOT}/.env"
+    fi
+    chown root:spirit-billing "${APP_ROOT}/.env" 2>/dev/null || true
+    chmod 640 "${APP_ROOT}/.env"
+    ln -sfn ../.env "${APP_ROOT}/billing-api/.env"
+    systemctl restart "$SERVICE_NAME" || true
+    sleep 2
+  fi
+
+  panel_configured || die "Panel is not configured. Pass --panel-url and --panel-key, or set them in ${APP_ROOT}/.env / Admin → Settings."
+
+  if ! want_auto; then
+    confirm "Import existing Panel servers (and create missing billing clients)?" "y" || die "Cancelled."
+  fi
+
+  step "Sync panel → billing"
+  local script="${APP_ROOT}/billing-api/scripts/sync-from-panel.ts"
+  [[ -f "$script" ]] || script="${CHECKOUT}/billing-api/scripts/sync-from-panel.ts"
+  [[ -f "$script" ]] || die "sync-from-panel.ts not found — update the checkout and re-run."
+
+  (
+    cd "${APP_ROOT}/billing-api"
+    export SPIRIT_BILLING_ENV_FILE="${APP_ROOT}/.env"
+    export SPIRIT_BILLING_IMPORT_PASSWORDS_FILE="${APP_ROOT}/.panel-import-passwords"
+    # Prefer local tsx; install briefly if needed
+    if [[ -x node_modules/.bin/tsx ]]; then
+      SPIRIT_BILLING_ENV_FILE="${APP_ROOT}/.env" ./node_modules/.bin/tsx "$script"
+    else
+      npx --yes tsx@4.20.3 "$script"
+    fi
+  ) || die "Panel sync failed — check Panel URL/API key and Application API."
+
+  if [[ -f "${APP_ROOT}/.panel-import-passwords" ]]; then
+    chmod 600 "${APP_ROOT}/.panel-import-passwords"
+    chown root:root "${APP_ROOT}/.panel-import-passwords"
+    ok "Temporary billing passwords → ${APP_ROOT}/.panel-import-passwords"
+    info "Panel passwords were not changed. Delete the password file after clients log in."
+  fi
+  ok "Panel sync finished — set prices on imported services in Admin → Services"
+}
+
+maybe_sync_panel_after_install() {
+  [[ "$SYNC_PANEL" == "1" ]] || return 0
+  if ! panel_configured && [[ -z "$PANEL_KEY" ]]; then
+    warn "Skipping --sync-panel — configure Panel first (--panel-url / --panel-key)"
+    return 0
+  fi
+  local prev_yes="$ASSUME_YES"
+  ASSUME_YES=1
+  cmd_sync_panel
+  ASSUME_YES="$prev_yes"
+}
+
 cmd_status() {
   require_root
   echo
@@ -841,6 +941,7 @@ Usage:
   sudo bash $0 auto --domain HOST [-y]  Fully automatic install-or-update
   sudo bash $0 install --domain HOST [-y] [--with-ssl] [--channel release|dev] [--ref REF]
   sudo bash $0 update [-y] [--channel release|dev] [--ref REF] [--force-build]
+  sudo bash $0 sync-panel               Import existing Panel users/servers into Billing
   sudo bash $0 ssl [--domain HOST]      Issue / renew Let's Encrypt cert
   sudo bash $0 status | restart | logs | uninstall
   sudo bash $0 --version
@@ -849,6 +950,7 @@ Panel (optional, written into .env during install/update):
   --panel-url URL       Spirit-Panel base URL
   --panel-web-url URL   Panel web URL (defaults to --panel-url)
   --panel-key KEY       Application API key
+  --sync-panel          After install/update, import existing Panel servers + clients
   --admin-email EMAIL   Seed admin email + certbot contact
   --email EMAIL         Certbot contact email
 
@@ -879,23 +981,25 @@ menu() {
     det="$(detect_domain)"
     [[ -n "$det" ]] && info "Detected install · domain ${det}"
     printf '  %s1)%s Auto update (recommended)\n' "$C_BOLD" "$C_RESET"
-    printf '  %s2)%s Status\n' "$C_BOLD" "$C_RESET"
-    printf '  %s3)%s Restart\n' "$C_BOLD" "$C_RESET"
-    printf '  %s4)%s Enable SSL\n' "$C_BOLD" "$C_RESET"
-    printf '  %s5)%s Logs\n' "$C_BOLD" "$C_RESET"
-    printf '  %s6)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
-    printf '  %s7)%s Uninstall\n' "$C_BOLD" "$C_RESET"
+    printf '  %s2)%s Sync panel (import existing servers)\n' "$C_BOLD" "$C_RESET"
+    printf '  %s3)%s Status\n' "$C_BOLD" "$C_RESET"
+    printf '  %s4)%s Restart\n' "$C_BOLD" "$C_RESET"
+    printf '  %s5)%s Enable SSL\n' "$C_BOLD" "$C_RESET"
+    printf '  %s6)%s Logs\n' "$C_BOLD" "$C_RESET"
+    printf '  %s7)%s Reinstall / repair\n' "$C_BOLD" "$C_RESET"
+    printf '  %s8)%s Uninstall\n' "$C_BOLD" "$C_RESET"
     printf '  %s0)%s Exit\n\n' "$C_BOLD" "$C_RESET"
     local choice
     choice="$(ask "Select" "1")"
     case "$choice" in
       1) CMD="auto" ;;
-      2) CMD="status" ;;
-      3) CMD="restart" ;;
-      4) CMD="ssl" ;;
-      5) CMD="logs" ;;
-      6) CMD="install" ;;
-      7) CMD="uninstall" ;;
+      2) CMD="sync-panel" ;;
+      3) CMD="status" ;;
+      4) CMD="restart" ;;
+      5) CMD="ssl" ;;
+      6) CMD="logs" ;;
+      7) CMD="install" ;;
+      8) CMD="uninstall" ;;
       0) exit 0 ;;
       *) die "Invalid choice" ;;
     esac
@@ -915,7 +1019,7 @@ menu() {
 parse_args() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      install|update|auto|ssl|status|restart|logs|uninstall|help|-h|--help)
+      install|update|auto|sync-panel|ssl|status|restart|logs|uninstall|help|-h|--help)
         CMD="$1"
         shift
         [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]] && { usage; exit 0; }
@@ -934,6 +1038,7 @@ parse_args() {
       --panel-url) PANEL_URL="${2:-}"; shift 2 ;;
       --panel-web-url) PANEL_WEB_URL="${2:-}"; shift 2 ;;
       --panel-key) PANEL_KEY="${2:-}"; shift 2 ;;
+      --sync-panel) SYNC_PANEL=1; shift ;;
       --admin-email) ADMIN_EMAIL="${2:-}"; shift 2 ;;
       --email) CERTBOT_EMAIL="${2:-}"; shift 2 ;;
       --checkout) CHECKOUT="${2:-}"; shift 2 ;;
@@ -959,6 +1064,7 @@ main() {
     install) cmd_install ;;
     update) cmd_update ;;
     auto) cmd_auto ;;
+    sync-panel) cmd_sync_panel ;;
     ssl) cmd_ssl ;;
     status) cmd_status ;;
     restart) cmd_restart ;;

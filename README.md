@@ -228,7 +228,7 @@ curl -fsSL https://raw.githubusercontent.com/SpiritFramework/spirit-billing/main
 sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com -y
 ```
 
-That installs on first run and updates on later runs (keeps `.env` + database). DNS-ready hosts get Let's Encrypt automatically. Optional Panel wiring in the same command: `--panel-url` / `--panel-key`. Prefer `--channel release` once you publish GitHub Releases.
+That installs on first run and updates on later runs (keeps `.env` + database). DNS-ready hosts get Let's Encrypt automatically. Optional Panel wiring: `--panel-url` / `--panel-key`. If Panel was already live, add `--sync-panel` to import existing users/servers (or run `sync-panel` later). Prefer `--channel release` once you publish GitHub Releases.
 
 Installer self-tests:
 

@@ -613,12 +613,19 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/services/sync-from-panel', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
     try {
-      const result = await syncPanelServersIntoBilling();
+      const body = z
+        .object({
+          createMissingUsers: z.boolean().optional(),
+        })
+        .passthrough()
+        .parse(request.body ?? {});
+      const createMissingUsers = body.createMissingUsers !== false;
+      const result = await syncPanelServersIntoBilling({ createMissingUsers });
       recordLogFireAndForget({
         level: 'info',
         category: 'admin',
         action: 'services.sync_panel',
-        message: `Synced panel servers (imported ${result.imported.length}, updated ${result.updated.length})`,
+        message: `Synced panel servers (imported ${result.imported.length}, users ${result.usersCreated.length}, updated ${result.updated.length})`,
         actorUserId: request.user!.id,
         ip: request.ip,
         method: 'POST',
@@ -628,14 +635,20 @@ export async function adminRoutes(app: FastifyInstance) {
           updated: result.updated.length,
           skipped: result.skipped.length,
           backfilled: result.backfilled.length,
+          usersCreated: result.usersCreated.length,
+          usersLinked: result.usersLinked.length,
+          createMissingUsers,
         },
       });
+      // Temporary passwords are returned once to the full admin (HTTPS). Installer CLI also writes them to disk.
       return {
         ...result,
         importedCount: result.imported.length,
         skippedCount: result.skipped.length,
         backfilledCount: result.backfilled.length,
         updatedCount: result.updated.length,
+        usersCreatedCount: result.usersCreated.length,
+        usersLinkedCount: result.usersLinked.length,
       };
     } catch (err) {
       const status = (err as { statusCode?: number }).statusCode;

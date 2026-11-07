@@ -22,7 +22,24 @@ sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
   --panel-url https://panel.example.com --panel-key YOUR_APP_KEY -y
 ```
 
-Interactive menu (no flags): pick **Auto install / Auto update** — defaults do the rest.
+If **Spirit-Panel was already live** (users + servers), import them in the same run:
+
+```bash
+sudo bash /tmp/spirit-billing.sh auto --domain billing.example.com \
+  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY \
+  --sync-panel -y
+```
+
+Or any time after install:
+
+```bash
+sudo bash /home/Spirit-Billing/scripts/spirit.sh sync-panel \
+  --panel-url https://panel.example.com --panel-key YOUR_APP_KEY -y
+```
+
+That creates missing Billing client accounts (temporary passwords in `/opt/spirit-billing/.panel-import-passwords`), links them to Panel users, and imports servers as £0 custom services. Panel passwords are not changed.
+
+Interactive menu (no flags): pick **Auto install / Auto update**, or **Sync panel**.
 
 > **Do not use** `sudo bash <(curl ...)`. Process substitution breaks under `sudo` (`/dev/fd/…: No such file or directory`). Download to a file, or pipe: `curl … | sudo bash -s -- auto --domain billing.example.com -y`.
 

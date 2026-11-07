@@ -10,7 +10,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "sync:panel": "tsx scripts/sync-from-panel.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

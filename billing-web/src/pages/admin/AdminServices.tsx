@@ -55,6 +55,13 @@ type SyncResult = {
   skippedCount: number;
   backfilledCount: number;
   updatedCount: number;
+  usersCreatedCount?: number;
+  usersLinkedCount?: number;
+  usersCreated?: Array<{
+    email: string;
+    username: string;
+    temporaryPassword: string;
+  }>;
   skipped: Array<{
     panelServerId: string;
     name: string;
@@ -111,15 +118,32 @@ export function AdminServices() {
   }, [requestedServiceId]);
 
   async function syncFromPanel() {
+    const createMissingUsers = window.confirm(
+      'Sync servers from Spirit-Panel?\n\nOK = also create Billing accounts for panel owners that are missing (recommended if Panel was live before Billing).\nCancel = abort.',
+    );
+    if (!createMissingUsers) return;
+
     setSyncing(true);
     setError('');
     setMessage('');
     try {
       const result = await api<SyncResult>('/admin/services/sync-from-panel', {
         method: 'POST',
-        body: '{}',
+        body: JSON.stringify({ createMissingUsers: true }),
       });
       const parts: string[] = [];
+      if ((result.usersCreatedCount ?? 0) > 0) {
+        const creds = (result.usersCreated ?? [])
+          .filter((u) => u.temporaryPassword)
+          .map((u) => `${u.email} / ${u.username} → ${u.temporaryPassword}`)
+          .join('\n');
+        parts.push(
+          `Created ${result.usersCreatedCount} billing client account${result.usersCreatedCount === 1 ? '' : 's'} with temporary passwords (panel passwords unchanged). Copy them now:\n${creds}`,
+        );
+      }
+      if ((result.usersLinkedCount ?? 0) > 0) {
+        parts.push(`Linked ${result.usersLinkedCount} existing billing user${result.usersLinkedCount === 1 ? '' : 's'} to panel.`);
+      }
       if (result.importedCount > 0) {
         parts.push(
           `Imported ${result.importedCount} Custom service${result.importedCount === 1 ? '' : 's'} at £0/month (renewals not scheduled until you set a price).`,
@@ -237,7 +261,12 @@ export function AdminServices() {
             <button type="button" disabled={loading || syncing || jobBusy} onClick={() => void runOverdue()}>
               <PauseCircle size={14} /> Overdue enforcement
             </button>
-            <button type="button" disabled={loading || syncing || jobBusy} onClick={() => void syncFromPanel()}>
+            <button
+              type="button"
+              disabled={loading || syncing || jobBusy}
+              onClick={() => void syncFromPanel()}
+              title="Import panel servers and create missing billing clients"
+            >
               <Server size={14} /> {syncing ? 'Syncing…' : 'Sync panel'}
             </button>
             </>
