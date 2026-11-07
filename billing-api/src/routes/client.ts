@@ -538,7 +538,7 @@ export async function clientRoutes(app: FastifyInstance) {
       },
     });
     if (!service) return reply.status(404).send({ error: 'Not found' });
-    const deletion = previewServiceDeletionRefund(service);
+    const deletion = await previewServiceDeletionRefund(service);
     return {
       ...withEffectiveServiceCategory(service),
       panelWebUrl: (await getPanelConnectionConfig()).panelWebUrl,

@@ -21,9 +21,8 @@ import {
   User as UserIcon,
   UserRound,
 } from 'lucide-react';
-import { api, ApiError, safeExternalHref, statusBadge } from '../../lib/api';
+import { api, ApiError, safeExternalHref } from '../../lib/api';
 import { useAuth, useLogout, type User } from '../../context/AuthContext';
-import { CategoryMark } from '../../lib/icons';
 
 type Overview = {
   user: User & { updatedAt?: string };
@@ -778,62 +777,6 @@ export function ProfilePage() {
             </aside>
           </div>
 
-          <section className="client-profile__block client-profile__block--services">
-            <div className="client-profile__block-head">
-              <div>
-                <h2>Your services</h2>
-                <p>Newest services on this account — active, pending, suspended, or cancelled.</p>
-              </div>
-              <Link className="client-home__btn client-home__btn--text" to="/services">
-                View all <ArrowRight size={14} />
-              </Link>
-            </div>
-
-            {(overview?.recentServices ?? []).length > 0 ? (
-              <div className="client-profile__service-list">
-                {overview!.recentServices.map((service) => (
-                  <Link
-                    key={service.id}
-                    to={`/services/${service.id}`}
-                    className={`client-profile__service is-${service.status}`}
-                    style={{ ['--service-color' as string]: service.product.category?.color || 'var(--accent)' }}
-                  >
-                    <CategoryMark
-                      icon={service.product.category?.icon}
-                      logoUrl={service.product.category?.logoUrl}
-                      color={service.product.category?.color}
-                      size={36}
-                      className="client-profile__service-mark"
-                    />
-                    <span className="client-profile__service-main">
-                      <strong>{service.name}</strong>
-                      <small>
-                        {service.product.category?.name || service.product.name}
-                        {service.panelServerId ? (
-                          <>
-                            <span aria-hidden>·</span>
-                            Panel linked
-                          </>
-                        ) : null}
-                      </small>
-                    </span>
-                    <span className={`client-profile__service-status ${statusBadge(service.status)}`}>
-                      <span className="client-profile__service-dot" aria-hidden />
-                      {service.status.replaceAll('_', ' ')}
-                    </span>
-                    <span className="client-profile__service-go" aria-hidden>
-                      <ArrowRight size={14} />
-                    </span>
-                  </Link>
-                ))}
-              </div>
-            ) : (
-              <div className="client-profile__empty">
-                <span>No services yet</span>
-                <Link to="/game-hosting">Browse hosting plans</Link>
-              </div>
-            )}
-          </section>
         </div>
       )}
     </div>

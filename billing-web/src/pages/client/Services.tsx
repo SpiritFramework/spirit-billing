@@ -7,7 +7,6 @@ import {
   ArrowRight,
   CalendarDays,
   CheckCircle2,
-  ChevronRight,
   CircleDollarSign,
   Clock3,
   Cpu,
@@ -77,7 +76,8 @@ type ServiceInvoice = {
 
 type DeletionPreview = {
   deletable: boolean;
-  ownedLongEnough: boolean;
+  withinRefundWindow?: boolean;
+  ownedLongEnough?: boolean;
   refundEligible: boolean;
   refundCents: number;
   minAgeDays: number;
@@ -505,196 +505,503 @@ export function ServiceDetailPage() {
 
   if (error && !service) {
     return (
-      <div className="ds-stack client-service-detail">
-        <Link to="/services" className="service-detail-v2__back"><ArrowLeft size={14} /> Back to services</Link>
+      <div className="client-service-detail">
+        <Link to="/services" className="client-service-detail__back">
+          <ArrowLeft size={14} /> All services
+        </Link>
         <div className="ds-alert ds-alert--error">{error}</div>
       </div>
     );
   }
-  if (!service) return <div className="ds-muted">Loading…</div>;
+
+  if (!service) {
+    return (
+      <div className="client-service-detail">
+        <div className="client-service-detail__loading">Loading service…</div>
+      </div>
+    );
+  }
 
   const panelHref = safeExternalHref(service.panelWebUrl);
   const limits = serviceLimits(service);
   const billing = serviceBilling(service);
   const paidInvoices = service.invoices.filter((invoice) => invoice.status === 'paid');
+  const unpaidInvoices = [...service.invoices]
+    .filter((invoice) => invoice.status === 'unpaid')
+    .sort((a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime());
+  const outstandingCents = unpaidInvoices.reduce((total, invoice) => total + invoice.totalCents, 0);
+  const nextUnpaid = unpaidInvoices[0];
   const latestInvoice = service.invoices[0];
   const totalPaid = paidInvoices.reduce((total, invoice) => total + invoice.totalCents, 0);
   const isActive = service.status === 'active';
   const category = service.product.category;
   const deletion = service.deletion;
   const canDelete = deletion?.deletable !== false && service.status !== 'cancelled';
+  const canUpgrade = isActive || service.status === 'suspended';
+  const hasUpgradeOptions = upgradeOptions.length > 0;
+  const statusKey = service.status;
+  const panelReady = Boolean(isActive && panelHref);
+  const panelConnected = Boolean(panelReady && service.panelServerId);
+  const createdLabel = new Date(service.createdAt).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const renewalLabel = service.nextDueAt
+    ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Not scheduled';
+  const sortedInvoices = [...service.invoices].sort((a, b) => {
+    const rank = (invoice: ServiceInvoice) => {
+      if (invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now()) return 0;
+      if (invoice.status === 'unpaid') return 1;
+      if (invoice.status === 'paid') return 2;
+      return 3;
+    };
+    const diff = rank(a) - rank(b);
+    if (diff !== 0) return diff;
+    const aTime = new Date(a.paidAt || a.dueAt || a.createdAt).getTime();
+    const bTime = new Date(b.paidAt || b.dueAt || b.createdAt).getTime();
+    return a.status === 'unpaid' ? aTime - bTime : bTime - aTime;
+  });
+  const visibleInvoices = sortedInvoices.slice(0, 6);
+  const hiddenInvoiceCount = Math.max(0, sortedInvoices.length - visibleInvoices.length);
 
   return (
-    <div className="service-detail-v2">
-      <Link to="/services" className="service-detail-v2__back"><ArrowLeft size={14} /> All services</Link>
+    <div
+      className={`client-service-detail is-${statusKey}`}
+      style={{ ['--service-color' as string]: category?.color || 'var(--accent)' }}
+    >
+      <Link to="/services" className="client-service-detail__back">
+        <ArrowLeft size={14} /> All services
+      </Link>
 
       {error && <div className="ds-alert ds-alert--error">{error}</div>}
       {message && <div className="ds-alert ds-alert--success">{message}</div>}
 
-      <section
-        className={`service-detail-hero is-${service.status}`}
-        style={category?.color ? { ['--service-color' as string]: category.color } : undefined}
-      >
-        <div className="service-detail-hero__glow" />
-        <CategoryMark
-          icon={category?.icon}
-          logoUrl={category?.logoUrl}
-          color={category?.color}
-          size={68}
-          className="service-detail-hero__mark"
-        />
-        <div className="service-detail-hero__identity">
-          <span>{category?.name || service.product.name}</span>
-          <h1>{service.name}</h1>
-          <p><span className={statusBadge(service.status)}>{serviceStatus(service.status)}</span><i /> Created {new Date(service.createdAt).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</p>
+      <header className="client-service-detail__intro">
+        <div className="client-service-detail__intro-main">
+          <CategoryMark
+            icon={category?.icon}
+            logoUrl={category?.logoUrl}
+            color={category?.color}
+            size={52}
+            className="client-service-detail__mark"
+          />
+          <div className="client-service-detail__intro-copy">
+            <p>{category?.name || 'Hosting'}</p>
+            <h1>{service.name}</h1>
+            <span className="client-service-detail__intro-meta">
+              <span className={`client-service-detail__status is-${statusKey}`}>
+                {serviceStatus(service.status)}
+              </span>
+              <span className="client-service-detail__chip">{service.product.name}</span>
+              <span className="client-service-detail__meta-text">Created {createdLabel}</span>
+            </span>
+          </div>
         </div>
-        <div className="service-detail-hero__actions">
-          {isActive && panelHref ? (
-            <a href={panelHref} target="_blank" rel="noopener noreferrer"><ExternalLink size={15} /> Open game panel</a>
+        <div className="client-service-detail__intro-actions">
+          {panelReady ? (
+            <a
+              className="client-home__btn client-home__btn--primary client-home__btn--cta"
+              href={panelHref!}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <ExternalLink size={15} />
+              </span>
+              <span>Open game panel</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </a>
           ) : (
-            <span><Clock3 size={15} /> {service.status === 'pending_payment' ? 'Waiting for payment' : 'Panel access unavailable'}</span>
+            <span className="client-home__btn client-home__btn--ghost client-home__btn--cta is-disabled">
+              <span className="client-home__btn-icon" aria-hidden>
+                <Clock3 size={15} />
+              </span>
+              <span>
+                {service.status === 'pending_payment' ? 'Waiting for payment' : 'Panel unavailable'}
+              </span>
+            </span>
+          )}
+          {nextUnpaid && (
+            <Link
+              className="client-home__btn client-home__btn--ghost client-home__btn--cta"
+              to={`/invoices/${nextUnpaid.id}`}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <FileText size={15} />
+              </span>
+              <span>Pay {money(nextUnpaid.totalCents, nextUnpaid.currency)}</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
           )}
         </div>
-      </section>
+      </header>
 
-      <section className="service-detail-metrics">
-        <article><span><ShieldCheck size={16} /></span><div><small>Service status</small><strong>{isActive ? 'Online & managed' : serviceStatus(service.status)}</strong></div></article>
-        <article><span><CalendarDays size={16} /></span><div><small>Next renewal</small><strong>{service.nextDueAt ? new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not scheduled'}</strong></div></article>
-        <article><span><CircleDollarSign size={16} /></span><div><small>Plan price</small><strong>{money(billing.priceCents, billing.currency)} / {billing.cycle}</strong></div></article>
-        <article><span><FileText size={16} /></span><div><small>Billing history</small><strong>{service.invoices.length} invoice{service.invoices.length === 1 ? '' : 's'}</strong></div></article>
-      </section>
+      <div className="client-service-detail__pulse" aria-label="Service snapshot">
+        <div className="client-service-detail__pulse-item">
+          <span className="client-service-detail__pulse-copy">
+            <small>Status</small>
+            <strong className={isActive ? 'is-ok' : statusKey === 'suspended' ? 'is-danger' : undefined}>
+              {isActive ? 'Active' : serviceStatus(service.status)}
+            </strong>
+            <span>{isActive ? 'Online & managed' : 'Account state'}</span>
+          </span>
+          <span className={`client-service-detail__pulse-icon is-status is-${statusKey}`} aria-hidden>
+            {isActive ? <CheckCircle2 size={17} /> : statusKey === 'suspended' ? <AlertCircle size={17} /> : <Activity size={17} />}
+          </span>
+        </div>
+        <div className="client-service-detail__pulse-item">
+          <span className="client-service-detail__pulse-copy">
+            <small>Next renewal</small>
+            <strong>{renewalLabel}</strong>
+            <span>{cycleLabel(billing.cycle)} billing</span>
+          </span>
+          <span className="client-service-detail__pulse-icon is-renewal" aria-hidden>
+            <CalendarDays size={17} />
+          </span>
+        </div>
+        <div className="client-service-detail__pulse-item">
+          <span className="client-service-detail__pulse-copy">
+            <small>Plan price</small>
+            <strong>{money(billing.priceCents, billing.currency)}</strong>
+            <span>{service.product.name}</span>
+          </span>
+          <span className="client-service-detail__pulse-icon is-plan" aria-hidden>
+            <CircleDollarSign size={17} />
+          </span>
+        </div>
+        <div className="client-service-detail__pulse-item">
+          <span className="client-service-detail__pulse-copy">
+            <small>Invoices</small>
+            <strong className={unpaidInvoices.length ? 'is-warn' : undefined}>
+              {service.invoices.length}
+            </strong>
+            <span>
+              {unpaidInvoices.length
+                ? `${unpaidInvoices.length} unpaid · ${money(outstandingCents, billing.currency)}`
+                : `${money(totalPaid, billing.currency)} paid`}
+            </span>
+          </span>
+          <span className="client-service-detail__pulse-icon is-billing" aria-hidden>
+            <FileText size={17} />
+          </span>
+        </div>
+      </div>
 
-      <div className="service-detail-layout">
-        <main>
-          <section className="service-detail-card service-detail-overview">
-            <header><div><span>Configuration</span><h2>Server resources</h2><p>The resources included with your current hosting plan.</p></div><Server size={18} /></header>
-            <div className="service-resource-grid">
-              <article><span className="is-purple"><MemoryStick size={18} /></span><div><small>Memory</small><strong>{formatMemoryMb(limits.memoryMb)}</strong><p>Allocated RAM</p></div></article>
-              <article><span className="is-blue"><Cpu size={18} /></span><div><small>Processor</small><strong>{formatCpuPercent(limits.cpuPercent)}</strong><p>CPU allocation</p></div></article>
-              <article><span className="is-green"><HardDrive size={18} /></span><div><small>Storage</small><strong>{formatDiskMb(limits.diskMb)}</strong><p>Fast disk space</p></div></article>
+      {nextUnpaid && (
+        <div className="client-service-detail__attention">
+          <span className="client-service-detail__attention-copy">
+            <Clock3 size={15} aria-hidden />
+            <span>
+              <strong>{money(outstandingCents, billing.currency)} outstanding</strong>
+              <small>
+                {unpaidInvoices.length} unpaid invoice{unpaidInvoices.length === 1 ? '' : 's'}
+                {' · '}
+                next due{' '}
+                {new Date(nextUnpaid.dueAt).toLocaleDateString(undefined, {
+                  day: 'numeric',
+                  month: 'short',
+                })}
+              </small>
+            </span>
+          </span>
+          <Link className="client-home__btn client-home__btn--primary client-home__btn--sm" to={`/invoices/${nextUnpaid.id}`}>
+            Pay now
+            <ArrowRight size={13} />
+          </Link>
+        </div>
+      )}
+
+      <div className="client-service-detail__layout">
+        <div className="client-service-detail__primary">
+          <section className="client-service-detail__panel">
+            <div className="client-service-detail__panel-head">
+              <div>
+                <h2>Resources</h2>
+                <p>Included with {service.product.name}.</p>
+              </div>
             </div>
-            {service.product.description && <p className="service-detail-overview__description">{service.product.description}</p>}
+            <div className="client-service-detail__resource-rail" aria-label="Server resources">
+              <span>
+                <MemoryStick size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatMemoryMb(limits.memoryMb)}</em>
+                  <small>RAM</small>
+                </span>
+              </span>
+              <span>
+                <Cpu size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatCpuPercent(limits.cpuPercent)}</em>
+                  <small>CPU</small>
+                </span>
+              </span>
+              <span>
+                <HardDrive size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatDiskMb(limits.diskMb)}</em>
+                  <small>Disk</small>
+                </span>
+              </span>
+            </div>
+            {canUpgrade && !upgradeLoading && !hasUpgradeOptions && (
+              <p className="client-service-detail__upgrade-note">
+                <TrendingUp size={14} aria-hidden />
+                No larger plans available for this egg right now.
+              </p>
+            )}
           </section>
 
-          {(isActive || service.status === 'suspended') && (
-            <section className="service-detail-card service-upgrade-card">
-              <header>
+          {canUpgrade && (upgradeLoading || hasUpgradeOptions) && (
+            <section className="client-service-detail__panel">
+              <div className="client-service-detail__panel-head">
                 <div>
-                  <span>Plan upgrades</span>
-                  <h2>Move to a larger plan</h2>
-                  <p>Same game egg, more resources. You pay the prorated difference until your next renewal.</p>
+                  <h2>Upgrades</h2>
+                  <p>Same game egg, more resources. Charged as a prorated difference.</p>
                 </div>
-                <TrendingUp size={18} />
-              </header>
-              {upgradeLoading && <p className="ds-muted">Loading upgrade options…</p>}
-              {!upgradeLoading && !upgradeOptions.length && (
-                <div className="service-billing-history__empty">
-                  <TrendingUp size={22} />
-                  <span>
-                    <strong>No upgrades available</strong>
-                    <small>There are no higher plans with the same panel egg right now.</small>
-                  </span>
+              </div>
+              {upgradeLoading && (
+                <div className="client-service-detail__empty is-compact">
+                  <strong>Loading upgrade options…</strong>
                 </div>
               )}
-              <div className="service-upgrade-list">
-                {upgradeOptions.map((option) => (
-                  <article key={option.id}>
-                    <div>
-                      <strong>{option.name}</strong>
-                      <small>
-                        {option.memoryMb <= 0 ? 'Unlimited RAM' : `${Math.round(option.memoryMb / 1024)} GB RAM`}
-                        {' · '}
-                        {option.cpuPercent <= 0 ? 'Unlimited CPU' : `${option.cpuPercent}% CPU`}
-                        {' · '}
-                        {option.diskMb <= 0 ? 'Unlimited disk' : `${Math.round(option.diskMb / 1024)} GB disk`}
-                      </small>
-                      <em>
-                        {option.prorated
-                          ? `Prorated upgrade charge ${money(option.chargeCents, option.currency)} (full delta ${money(option.fullDeltaCents, option.currency)} / ${option.cycle})`
-                          : `Upgrade charge ${money(option.chargeCents, option.currency)}`}
-                      </em>
+              {!upgradeLoading && hasUpgradeOptions && (
+                <div className="client-service-detail__upgrade-list">
+                  {upgradeOptions.map((option) => (
+                    <div key={option.id} className="client-service-detail__upgrade">
+                      <div className="client-service-detail__upgrade-copy">
+                        <strong>{option.name}</strong>
+                        <span>
+                          {option.memoryMb <= 0 ? 'Unlimited RAM' : formatMemoryMb(option.memoryMb)}
+                          {' · '}
+                          {option.cpuPercent <= 0 ? 'Unlimited CPU' : formatCpuPercent(option.cpuPercent)}
+                          {' · '}
+                          {option.diskMb <= 0 ? 'Unlimited disk' : formatDiskMb(option.diskMb)}
+                        </span>
+                        <small>
+                          {option.prorated
+                            ? `Prorated ${money(option.chargeCents, option.currency)} · full delta ${money(option.fullDeltaCents, option.currency)} / ${option.cycle}`
+                            : `Upgrade charge ${money(option.chargeCents, option.currency)}`}
+                        </small>
+                      </div>
+                      <button
+                        type="button"
+                        className="client-home__btn client-home__btn--primary client-home__btn--sm"
+                        disabled={Boolean(upgradeBusy)}
+                        onClick={() => void requestUpgrade(option)}
+                      >
+                        {upgradeBusy === option.id ? 'Creating…' : 'Upgrade'}
+                        <ArrowRight size={13} />
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      disabled={Boolean(upgradeBusy)}
-                      onClick={() => void requestUpgrade(option)}
-                    >
-                      {upgradeBusy === option.id ? 'Creating…' : 'Upgrade'} <ArrowRight size={13} />
-                    </button>
-                  </article>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </section>
           )}
 
-          <section className="service-detail-card service-billing-history">
-            <header><div><span>Billing</span><h2>Invoice history</h2><p>Payments and renewals attached to this service.</p></div><Link to="/invoices">All invoices <ArrowRight size={13} /></Link></header>
-            <div>
-              {service.invoices.map((invoice) => (
-                <Link to={`/invoices/${invoice.id}`} key={invoice.id}>
-                  <span className={`service-billing-history__icon is-${invoice.status}`}><FileText size={15} /></span>
-                  <span><small>{invoice.number}</small><strong>{invoice.status === 'paid' && invoice.paidAt ? `Paid ${new Date(invoice.paidAt).toLocaleDateString()}` : `Due ${new Date(invoice.dueAt).toLocaleDateString()}`}</strong></span>
-                  <span className={statusBadge(invoice.status)}>{invoice.status}</span>
-                  <strong>{money(invoice.totalCents, invoice.currency)}</strong>
-                  <ChevronRight size={14} />
-                </Link>
-              ))}
-              {!service.invoices.length && <div className="service-billing-history__empty"><FileText size={22} /><span><strong>No invoices yet</strong><small>Billing records will appear here.</small></span></div>}
+          <section className="client-service-detail__panel">
+            <div className="client-service-detail__panel-head">
+              <div>
+                <h2>Billing history</h2>
+                <p>
+                  {service.invoices.length
+                    ? `${service.invoices.length} invoice${service.invoices.length === 1 ? '' : 's'} for this service`
+                    : 'No invoices yet'}
+                </p>
+              </div>
+              <Link className="client-home__btn client-home__btn--text" to="/invoices">
+                All invoices <ArrowRight size={14} />
+              </Link>
             </div>
+            <div className="client-service-detail__invoice-list">
+              {visibleInvoices.map((invoice) => {
+                const overdue =
+                  invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now();
+                const invoiceStatus = overdue ? 'overdue' : invoice.status;
+                const statusLabel =
+                  invoiceStatus === 'overdue'
+                    ? 'Overdue'
+                    : invoiceStatus === 'unpaid'
+                      ? 'Unpaid'
+                      : invoiceStatus === 'paid'
+                        ? 'Paid'
+                        : invoiceStatus === 'cancelled'
+                          ? 'Cancelled'
+                          : invoiceStatus;
+                const dateLabel =
+                  invoice.status === 'paid'
+                    ? 'Paid on'
+                    : invoice.status === 'cancelled'
+                      ? 'Closed on'
+                      : overdue
+                        ? 'Was due'
+                        : 'Due on';
+                const dateValue = new Date(
+                  invoice.status === 'paid' ? invoice.paidAt || invoice.dueAt : invoice.dueAt,
+                ).toLocaleDateString(undefined, {
+                  day: 'numeric',
+                  month: 'short',
+                  year: 'numeric',
+                });
+                return (
+                  <Link
+                    key={invoice.id}
+                    to={`/invoices/${invoice.id}`}
+                    className={`client-service-detail__invoice is-${invoiceStatus}`}
+                  >
+                    <span className="client-service-detail__invoice-mark" aria-hidden>
+                      <FileText size={15} />
+                    </span>
+                    <span className="client-service-detail__invoice-main">
+                      <strong>{invoice.number}</strong>
+                      <span>
+                        <em className={`client-service-detail__status is-${invoiceStatus}`}>
+                          {statusLabel}
+                        </em>
+                        <span>
+                          {dateLabel} {dateValue}
+                        </span>
+                      </span>
+                    </span>
+                    <strong className="client-service-detail__invoice-amount">
+                      {money(invoice.totalCents, invoice.currency)}
+                    </strong>
+                    <span className="client-service-detail__invoice-go" aria-hidden>
+                      <ArrowRight size={14} />
+                    </span>
+                  </Link>
+                );
+              })}
+              {!service.invoices.length && (
+                <div className="client-service-detail__empty">
+                  <span aria-hidden><FileText size={18} /></span>
+                  <strong>No invoices yet</strong>
+                  <p>Billing records for this service will show up here.</p>
+                </div>
+              )}
+            </div>
+            {hiddenInvoiceCount > 0 && (
+              <Link className="client-service-detail__more" to="/invoices">
+                View {hiddenInvoiceCount} more invoice{hiddenInvoiceCount === 1 ? '' : 's'}
+                <ArrowRight size={13} />
+              </Link>
+            )}
           </section>
-        </main>
+        </div>
 
-        <aside>
-          <section className="service-panel-card">
-            <header><span className={isActive ? 'is-online' : ''}><i /></span><div><small>Spirit-Panel connection</small><strong>{isActive && service.panelServerId ? 'Server connected' : 'Awaiting connection'}</strong></div></header>
-            <div><small>Panel server ID</small><strong>{service.panelServerId || 'Assigned after provisioning'}</strong></div>
-            {isActive && panelHref ? <a href={panelHref} target="_blank" rel="noopener noreferrer">Manage server <ExternalLink size={13} /></a> : <span>Panel access becomes available when your service is active.</span>}
+        <aside className="client-service-detail__aside">
+          <section className="client-service-detail__side">
+            <div className="client-service-detail__side-head">
+              <span className={`client-service-detail__panel-dot${panelReady ? ' is-online' : ''}`} aria-hidden />
+              <div>
+                <small>Game panel</small>
+                <strong>
+                  {panelConnected ? 'Connected' : panelReady ? 'Ready to open' : 'Awaiting connection'}
+                </strong>
+              </div>
+            </div>
+            <div className="client-service-detail__side-row">
+              <span>Server ID</span>
+              <strong>{service.panelServerId || 'Pending assignment'}</strong>
+            </div>
+            {panelReady ? (
+              <a
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                href={panelHref!}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Manage server <ExternalLink size={13} />
+              </a>
+            ) : (
+              <p className="client-service-detail__side-note">
+                Panel access becomes available when this service is active.
+              </p>
+            )}
           </section>
 
-          <section className="service-plan-card">
-            <header>
+          <section className="client-service-detail__side">
+            <div className="client-service-detail__side-head">
               <CategoryMark
                 icon={category?.icon}
                 logoUrl={category?.logoUrl}
                 color={category?.color}
-                size={34}
+                size={32}
               />
-              <span>
+              <div>
                 <small>{category?.name || 'Current plan'}</small>
                 <strong>{service.product.name}</strong>
-              </span>
-            </header>
-            <div><span>Billing cycle</span><strong>{cycleLabel(billing.cycle)}</strong></div>
-            <div><span>Recurring price</span><strong>{money(billing.priceCents, billing.currency)}</strong></div>
-            <div><span>Total paid</span><strong>{money(totalPaid, billing.currency)}</strong></div>
-            {latestInvoice && <Link to={`/invoices/${latestInvoice.id}`}>View latest invoice <ArrowRight size={13} /></Link>}
+              </div>
+            </div>
+            {service.product.description ? (
+              <p className="client-service-detail__side-note">{service.product.description}</p>
+            ) : null}
+            <div className="client-service-detail__side-row">
+              <span>Billing cycle</span>
+              <strong>{cycleLabel(billing.cycle)}</strong>
+            </div>
+            <div className="client-service-detail__side-row">
+              <span>Recurring price</span>
+              <strong>{money(billing.priceCents, billing.currency)}</strong>
+            </div>
+            <div className="client-service-detail__side-row">
+              <span>Total paid</span>
+              <strong>{money(totalPaid, billing.currency)}</strong>
+            </div>
+            {latestInvoice && (
+              <Link className="client-home__btn client-home__btn--text" to={`/invoices/${latestInvoice.id}`}>
+                Latest invoice <ArrowRight size={13} />
+              </Link>
+            )}
+          </section>
+
+          <section className="client-service-detail__side is-help">
+            <div className="client-service-detail__side-head">
+              <ShieldCheck size={16} />
+              <div>
+                <small>Support</small>
+                <strong>Need help?</strong>
+              </div>
+            </div>
+            <p className="client-service-detail__side-note">
+              Quote <em>{service.name}</em> when contacting support.
+            </p>
+            <Link className="client-home__btn client-home__btn--ghost client-home__btn--sm" to="/support">
+              Open support <ArrowRight size={13} />
+            </Link>
           </section>
 
           {canDelete && (
-            <section className="service-danger-card">
-              <header>
+            <section className="client-service-detail__side is-danger">
+              <div className="client-service-detail__side-head">
                 <Trash2 size={16} />
                 <div>
+                  <small>Danger zone</small>
                   <strong>Delete this server</strong>
-                  <p>
-                    {deletion?.refundEligible && deletion.refundCents > 0
-                      ? `Owned ${deletion.ageDays} days. Estimated credit refund: ${money(deletion.refundCents, billing.currency)} for the unused period.`
-                      : deletion?.ownedLongEnough
-                        ? 'No unused period remains, so no credit refund will be issued.'
-                        : `Servers deleted within the first ${deletion?.minAgeDays ?? 3} days are not eligible for a credit refund.`}
-                  </p>
                 </div>
-              </header>
-              <button type="button" onClick={() => setDeleteOpen(true)}>
+              </div>
+              <p className="client-service-detail__side-note">
+                {deletion?.refundEligible && deletion.refundCents > 0
+                  ? `Within the ${deletion.minAgeDays}-day refund window (owned ${deletion.ageDays} day${deletion.ageDays === 1 ? '' : 's'}). Estimated credit refund: ${money(deletion.refundCents, billing.currency)}.`
+                  : (deletion?.withinRefundWindow ?? deletion?.ownedLongEnough)
+                    ? `Within the ${deletion?.minAgeDays ?? 3}-day refund window, but no unused billing period remains to credit.`
+                    : `You can still delete this server. Refunds are only available within the first ${deletion?.minAgeDays ?? 3} day${(deletion?.minAgeDays ?? 3) === 1 ? '' : 's'} after purchase.`}
+              </p>
+              <button
+                type="button"
+                className="client-service-detail__danger-btn"
+                onClick={() => setDeleteOpen(true)}
+              >
                 <Trash2 size={14} /> Delete server
               </button>
             </section>
           )}
-
-          <section className="service-help-card">
-            <CheckCircle2 size={17} />
-            <div><strong>Need help with this server?</strong><p>Quote the service name when contacting the SpiritHost support team.</p></div>
-          </section>
         </aside>
       </div>
 
@@ -714,9 +1021,9 @@ export function ServiceDetailPage() {
           'Unpaid invoices for this service are cancelled (applied credits refunded).',
           deletion?.refundEligible && deletion.refundCents > 0
             ? `About ${money(deletion.refundCents, billing.currency)} will be credited for the unused billing period.`
-            : deletion?.ownedLongEnough
+            : (deletion?.withinRefundWindow ?? deletion?.ownedLongEnough)
               ? 'No credit refund — there is no remaining unused period.'
-              : `No credit refund — ownership is under ${deletion?.minAgeDays ?? 3} days.`,
+              : `No credit refund — this service is past the ${deletion?.minAgeDays ?? 3}-day refund window.`,
         ].filter(Boolean) as string[]}
         onCancel={() => !deleting && setDeleteOpen(false)}
         onConfirm={() => void confirmDelete()}

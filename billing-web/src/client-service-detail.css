@@ -1,0 +1,794 @@
+.client-service-detail {
+  --service-color: var(--accent);
+  display: grid;
+  gap: 1.15rem;
+  animation: client-service-detail-in 0.45s ease both;
+}
+
+@keyframes client-service-detail-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.client-service-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 0.74rem;
+  font-weight: 650;
+  transition: color 0.15s ease;
+}
+
+.client-service-detail__back:hover {
+  color: var(--accent-hover);
+}
+
+.client-service-detail__loading {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.client-service-detail__intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.client-service-detail__intro-main {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.client-service-detail__mark.cat-mark {
+  flex-shrink: 0;
+  width: 3.1rem;
+  height: 3.1rem;
+  border-radius: 0.9rem;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--service-color) 28%, transparent),
+    0 8px 18px color-mix(in srgb, #000 18%, transparent);
+}
+
+.client-service-detail__intro-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.client-service-detail__intro-copy > p {
+  margin: 0;
+  color: color-mix(in srgb, var(--service-color) 78%, var(--muted));
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.client-service-detail__intro-copy > h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 2.6vw, 2rem);
+  font-weight: 650;
+  letter-spacing: -0.04em;
+  line-height: 1.05;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__intro-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  color: color-mix(in srgb, var(--text) 58%, var(--muted));
+  font-size: 0.72rem;
+}
+
+.client-service-detail__chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.66rem;
+  font-weight: 550;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__meta-text {
+  color: color-mix(in srgb, var(--text) 52%, var(--muted));
+  font-size: 0.7rem;
+}
+
+.client-service-detail__intro-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.client-service-detail__intro-actions .is-disabled {
+  opacity: 0.72;
+  cursor: default;
+  pointer-events: none;
+}
+
+.client-service-detail__status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 1.3rem;
+  padding: 0 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--bg) 48%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: capitalize;
+  font-style: normal;
+}
+
+.client-service-detail__status.is-active {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.client-service-detail__status.is-pending_payment,
+.client-service-detail__status.is-unpaid {
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+
+.client-service-detail__status.is-suspended,
+.client-service-detail__status.is-overdue {
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.client-service-detail__status.is-cancelled {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: color-mix(in srgb, var(--text) 62%, var(--muted));
+}
+
+.client-service-detail__status.is-paid {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.client-service-detail__pulse {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.client-service-detail__pulse-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.client-service-detail__pulse-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.client-service-detail__pulse-copy small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 650;
+}
+
+.client-service-detail__pulse-copy strong {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__pulse-copy strong.is-ok {
+  color: #86efac;
+}
+
+.client-service-detail__pulse-copy strong.is-warn {
+  color: #fbbf24;
+}
+
+.client-service-detail__pulse-copy strong.is-danger {
+  color: #fca5a5;
+}
+
+.client-service-detail__attention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 28%, var(--border));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, #f59e0b 12%, transparent),
+      color-mix(in srgb, var(--bg) 40%, transparent)
+    );
+}
+
+.client-service-detail__attention-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  color: #fbbf24;
+}
+
+.client-service-detail__attention-copy > span {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.client-service-detail__attention-copy strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.client-service-detail__attention-copy small {
+  color: color-mix(in srgb, var(--text) 58%, var(--muted));
+  font-size: 0.7rem;
+}
+
+.client-service-detail__attention .client-home__btn {
+  gap: 0.35rem;
+}
+
+.client-service-detail__pulse-copy > span {
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__pulse-icon {
+  flex-shrink: 0;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: var(--muted);
+}
+
+.client-service-detail__pulse-icon.is-status.is-active {
+  color: #86efac;
+  border-color: color-mix(in srgb, #34d399 28%, var(--border));
+  background: color-mix(in srgb, #34d399 10%, transparent);
+}
+
+.client-service-detail__pulse-icon.is-status.is-pending_payment {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--border));
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+}
+
+.client-service-detail__pulse-icon.is-status.is-suspended {
+  color: #fca5a5;
+  border-color: color-mix(in srgb, #f87171 28%, var(--border));
+  background: color-mix(in srgb, #f87171 10%, transparent);
+}
+
+.client-service-detail__pulse-icon.is-renewal,
+.client-service-detail__pulse-icon.is-plan,
+.client-service-detail__pulse-icon.is-billing {
+  color: color-mix(in srgb, var(--service-color) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--service-color) 28%, var(--border));
+  background: color-mix(in srgb, var(--service-color) 12%, transparent);
+}
+
+.client-service-detail__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(16rem, 0.9fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.client-service-detail__primary,
+.client-service-detail__aside {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.client-service-detail__panel,
+.client-service-detail__side {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.9rem;
+  border-radius: 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.client-service-detail__panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.1rem 0.15rem 0;
+}
+
+.client-service-detail__panel-head h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.client-service-detail__panel-head p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.client-service-detail__resource-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+  padding: 0.55rem;
+  border-radius: 0.9rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 70%, transparent),
+      color-mix(in srgb, var(--bg) 35%, transparent)
+    );
+}
+
+.client-service-detail__resource-rail > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 0;
+  padding: 0.45rem 0.55rem;
+  border-radius: 0.7rem;
+  color: color-mix(in srgb, var(--service-color) 78%, var(--text));
+}
+
+.client-service-detail__resource-rail > span > span {
+  min-width: 0;
+  display: grid;
+  gap: 0.08rem;
+}
+
+.client-service-detail__resource-rail em {
+  font-style: normal;
+  font-family: var(--font-display);
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__resource-rail small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.client-service-detail__upgrade-note {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.client-service-detail__upgrade-note svg {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--service-color) 70%, var(--muted));
+}
+
+.client-service-detail__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  margin: 0.1rem 0.15rem 0;
+  color: var(--accent-hover);
+  text-decoration: none;
+  font-size: 0.74rem;
+  font-weight: 650;
+}
+
+.client-service-detail__more:hover {
+  text-decoration: underline;
+}
+
+.client-service-detail__upgrade-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.client-service-detail__upgrade {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 0.85rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 34%, transparent);
+}
+
+.client-service-detail__upgrade-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.client-service-detail__upgrade-copy strong {
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.client-service-detail__upgrade-copy > span {
+  color: color-mix(in srgb, var(--text) 70%, var(--muted));
+  font-size: 0.74rem;
+}
+
+.client-service-detail__upgrade-copy small {
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.client-service-detail__invoice-list {
+  display: grid;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 32%, transparent);
+}
+
+.client-service-detail__invoice {
+  --invoice-tone: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--invoice-tone) 70%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 8%, transparent), transparent 42%);
+  transition: background 0.15s ease;
+}
+
+.client-service-detail__invoice:last-child {
+  border-bottom: 0;
+}
+
+.client-service-detail__invoice:hover {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 13%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
+}
+
+.client-service-detail__invoice.is-paid {
+  --invoice-tone: #34d399;
+}
+
+.client-service-detail__invoice.is-unpaid {
+  --invoice-tone: #f59e0b;
+}
+
+.client-service-detail__invoice.is-overdue {
+  --invoice-tone: #f87171;
+}
+
+.client-service-detail__invoice.is-cancelled {
+  --invoice-tone: color-mix(in srgb, var(--muted) 78%, #94a3b8);
+}
+
+.client-service-detail__invoice-mark {
+  flex-shrink: 0;
+  width: 2.15rem;
+  height: 2.15rem;
+  border-radius: 0.7rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--invoice-tone) 28%, var(--border));
+  background: color-mix(in srgb, var(--invoice-tone) 12%, transparent);
+  color: color-mix(in srgb, var(--invoice-tone) 80%, var(--text));
+}
+
+.client-service-detail__invoice-main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.client-service-detail__invoice-main > strong {
+  font-size: 0.86rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.client-service-detail__invoice-main > span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.client-service-detail__invoice-amount {
+  font-family: var(--font-display);
+  font-size: 0.94rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.client-service-detail__invoice-go {
+  display: grid;
+  place-items: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--text) 45%, var(--faint));
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.client-service-detail__invoice:hover .client-service-detail__invoice-go {
+  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateX(1px);
+}
+
+.client-service-detail__empty {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: start;
+  padding: 1.2rem;
+  color: var(--muted);
+}
+
+.client-service-detail__empty.is-compact {
+  padding: 0.85rem 0.25rem;
+}
+
+.client-service-detail__empty > span {
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: color-mix(in srgb, var(--service-color) 70%, var(--muted));
+}
+
+.client-service-detail__empty strong {
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.client-service-detail__empty p {
+  margin: 0;
+  font-size: 0.76rem;
+  line-height: 1.45;
+  max-width: 28rem;
+}
+
+.client-service-detail__side-head {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.client-service-detail__side-head > div {
+  min-width: 0;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.client-service-detail__side-head small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.client-service-detail__side-head strong {
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-service-detail__panel-dot {
+  flex-shrink: 0;
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted) 70%, transparent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--muted) 12%, transparent);
+}
+
+.client-service-detail__panel-dot.is-online {
+  background: #34d399;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #34d399 16%, transparent);
+}
+
+.client-service-detail__side-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  font-size: 0.76rem;
+}
+
+.client-service-detail__side-row > span {
+  color: var(--muted);
+}
+
+.client-service-detail__side-row > strong {
+  text-align: right;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.client-service-detail__side-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.45;
+}
+
+.client-service-detail__side.is-help .client-service-detail__side-head {
+  color: color-mix(in srgb, var(--service-color) 78%, var(--text));
+}
+
+.client-service-detail__side-note em {
+  font-style: normal;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.client-service-detail__side.is-danger {
+  border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--danger) 10%, transparent),
+      color-mix(in srgb, var(--surface) 88%, transparent)
+    );
+}
+
+.client-service-detail__side.is-danger .client-service-detail__side-head {
+  color: var(--danger-fg);
+}
+
+.client-service-detail__danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  border-radius: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--danger) 38%, var(--border));
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger-fg);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.client-service-detail__danger-btn:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 48%, var(--border));
+}
+
+@media (max-width: 980px) {
+  .client-service-detail__pulse {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-service-detail__layout {
+    grid-template-columns: 1fr;
+  }
+
+  .client-service-detail__resource-rail {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .client-service-detail__pulse {
+    grid-template-columns: 1fr;
+  }
+
+  .client-service-detail__intro-main {
+    width: 100%;
+  }
+
+  .client-service-detail__intro-actions {
+    width: 100%;
+  }
+
+  .client-service-detail__intro-actions .client-home__btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .client-service-detail__invoice-go {
+    display: none;
+  }
+}

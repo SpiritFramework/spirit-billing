@@ -66,6 +66,7 @@ type SettingsForm = {
   invoicePrefix: string;
   defaultCurrency: string;
   invoiceDueDays: number;
+  serviceRefundWindowDays: number;
   overdueSuspendDays: number;
   overdueTerminateDays: number;
   panelApiUrl: string;
@@ -121,6 +122,7 @@ const emptyForm: SettingsForm = {
   invoicePrefix: 'INV',
   defaultCurrency: 'GBP',
   invoiceDueDays: 7,
+  serviceRefundWindowDays: 3,
   overdueSuspendDays: 3,
   overdueTerminateDays: 14,
   panelApiUrl: '',
@@ -250,6 +252,10 @@ export function AdminSettings() {
       clientNavLayout: normalizeNavLayout(data.clientNavLayout),
       adminNavLayout: normalizeNavLayout(data.adminNavLayout),
       invoiceDueDays: data.invoiceDueDays || 7,
+      serviceRefundWindowDays:
+        data.serviceRefundWindowDays === 0 || data.serviceRefundWindowDays
+          ? Number(data.serviceRefundWindowDays)
+          : 3,
       overdueSuspendDays:
         data.overdueSuspendDays === 0 || data.overdueSuspendDays
           ? Number(data.overdueSuspendDays)
@@ -344,6 +350,7 @@ export function AdminSettings() {
           invoicePrefix: form.invoicePrefix,
           defaultCurrency: form.defaultCurrency,
           invoiceDueDays: Number(form.invoiceDueDays),
+          serviceRefundWindowDays: Number(form.serviceRefundWindowDays),
           overdueSuspendDays: Number(form.overdueSuspendDays),
           overdueTerminateDays: Number(form.overdueTerminateDays),
           paymentInstructions: form.paymentInstructions,
@@ -617,6 +624,24 @@ export function AdminSettings() {
                       max={90}
                       value={form.invoiceDueDays}
                       onChange={(e) => setForm({ ...form, invoiceDueDays: Number(e.target.value) || 1 })}
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Service delete refund window"
+                    hint="Clients can get a prorated credit refund when deleting within this many days of purchase. After that they can still delete, with no refund. Set 0 to disable refunds."
+                  >
+                    <input
+                      type="number"
+                      min={0}
+                      max={90}
+                      value={form.serviceRefundWindowDays}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          serviceRefundWindowDays: Math.max(0, Number(e.target.value) || 0),
+                        })
+                      }
                       required
                     />
                   </Field>

@@ -1,0 +1,680 @@
+.client-invoices {
+  display: grid;
+  gap: 1.15rem;
+  animation: client-invoices-in 0.45s ease both;
+}
+
+@keyframes client-invoices-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.client-invoices__intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.client-invoices__intro-copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.client-invoices__intro-copy > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.client-invoices__intro-copy > h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.45rem, 2.4vw, 1.9rem);
+  font-weight: 650;
+  letter-spacing: -0.035em;
+  line-height: 1.1;
+}
+
+.client-invoices__intro-copy > span {
+  color: color-mix(in srgb, var(--text) 62%, var(--muted));
+  font-size: 0.78rem;
+}
+
+.client-invoices__intro-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.client-invoices__pulse {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.client-invoices__pulse-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-width: 0;
+  padding: 0.9rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+}
+
+.client-invoices__pulse-item:hover {
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+
+.client-invoices__pulse-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.client-invoices__pulse-item.is-active {
+  border-color: color-mix(in srgb, var(--accent) 34%, var(--border));
+  background:
+    linear-gradient(
+      165deg,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      color-mix(in srgb, var(--surface) 88%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent);
+}
+
+.client-invoices__pulse-copy {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.client-invoices__pulse-copy small {
+  color: var(--muted);
+  font-size: 0.66rem;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  font-weight: 650;
+}
+
+.client-invoices__pulse-copy strong {
+  font-family: var(--font-display);
+  font-size: 1.15rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-invoices__pulse-copy strong.is-warn {
+  color: #fbbf24;
+}
+
+.client-invoices__pulse-copy strong.is-ok {
+  color: #86efac;
+}
+
+.client-invoices__pulse-copy > span {
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-invoices__pulse-icon {
+  flex-shrink: 0;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: var(--muted);
+}
+
+.client-invoices__pulse-icon.is-total {
+  color: color-mix(in srgb, var(--accent) 80%, var(--text));
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+.client-invoices__pulse-icon.is-due {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #f59e0b 28%, var(--border));
+  background: color-mix(in srgb, #f59e0b 10%, transparent);
+}
+
+.client-invoices__pulse-icon.is-paid {
+  color: #86efac;
+  border-color: color-mix(in srgb, #34d399 28%, var(--border));
+  background: color-mix(in srgb, #34d399 10%, transparent);
+}
+
+.client-invoices__pulse-icon.is-cancelled {
+  color: color-mix(in srgb, var(--text) 55%, var(--muted));
+  border-color: color-mix(in srgb, var(--border) 85%, transparent);
+  background: color-mix(in srgb, var(--bg) 50%, transparent);
+}
+
+.client-invoices__panel {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.85rem;
+  border-radius: 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+}
+
+.client-invoices__panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.15rem 0.25rem 0;
+}
+
+.client-invoices__panel-copy h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.client-invoices__panel-copy p {
+  margin: 0.15rem 0 0;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.client-invoices__search {
+  flex: 1 1 14rem;
+  max-width: 22rem;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  padding: 0 0.75rem;
+  height: 2.45rem;
+  border-radius: 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 48%, transparent);
+  color: var(--muted);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.client-invoices__search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
+
+.client-invoices__search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+}
+
+.client-invoices__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  padding: 0 0.15rem;
+}
+
+.client-invoices__filters > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 2.1rem;
+  padding: 0 0.55rem 0 0.75rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: color-mix(in srgb, var(--text) 68%, var(--muted));
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.client-invoices__filters > button > em {
+  font-style: normal;
+  min-width: 1.2rem;
+  padding: 0.1rem 0.38rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: var(--muted);
+  font-size: 0.66rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+.client-invoices__filters > button:hover {
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: var(--text);
+}
+
+.client-invoices__filters > button.is-active {
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--text);
+}
+
+.client-invoices__filters > button.is-active > em {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--accent-hover);
+}
+
+.client-invoices__attention {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 0.9rem;
+  border-radius: 0.85rem;
+  border: 1px solid color-mix(in srgb, #f59e0b 28%, var(--border));
+  background:
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, #f59e0b 12%, transparent),
+      color-mix(in srgb, var(--bg) 40%, transparent)
+    );
+}
+
+.client-invoices__attention-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+  color: #fbbf24;
+}
+
+.client-invoices__attention-copy > span {
+  display: grid;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.client-invoices__attention-copy strong {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+.client-invoices__attention-copy small {
+  color: color-mix(in srgb, var(--text) 58%, var(--muted));
+  font-size: 0.7rem;
+}
+
+.client-invoices__attention-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.client-invoices__attention-actions .client-home__btn {
+  gap: 0.35rem;
+}
+
+.client-invoices__list {
+  display: grid;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  border-radius: 0.9rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--bg) 32%, transparent);
+}
+
+.client-invoices__row {
+  --invoice-tone: var(--accent);
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.78rem 0.95rem 0.78rem 0.9rem;
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--invoice-tone) 72%, transparent);
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 8%, transparent), transparent 38%);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.client-invoices__row:last-child {
+  border-bottom: 0;
+}
+
+.client-invoices__row:hover {
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--invoice-tone) 13%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
+}
+
+.client-invoices__row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
+}
+
+.client-invoices__row.is-paid {
+  --invoice-tone: #34d399;
+}
+
+.client-invoices__row.is-unpaid {
+  --invoice-tone: #f59e0b;
+}
+
+.client-invoices__row.is-overdue {
+  --invoice-tone: #f87171;
+}
+
+.client-invoices__row.is-cancelled {
+  --invoice-tone: color-mix(in srgb, var(--muted) 78%, #94a3b8);
+  opacity: 0.9;
+}
+
+.client-invoices__row-mark {
+  flex-shrink: 0;
+  width: 2.45rem;
+  height: 2.45rem;
+  border-radius: 0.75rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--invoice-tone) 28%, var(--border));
+  background: color-mix(in srgb, var(--invoice-tone) 12%, transparent);
+  color: color-mix(in srgb, var(--invoice-tone) 80%, var(--text));
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--invoice-tone) 10%, transparent),
+    0 6px 14px color-mix(in srgb, #000 14%, transparent);
+}
+
+.client-invoices__row-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.1rem;
+}
+
+.client-invoices__row-main {
+  min-width: 0;
+  display: grid;
+  gap: 0.28rem;
+}
+
+.client-invoices__row-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.client-invoices__row-title strong {
+  min-width: 0;
+  font-size: 0.94rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.client-invoices__status {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 1.35rem;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  background: color-mix(in srgb, var(--bg) 48%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  white-space: nowrap;
+  text-transform: capitalize;
+}
+
+.client-invoices__status.is-paid {
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+  background: var(--success-bg);
+  color: var(--success-fg);
+}
+
+.client-invoices__status.is-unpaid {
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+}
+
+.client-invoices__status.is-overdue {
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+}
+
+.client-invoices__status.is-cancelled {
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background: color-mix(in srgb, var(--bg) 55%, transparent);
+  color: color-mix(in srgb, var(--text) 62%, var(--muted));
+}
+
+.client-invoices__row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.client-invoices__row-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.66rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: none;
+}
+
+.client-invoices__row-rail {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.38rem 0.4rem 0.38rem 0.65rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 70%, transparent),
+      color-mix(in srgb, var(--bg) 35%, transparent)
+    );
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.client-invoices__row:hover .client-invoices__row-rail {
+  border-color: color-mix(in srgb, var(--invoice-tone) 28%, var(--border));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--invoice-tone) 8%, transparent);
+}
+
+.client-invoices__row-date {
+  display: grid;
+  gap: 0.12rem;
+  justify-items: end;
+  text-align: right;
+  min-width: 5.4rem;
+  padding-right: 0.15rem;
+}
+
+.client-invoices__row-date small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+}
+
+.client-invoices__row-date strong {
+  font-size: 0.76rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-invoices__row-amount {
+  display: grid;
+  place-items: center end;
+  min-width: 4.2rem;
+  padding: 0.05rem 0.15rem 0.05rem 0.7rem;
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
+
+.client-invoices__row-amount strong {
+  font-family: var(--font-display);
+  font-size: 0.96rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.client-invoices__row-go {
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--text) 45%, var(--faint));
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  transition: color 0.15s ease, background 0.15s ease, transform 0.15s ease;
+}
+
+.client-invoices__row:hover .client-invoices__row-go {
+  color: var(--accent-hover);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateX(1px);
+}
+
+.client-invoices__empty {
+  display: grid;
+  gap: 0.45rem;
+  justify-items: start;
+  padding: 1.6rem 1.2rem;
+  color: var(--muted);
+}
+
+.client-invoices__empty > span {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.8rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  color: color-mix(in srgb, var(--accent) 70%, var(--muted));
+}
+
+.client-invoices__empty strong {
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.client-invoices__empty p {
+  margin: 0;
+  font-size: 0.78rem;
+  max-width: 28rem;
+  line-height: 1.45;
+}
+
+@media (max-width: 980px) {
+  .client-invoices__pulse {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .client-invoices__search {
+    max-width: none;
+  }
+
+  .client-invoices__row-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.7rem;
+  }
+
+  .client-invoices__row-rail {
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
+  }
+}
+
+@media (max-width: 640px) {
+  .client-invoices__pulse {
+    grid-template-columns: 1fr;
+  }
+
+  .client-invoices__panel-head {
+    align-items: stretch;
+  }
+
+  .client-invoices__filters > button {
+    flex: 1 1 auto;
+  }
+
+  .client-invoices__attention {
+    align-items: stretch;
+  }
+
+  .client-invoices__attention-actions {
+    width: 100%;
+  }
+
+  .client-invoices__attention-actions .client-home__btn {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+
+  .client-invoices__row-go {
+    display: none;
+  }
+}

@@ -1,9 +1,9 @@
 import type { Prisma } from '@prisma/client';
 import {
   getInvoiceDueDays,
+  getServiceRefundWindowDays,
   nextInvoiceNumber,
   prorateRemainingCents,
-  SERVICE_REFUND_MIN_AGE_MS,
   formatMoney,
 } from './billing.js';
 import { adjustCredits } from './credits.js';
@@ -38,7 +38,7 @@ function serviceCurrency(service: {
   return service.currency ?? service.product.currency;
 }
 
-export function previewServiceDeletionRefund(service: {
+export async function previewServiceDeletionRefund(service: {
   createdAt: Date;
   status: string;
   priceCents: number | null;
@@ -46,11 +46,14 @@ export function previewServiceDeletionRefund(service: {
   nextDueAt: Date | null;
   product: { priceCents: number; cycle: Cycle };
 }) {
+  const windowDays = await getServiceRefundWindowDays();
   const ageMs = Date.now() - service.createdAt.getTime();
-  const ownedLongEnough = ageMs > SERVICE_REFUND_MIN_AGE_MS;
+  const dayMs = 24 * 60 * 60 * 1000;
+  const ageDays = Math.floor(ageMs / dayMs);
+  const withinRefundWindow = windowDays > 0 && ageMs <= windowDays * dayMs;
   const deletable = ['active', 'suspended', 'pending_payment', 'cancelled'].includes(service.status);
   const refundEligible =
-    ownedLongEnough && (service.status === 'active' || service.status === 'suspended');
+    withinRefundWindow && (service.status === 'active' || service.status === 'suspended');
 
   const refundCents = refundEligible
     ? prorateRemainingCents(
@@ -62,11 +65,13 @@ export function previewServiceDeletionRefund(service: {
 
   return {
     deletable,
-    ownedLongEnough,
+    withinRefundWindow,
+    /** @deprecated use withinRefundWindow — kept for older clients */
+    ownedLongEnough: withinRefundWindow,
     refundEligible,
     refundCents,
-    minAgeDays: 3,
-    ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
+    minAgeDays: windowDays,
+    ageDays,
   };
 }
 
@@ -85,7 +90,7 @@ async function cancelUnpaidForService(tx: Prisma.TransactionClient, serviceId: s
 
 /**
  * Client or admin hard-delete of a service + panel server.
- * Refunds prorated remaining cycle as credits when owned > 3 days.
+ * Refunds prorated remaining cycle as credits when deleted inside the refund window.
  */
 export async function deleteOwnedService(input: {
   serviceId: string;
@@ -107,7 +112,7 @@ export async function deleteOwnedService(input: {
     throw Object.assign(new Error('Service not found'), { statusCode: 404 });
   }
 
-  const preview = previewServiceDeletionRefund(service);
+  const preview = await previewServiceDeletionRefund(service);
   if (!preview.deletable && !input.asAdmin) {
     throw Object.assign(new Error('This service cannot be deleted in its current state'), {
       statusCode: 422,
@@ -173,7 +178,8 @@ export async function deleteOwnedService(input: {
   return {
     deleted: true as const,
     refundCents,
-    ownedLongEnough: preview.ownedLongEnough,
+    withinRefundWindow: preview.withinRefundWindow,
+    ownedLongEnough: preview.withinRefundWindow,
   };
 }
 

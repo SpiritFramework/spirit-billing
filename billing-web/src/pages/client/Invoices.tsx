@@ -4,12 +4,11 @@ import {
   AlertCircle,
   ArrowLeft,
   ArrowRight,
-  CalendarDays,
   CheckCircle2,
-  ChevronRight,
   CircleDollarSign,
   Clock3,
   FileText,
+  Gamepad2,
   ReceiptText,
   Search,
   Server,
@@ -18,7 +17,7 @@ import {
   WalletCards,
   X,
 } from 'lucide-react';
-import { api, ApiError, money, statusBadge } from '../../lib/api';
+import { api, ApiError, money } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
 import { ConfirmModal } from '../../components/ConfirmModal';
 
@@ -66,12 +65,56 @@ type Invoice = {
   supportUrl?: string;
 };
 
+type InvoiceFilter = 'all' | 'unpaid' | 'paid' | 'cancelled';
+
+function isOverdueInvoice(invoice: Invoice) {
+  return invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now();
+}
+
+function invoiceKindLabel(invoice: Invoice) {
+  if (invoice.isUpgrade && invoice.upgradeToProduct) {
+    return `Upgrade · ${invoice.upgradeToProduct.name}`;
+  }
+  const raw = (invoice.description || '').replace(/\s*[—-]\s*.*$/, '').replace(/\s*\(Demo seed\)\s*/gi, '').trim();
+  if (!raw) return null;
+  if (/renewal/i.test(raw)) return 'Renewal';
+  if (/upgrade/i.test(raw)) return 'Upgrade';
+  if (/setup|initial/i.test(raw)) return 'Setup';
+  if (/addon|add-on|reserved/i.test(raw)) return 'Addon';
+  if (/delete|workflow/i.test(raw)) return 'Admin';
+  return raw.length > 28 ? `${raw.slice(0, 26)}…` : raw;
+}
+
+function invoiceStatusRank(invoice: Invoice) {
+  if (isOverdueInvoice(invoice)) return 0;
+  if (invoice.status === 'unpaid') return 1;
+  if (invoice.status === 'paid') return 2;
+  return 3;
+}
+
+function sortInvoices(a: Invoice, b: Invoice) {
+  const rank = invoiceStatusRank(a) - invoiceStatusRank(b);
+  if (rank !== 0) return rank;
+  const aTime = new Date(a.paidAt || a.dueAt || a.createdAt || 0).getTime();
+  const bTime = new Date(b.paidAt || b.dueAt || b.createdAt || 0).getTime();
+  // Unpaid: soonest due first. Paid/cancelled: most recent first.
+  if (a.status === 'unpaid') return aTime - bTime;
+  return bTime - aTime;
+}
+
+function invoiceRowIcon(invoice: Invoice, overdue: boolean) {
+  if (invoice.status === 'paid') return CheckCircle2;
+  if (invoice.status === 'cancelled') return X;
+  if (overdue) return AlertCircle;
+  return Clock3;
+}
+
 export function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'unpaid' | 'paid' | 'cancelled'>('all');
+  const [filter, setFilter] = useState<InvoiceFilter>('all');
 
   useEffect(() => {
     void api<Invoice[]>('/client/invoices')
@@ -80,80 +123,311 @@ export function InvoicesPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const visibleInvoices = invoices.filter((invoice) => {
-    const matchesFilter = filter === 'all' || invoice.status === filter;
-    const matchesQuery = `${invoice.number} ${invoice.description} ${invoice.service?.name ?? ''} ${invoice.upgradeToProduct?.name ?? ''}`
-      .toLowerCase()
-      .includes(query.trim().toLowerCase());
-    return matchesFilter && matchesQuery;
-  });
   const unpaidInvoices = invoices.filter((invoice) => invoice.status === 'unpaid');
   const paidInvoices = invoices.filter((invoice) => invoice.status === 'paid');
+  const cancelledInvoices = invoices.filter((invoice) => invoice.status === 'cancelled');
   const outstandingCents = unpaidInvoices.reduce((total, invoice) => total + invoice.totalCents, 0);
   const paidCents = paidInvoices.reduce((total, invoice) => total + invoice.totalCents, 0);
+  const currency = unpaidInvoices[0]?.currency || paidInvoices[0]?.currency || invoices[0]?.currency || 'GBP';
+  const filterCounts: Record<InvoiceFilter, number> = {
+    all: invoices.length,
+    unpaid: unpaidInvoices.length,
+    paid: paidInvoices.length,
+    cancelled: cancelledInvoices.length,
+  };
+  const nextUnpaid = [...unpaidInvoices].sort(
+    (a, b) => new Date(a.dueAt).getTime() - new Date(b.dueAt).getTime(),
+  )[0];
+  const visibleInvoices = invoices
+    .filter((invoice) => {
+      const matchesFilter = filter === 'all' || invoice.status === filter;
+      const matchesQuery = `${invoice.number} ${invoice.description} ${invoice.service?.name ?? ''} ${invoice.upgradeToProduct?.name ?? ''}`
+        .toLowerCase()
+        .includes(query.trim().toLowerCase());
+      return matchesFilter && matchesQuery;
+    })
+    .sort(sortInvoices);
 
   return (
     <div className="client-invoices">
-      <header className="client-invoices__header">
-        <div><span>Billing history</span><h1>Invoices</h1><p>Review charges, track payments, and manage outstanding balances.</p></div>
-        <div><ReceiptText size={17} /><span><strong>{invoices.length} invoice{invoices.length === 1 ? '' : 's'}</strong><small>{paidInvoices.length} successfully paid</small></span></div>
+      <header className="client-invoices__intro">
+        <div className="client-invoices__intro-copy">
+          <p>Billing</p>
+          <h1>Invoices</h1>
+          <span>Review charges, track payments, and clear outstanding balances.</span>
+        </div>
+        <div className="client-invoices__intro-actions">
+          {nextUnpaid ? (
+            <Link
+              className="client-home__btn client-home__btn--primary client-home__btn--cta"
+              to={`/invoices/${nextUnpaid.id}`}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <WalletCards size={15} />
+              </span>
+              <span>Pay {money(nextUnpaid.totalCents, nextUnpaid.currency)}</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
+          ) : (
+            <Link className="client-home__btn client-home__btn--ghost client-home__btn--cta" to="/game-hosting">
+              <span className="client-home__btn-icon" aria-hidden>
+                <Gamepad2 size={15} />
+              </span>
+              <span>Browse hosting</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
+          )}
+        </div>
       </header>
 
       {error && <div className="ds-alert ds-alert--error">{error}</div>}
 
-      <section className="client-invoices-metrics">
-        <article><span className="is-blue"><FileText size={16} /></span><div><small>All invoices</small><strong>{invoices.length}</strong><p>Complete billing history</p></div></article>
-        <article className={unpaidInvoices.length ? 'has-warning' : ''}><span className="is-amber"><Clock3 size={16} /></span><div><small>Awaiting payment</small><strong>{unpaidInvoices.length}</strong><p>{money(outstandingCents)} outstanding</p></div></article>
-        <article><span className="is-green"><CheckCircle2 size={16} /></span><div><small>Paid invoices</small><strong>{paidInvoices.length}</strong><p>{money(paidCents)} processed</p></div></article>
-      </section>
+      <div className="client-invoices__pulse" aria-label="Invoice snapshot">
+        <button
+          type="button"
+          className={`client-invoices__pulse-item${filter === 'all' ? ' is-active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          <span className="client-invoices__pulse-copy">
+            <small>Total</small>
+            <strong>{loading ? '—' : invoices.length}</strong>
+            <span>All invoices</span>
+          </span>
+          <span className="client-invoices__pulse-icon is-total" aria-hidden>
+            <FileText size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-invoices__pulse-item${filter === 'unpaid' ? ' is-active' : ''}`}
+          onClick={() => setFilter('unpaid')}
+        >
+          <span className="client-invoices__pulse-copy">
+            <small>Unpaid</small>
+            <strong className={unpaidInvoices.length > 0 ? 'is-warn' : undefined}>
+              {loading ? '—' : unpaidInvoices.length}
+            </strong>
+            <span>{loading ? 'Outstanding' : money(outstandingCents, currency)}</span>
+          </span>
+          <span className="client-invoices__pulse-icon is-due" aria-hidden>
+            <Clock3 size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-invoices__pulse-item${filter === 'paid' ? ' is-active' : ''}`}
+          onClick={() => setFilter('paid')}
+        >
+          <span className="client-invoices__pulse-copy">
+            <small>Paid</small>
+            <strong className="is-ok">{loading ? '—' : paidInvoices.length}</strong>
+            <span>{loading ? 'Processed' : money(paidCents, currency)}</span>
+          </span>
+          <span className="client-invoices__pulse-icon is-paid" aria-hidden>
+            <CheckCircle2 size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-invoices__pulse-item${filter === 'cancelled' ? ' is-active' : ''}`}
+          onClick={() => setFilter('cancelled')}
+        >
+          <span className="client-invoices__pulse-copy">
+            <small>Cancelled</small>
+            <strong>{loading ? '—' : cancelledInvoices.length}</strong>
+            <span>Closed records</span>
+          </span>
+          <span className="client-invoices__pulse-icon is-cancelled" aria-hidden>
+            <X size={17} />
+          </span>
+        </button>
+      </div>
 
-      <section className="client-invoices-panel">
-        <header>
-          <div><span>Invoice library</span><h2>Your billing records</h2></div>
-          <label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search invoices or services…" /></label>
-          <div>
-            {(['all', 'unpaid', 'paid', 'cancelled'] as const).map((option) => (
-              <button key={option} type="button" className={filter === option ? 'is-active' : ''} onClick={() => setFilter(option)}>
-                {option[0].toUpperCase() + option.slice(1)}
-              </button>
-            ))}
+      <section className="client-invoices__panel">
+        <div className="client-invoices__panel-head">
+          <div className="client-invoices__panel-copy">
+            <h2>Billing records</h2>
+            <p>
+              {loading
+                ? 'Loading invoices…'
+                : query.trim() || filter !== 'all'
+                  ? `${visibleInvoices.length} match${visibleInvoices.length === 1 ? '' : 'es'}`
+                  : `${invoices.length} invoice${invoices.length === 1 ? '' : 's'}`}
+            </p>
           </div>
-        </header>
+          <label className="client-invoices__search">
+            <Search size={15} aria-hidden />
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search number, service, or description…"
+              aria-label="Search invoices"
+            />
+          </label>
+        </div>
 
-        <div className="client-invoices-list">
+        <div className="client-invoices__filters" role="group" aria-label="Filter by status">
+          {([
+            ['all', 'All'],
+            ['unpaid', 'Unpaid'],
+            ['paid', 'Paid'],
+            ['cancelled', 'Cancelled'],
+          ] as const).map(([value, label]) => (
+            <button
+              type="button"
+              key={value}
+              className={filter === value ? 'is-active' : undefined}
+              onClick={() => setFilter(value)}
+            >
+              {label}
+              <em>{loading ? '—' : filterCounts[value]}</em>
+            </button>
+          ))}
+        </div>
+
+        {!loading && unpaidInvoices.length > 0 && filter === 'all' && !query.trim() && (
+          <div className="client-invoices__attention">
+            <span className="client-invoices__attention-copy">
+              <Clock3 size={15} aria-hidden />
+              <span>
+                <strong>{money(outstandingCents, currency)} outstanding</strong>
+                <small>
+                  {unpaidInvoices.length} unpaid invoice{unpaidInvoices.length === 1 ? '' : 's'}
+                  {nextUnpaid
+                    ? ` · next due ${new Date(nextUnpaid.dueAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                      })}`
+                    : ''}
+                </small>
+              </span>
+            </span>
+            <div className="client-invoices__attention-actions">
+              <button type="button" className="client-home__btn client-home__btn--ghost client-home__btn--sm" onClick={() => setFilter('unpaid')}>
+                Show unpaid
+              </button>
+              {nextUnpaid && (
+                <Link className="client-home__btn client-home__btn--primary client-home__btn--sm" to={`/invoices/${nextUnpaid.id}`}>
+                  Pay now
+                  <ArrowRight size={13} />
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="client-invoices__list">
           {visibleInvoices.map((invoice) => {
-            const overdue = invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now();
+            const overdue = isOverdueInvoice(invoice);
+            const statusKey = overdue ? 'overdue' : invoice.status;
+            const statusLabel =
+              statusKey === 'overdue'
+                ? 'Overdue'
+                : statusKey === 'unpaid'
+                  ? 'Unpaid'
+                  : statusKey === 'paid'
+                    ? 'Paid'
+                    : statusKey === 'cancelled'
+                      ? 'Cancelled'
+                      : statusKey.replaceAll('_', ' ');
+            const kind = invoiceKindLabel(invoice);
+            const dateLabel =
+              invoice.status === 'paid'
+                ? 'Paid on'
+                : invoice.status === 'cancelled'
+                  ? 'Closed on'
+                  : overdue
+                    ? 'Was due'
+                    : 'Due on';
+            const dateValue = new Date(
+              invoice.status === 'paid' ? invoice.paidAt || invoice.dueAt : invoice.dueAt,
+            ).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'short',
+              year: 'numeric',
+            });
+            const RowIcon = invoiceRowIcon(invoice, overdue);
             return (
-              <Link key={invoice.id} to={`/invoices/${invoice.id}`} className="client-invoice-row">
-                <span className={`client-invoice-row__icon is-${invoice.status}`}><FileText size={16} /></span>
-                <span className="client-invoice-row__identity">
-                  <small>{invoice.number}</small>
-                  <strong>{invoice.service?.name || invoice.description || 'Hosting invoice'}</strong>
-                  <em>
-                    {invoice.isUpgrade && invoice.upgradeToProduct
-                      ? `Upgrade to ${invoice.upgradeToProduct.name}`
-                      : invoice.description}
-                  </em>
+              <Link
+                key={invoice.id}
+                to={`/invoices/${invoice.id}`}
+                className={`client-invoices__row is-${statusKey}`}
+              >
+                <span className="client-invoices__row-mark" aria-hidden>
+                  <RowIcon size={16} />
                 </span>
-                <span className="client-invoice-row__date">
-                  <CalendarDays size={13} />
-                  <span><small>{invoice.status === 'paid' ? 'Paid' : overdue ? 'Overdue' : 'Due date'}</small><strong>{new Date(invoice.paidAt || invoice.dueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</strong></span>
+                <span className="client-invoices__row-body">
+                  <span className="client-invoices__row-main">
+                    <span className="client-invoices__row-title">
+                      <strong>{invoice.number}</strong>
+                    </span>
+                    <span className="client-invoices__row-meta">
+                      <span className={`client-invoices__status is-${statusKey}`}>{statusLabel}</span>
+                      <span className="client-invoices__row-meta-item">
+                        {invoice.service?.name || 'Hosting'}
+                      </span>
+                      {kind ? <span className="client-invoices__row-meta-item">{kind}</span> : null}
+                    </span>
+                  </span>
+                  <span className="client-invoices__row-rail">
+                    <span className="client-invoices__row-date">
+                      <small>{dateLabel}</small>
+                      <strong>{dateValue}</strong>
+                    </span>
+                    <span className="client-invoices__row-amount">
+                      <strong>{money(invoice.totalCents, invoice.currency)}</strong>
+                    </span>
+                    <span className="client-invoices__row-go" aria-hidden>
+                      <ArrowRight size={14} strokeWidth={2} />
+                    </span>
+                  </span>
                 </span>
-                <span className={statusBadge(invoice.status)}>{overdue ? 'overdue' : invoice.status}</span>
-                <span className="client-invoice-row__amount"><strong>{money(invoice.totalCents, invoice.currency)}</strong><small>{invoice.currency}</small></span>
-                <ChevronRight size={15} />
               </Link>
             );
           })}
+
           {!loading && !visibleInvoices.length && (
-            <div className="client-invoices-empty">
-              <ReceiptText size={28} />
-              <h3>{invoices.length ? 'No matching invoices' : 'No invoices yet'}</h3>
-              <p>{invoices.length ? 'Try another search or status filter.' : 'Invoices will appear here after you place a hosting order.'}</p>
-              {!invoices.length && <Link to="/game-hosting">Browse hosting <ArrowRight size={13} /></Link>}
+            <div className="client-invoices__empty">
+              <span aria-hidden>
+                <ReceiptText size={20} />
+              </span>
+              <strong>{invoices.length ? 'No matching invoices' : 'No invoices yet'}</strong>
+              <p>
+                {invoices.length
+                  ? 'Try another search or status filter.'
+                  : 'Invoices appear here after you place a hosting order.'}
+              </p>
+              {invoices.length ? (
+                <button
+                  type="button"
+                  className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                  onClick={() => {
+                    setQuery('');
+                    setFilter('all');
+                  }}
+                >
+                  Clear filters
+                </button>
+              ) : (
+                <Link className="client-home__btn client-home__btn--primary client-home__btn--cta client-home__btn--sm" to="/game-hosting">
+                  <span className="client-home__btn-icon" aria-hidden>
+                    <Gamepad2 size={14} />
+                  </span>
+                  <span>Browse hosting</span>
+                  <ArrowRight size={13} className="client-home__btn-arrow" />
+                </Link>
+              )}
             </div>
           )}
-          {loading && <div className="client-invoices-empty"><ReceiptText size={28} /><h3>Loading invoices…</h3></div>}
+
+          {loading && (
+            <div className="client-invoices__empty">
+              <span aria-hidden>
+                <ReceiptText size={20} />
+              </span>
+              <strong>Loading invoices…</strong>
+            </div>
+          )}
         </div>
       </section>
     </div>
@@ -241,25 +515,46 @@ export function InvoiceDetailPage() {
 
   if (error && !invoice) {
     return (
-      <div className="ds-stack">
-        <Link to="/invoices" style={{ color: 'var(--accent-hover)' }}>
-          ← Back to invoices
+      <div className="client-invoice-detail">
+        <Link to="/invoices" className="client-invoice-detail__back">
+          <ArrowLeft size={14} /> All invoices
         </Link>
         <div className="ds-alert ds-alert--error">{error}</div>
       </div>
     );
   }
-  if (!invoice) return <div className="ds-muted">Loading…</div>;
+
+  if (!invoice) {
+    return (
+      <div className="client-invoice-detail">
+        <div className="client-invoice-detail__loading">Loading invoice…</div>
+      </div>
+    );
+  }
 
   const creditBalance = user?.creditBalanceCents ?? 0;
   const canPayCredits = invoice.status === 'unpaid' && invoice.totalCents > 0 && creditBalance > 0;
   const creditToApply = Math.min(creditBalance, invoice.totalCents);
   const remainingAfterCredit = Math.max(0, invoice.totalCents - creditToApply);
   const willFullyPay = canPayCredits && remainingAfterCredit === 0;
+  const creditCoverPercent = invoice.totalCents
+    ? Math.min(100, (creditToApply / invoice.totalCents) * 100)
+    : 0;
   const subtotalCents =
     invoice.subtotalCents ??
     invoice.totalCents + (invoice.discountCents ?? 0) + (invoice.creditAppliedCents ?? 0);
-  const isOverdue = invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now();
+  const isOverdue = isOverdueInvoice(invoice);
+  const statusKey = isOverdue ? 'overdue' : invoice.status;
+  const statusLabel =
+    statusKey === 'overdue'
+      ? 'Overdue'
+      : statusKey === 'unpaid'
+        ? 'Unpaid'
+        : statusKey === 'paid'
+          ? 'Paid'
+          : statusKey === 'cancelled'
+            ? 'Cancelled'
+            : statusKey.replaceAll('_', ' ');
   const footerNote =
     invoice.invoiceFooter?.trim()
     || `Keep this invoice for your records. Quote ${invoice.number} when contacting support.`;
@@ -271,186 +566,428 @@ export function InvoiceDetailPage() {
   const isUpgrade = Boolean(invoice.isUpgrade && invoice.upgradeToProduct);
   const upgrade = invoice.upgradeToProduct;
   const currentPlan = invoice.service?.product?.name;
+  const kind = invoiceKindLabel(invoice);
+  const issuedLabel = new Date(invoice.createdAt || invoice.dueAt).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const dueLabel = new Date(invoice.dueAt).toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  const paidLabel = invoice.paidAt
+    ? new Date(invoice.paidAt).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : null;
+  const itemTitle =
+    isUpgrade && upgrade
+      ? `Upgrade to ${upgrade.name}`
+      : invoice.service?.name || 'Hosting service';
+  const itemDetail =
+    isUpgrade && upgrade
+      ? `${invoice.service?.name || 'Service'}${currentPlan ? ` · from ${currentPlan}` : ''} · ${upgrade.cycle}`
+      : invoice.description || invoice.service?.product?.name || 'Managed game hosting';
+  const itemBilling = isUpgrade ? 'Upgrade' : invoice.service?.product?.cycle || 'One-time';
 
   return (
-    <div className="invoice-detail-v2">
-      <Link to="/invoices" className="invoice-detail-v2__back"><ArrowLeft size={14} /> All invoices</Link>
-
-      <header className="invoice-detail-v2__header">
-        <div>
-          <span>{isUpgrade ? 'Plan upgrade' : 'Invoice details'}</span>
-          <h1>{invoice.number}</h1>
-          <p>
-            {isUpgrade && upgrade
-              ? `Upgrading ${invoice.service?.name || 'service'} to ${upgrade.name}`
-              : `Issued by ${invoice.companyName || 'SpiritHost'}`}
-          </p>
-        </div>
-        <span className={`invoice-detail-v2__status is-${isOverdue ? 'overdue' : invoice.status}`}>
-          {invoice.status === 'paid' ? <CheckCircle2 size={15} /> : isOverdue ? <AlertCircle size={15} /> : <Clock3 size={15} />}
-          <span><strong>{isOverdue ? 'Payment overdue' : invoice.status === 'paid' ? 'Payment received' : invoice.status}</strong><small>{invoice.status === 'paid' && invoice.paidAt ? `Paid ${new Date(invoice.paidAt).toLocaleDateString()}` : `Due ${new Date(invoice.dueAt).toLocaleDateString()}`}</small></span>
-        </span>
-      </header>
+    <div className={`client-invoice-detail is-${statusKey}`}>
+      <Link to="/invoices" className="client-invoice-detail__back">
+        <ArrowLeft size={14} /> All invoices
+      </Link>
 
       {error && <div className="ds-alert ds-alert--error">{error}</div>}
       {message && <div className="ds-alert ds-alert--success">{message}</div>}
 
-      <div className="invoice-detail-v2-layout">
-        <main className="invoice-document">
-          <header>
-            <div><span className="invoice-document__logo"><ReceiptText size={20} /></span><span><strong>{invoice.companyName || 'SpiritHost'}</strong><small>{invoice.tagline || 'Hosting & infrastructure'}</small></span></div>
-            <div><small>Invoice</small><strong>{invoice.number}</strong></div>
-          </header>
+      <header className="client-invoice-detail__intro">
+        <div className="client-invoice-detail__intro-main">
+          <span className={`client-invoice-detail__mark is-${statusKey}`} aria-hidden>
+            {invoice.status === 'paid' ? (
+              <CheckCircle2 size={20} />
+            ) : invoice.status === 'cancelled' ? (
+              <X size={20} />
+            ) : isOverdue ? (
+              <AlertCircle size={20} />
+            ) : (
+              <ReceiptText size={20} />
+            )}
+          </span>
+          <div className="client-invoice-detail__intro-copy">
+            <p>{isUpgrade ? 'Plan upgrade' : 'Invoice'}</p>
+            <h1>{invoice.number}</h1>
+            <span className="client-invoice-detail__intro-meta">
+              <span className={`client-invoice-detail__status is-${statusKey}`}>{statusLabel}</span>
+              {invoice.service?.name ? (
+                <span className="client-invoice-detail__chip">{invoice.service.name}</span>
+              ) : null}
+              {kind ? <span className="client-invoice-detail__chip">{kind}</span> : null}
+              <span className="client-invoice-detail__meta-text">
+                {invoice.companyName || 'SpiritHost'}
+              </span>
+            </span>
+          </div>
+        </div>
+        <div className="client-invoice-detail__intro-actions">
+          {invoice.status === 'unpaid' && canPayCredits ? (
+            <button
+              type="button"
+              className="client-home__btn client-home__btn--primary client-home__btn--cta"
+              disabled={paying}
+              onClick={() => setPayConfirmOpen(true)}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <WalletCards size={15} />
+              </span>
+              <span>
+                {willFullyPay
+                  ? isUpgrade
+                    ? 'Pay & upgrade'
+                    : 'Pay with credits'
+                  : `Apply ${money(creditToApply, invoice.currency)}`}
+              </span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </button>
+          ) : null}
+          {invoice.service ? (
+            <Link
+              className="client-home__btn client-home__btn--ghost client-home__btn--cta"
+              to={`/services/${invoice.service.id}`}
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <Server size={15} />
+              </span>
+              <span>View service</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
+          ) : null}
+        </div>
+      </header>
 
-          <section className="invoice-document__meta">
-            <div><small>Issued</small><strong>{new Date(invoice.createdAt || invoice.dueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</strong></div>
-            <div><small>Payment due</small><strong>{new Date(invoice.dueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</strong></div>
-            <div><small>Currency</small><strong>{invoice.currency}</strong></div>
-            <div><small>Status</small><span className={statusBadge(invoice.status)}>{isOverdue ? 'overdue' : invoice.status}</span></div>
-          </section>
+      <div className="client-invoice-detail__pulse" aria-label="Invoice snapshot">
+        <div className="client-invoice-detail__pulse-item">
+          <span className="client-invoice-detail__pulse-copy">
+            <small>{invoice.status === 'paid' ? 'Paid' : 'Amount due'}</small>
+            <strong className={invoice.status === 'unpaid' ? 'is-warn' : invoice.status === 'paid' ? 'is-ok' : undefined}>
+              {money(invoice.totalCents, invoice.currency)}
+            </strong>
+            <span>{invoice.currency}</span>
+          </span>
+          <span className="client-invoice-detail__pulse-icon is-amount" aria-hidden>
+            <CircleDollarSign size={17} />
+          </span>
+        </div>
+        <div className="client-invoice-detail__pulse-item">
+          <span className="client-invoice-detail__pulse-copy">
+            <small>{invoice.status === 'paid' ? 'Paid on' : isOverdue ? 'Was due' : 'Due on'}</small>
+            <strong>{invoice.status === 'paid' && paidLabel ? paidLabel : dueLabel}</strong>
+            <span>Issued {issuedLabel}</span>
+          </span>
+          <span className={`client-invoice-detail__pulse-icon is-date is-${statusKey}`} aria-hidden>
+            <Clock3 size={17} />
+          </span>
+        </div>
+        <div className="client-invoice-detail__pulse-item">
+          <span className="client-invoice-detail__pulse-copy">
+            <small>Status</small>
+            <strong className={statusKey === 'paid' ? 'is-ok' : statusKey === 'unpaid' || statusKey === 'overdue' ? 'is-warn' : undefined}>
+              {statusLabel}
+            </strong>
+            <span>{isUpgrade ? 'Plan upgrade' : 'Hosting invoice'}</span>
+          </span>
+          <span className={`client-invoice-detail__pulse-icon is-status is-${statusKey}`} aria-hidden>
+            {invoice.status === 'paid' ? <CheckCircle2 size={17} /> : invoice.status === 'cancelled' ? <X size={17} /> : <FileText size={17} />}
+          </span>
+        </div>
+        <div className="client-invoice-detail__pulse-item">
+          <span className="client-invoice-detail__pulse-copy">
+            <small>Credits</small>
+            <strong>{money(creditBalance, invoice.currency)}</strong>
+            <span>{canPayCredits ? 'Ready to apply' : 'Available balance'}</span>
+          </span>
+          <span className="client-invoice-detail__pulse-icon is-credits" aria-hidden>
+            <WalletCards size={17} />
+          </span>
+        </div>
+      </div>
 
-          {isUpgrade && upgrade && (
-            <section className="invoice-upgrade-banner">
-              <TrendingUp size={16} />
+      <div className="client-invoice-detail__layout">
+        <div className="client-invoice-detail__primary">
+          {isUpgrade && upgrade ? (
+            <section className="client-invoice-detail__panel client-invoice-detail__upgrade">
+              <span aria-hidden>
+                <TrendingUp size={16} />
+              </span>
               <div>
                 <strong>Plan upgrade</strong>
                 <p>
                   {currentPlan || 'Current plan'}
                   {' → '}
                   <em>{upgrade.name}</em>
-                  {typeof upgrade.memoryMb === 'number' && typeof upgrade.cpuPercent === 'number' && typeof upgrade.diskMb === 'number' && (
-                    <> · {Math.round(upgrade.memoryMb / 1024)} GB RAM · {upgrade.cpuPercent}% CPU · {Math.round(upgrade.diskMb / 1024)} GB disk</>
-                  )}
+                  {typeof upgrade.memoryMb === 'number' &&
+                  typeof upgrade.cpuPercent === 'number' &&
+                  typeof upgrade.diskMb === 'number' ? (
+                    <>
+                      {' '}
+                      · {Math.round(upgrade.memoryMb / 1024)} GB RAM · {upgrade.cpuPercent}% CPU ·{' '}
+                      {Math.round(upgrade.diskMb / 1024)} GB disk
+                    </>
+                  ) : null}
                 </p>
               </div>
             </section>
-          )}
+          ) : null}
 
-          <section className="invoice-document__items">
-            <header><span>Description</span><span>Billing</span><span>Amount</span></header>
-            <article>
-              <span className="invoice-document__item-icon">{isUpgrade ? <TrendingUp size={15} /> : <Server size={15} />}</span>
+          <section className="client-invoice-detail__panel">
+            <div className="client-invoice-detail__panel-head">
               <div>
-                <strong>
-                  {isUpgrade && upgrade
-                    ? `Upgrade to ${upgrade.name}`
-                    : invoice.service?.name || 'Hosting service'}
-                </strong>
-                <small>
-                  {isUpgrade && upgrade
-                    ? `${invoice.service?.name || 'Service'}${currentPlan ? ` · from ${currentPlan}` : ''} · ${upgrade.cycle}`
-                    : invoice.description || invoice.service?.product?.name || 'Managed game hosting'}
-                </small>
+                <h2>Charges</h2>
+                <p>What this invoice covers.</p>
               </div>
-              <span>{isUpgrade ? 'Upgrade' : invoice.service?.product?.cycle || 'One-time'}</span>
-              <strong>{money(subtotalCents, invoice.currency)}</strong>
-            </article>
+            </div>
+            <div className="client-invoice-detail__items">
+              <div className="client-invoice-detail__item">
+                <span className="client-invoice-detail__item-mark" aria-hidden>
+                  {isUpgrade ? <TrendingUp size={15} /> : <Server size={15} />}
+                </span>
+                <span className="client-invoice-detail__item-main">
+                  <strong>{itemTitle}</strong>
+                  <small>{itemDetail}</small>
+                </span>
+                <span className="client-invoice-detail__item-cycle">{itemBilling}</span>
+                <strong className="client-invoice-detail__item-amount">
+                  {money(subtotalCents, invoice.currency)}
+                </strong>
+              </div>
+            </div>
+
+            <div className="client-invoice-detail__totals">
+              <div>
+                <span>Subtotal</span>
+                <strong>{money(subtotalCents, invoice.currency)}</strong>
+              </div>
+              {(invoice.discountCents ?? 0) > 0 ? (
+                <div className="is-saving">
+                  <span>
+                    Coupon discount
+                    {invoice.couponCode ? <em> {invoice.couponCode}</em> : null}
+                  </span>
+                  <strong>−{money(invoice.discountCents!, invoice.currency)}</strong>
+                </div>
+              ) : null}
+              {(invoice.creditAppliedCents ?? 0) > 0 ? (
+                <div className="is-saving">
+                  <span>Account credits applied</span>
+                  <strong>−{money(invoice.creditAppliedCents!, invoice.currency)}</strong>
+                </div>
+              ) : null}
+              <div className="is-total">
+                <span>{invoice.status === 'paid' ? 'Invoice total' : 'Amount due'}</span>
+                <strong>{money(invoice.totalCents, invoice.currency)}</strong>
+              </div>
+            </div>
           </section>
 
-          <section className="invoice-document__totals">
-            <div><span>Subtotal</span><strong>{money(subtotalCents, invoice.currency)}</strong></div>
-            {(invoice.discountCents ?? 0) > 0 && <div className="is-saving"><span>Coupon discount {invoice.couponCode && <em>{invoice.couponCode}</em>}</span><strong>−{money(invoice.discountCents!, invoice.currency)}</strong></div>}
-            {(invoice.creditAppliedCents ?? 0) > 0 && <div className="is-saving"><span>Account credits applied</span><strong>−{money(invoice.creditAppliedCents!, invoice.currency)}</strong></div>}
-            <div className="invoice-document__total"><span>{invoice.status === 'paid' ? 'Invoice total' : 'Amount due'}</span><strong>{money(invoice.totalCents, invoice.currency)}</strong></div>
-          </section>
-
-          <footer>
-            <ShieldCheck size={14} />
-            <span>
+          <section className="client-invoice-detail__panel client-invoice-detail__note">
+            <ShieldCheck size={16} />
+            <div>
               <strong>{invoice.companyName || 'SpiritHost'} billing</strong>
-              <small>{footerNote}</small>
-              {supportHref && (
-                <small>
-                  <a href={supportHref} {...(supportHref.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
-                    Contact support
-                  </a>
-                </small>
-              )}
-            </span>
-          </footer>
-        </main>
+              <p>{footerNote}</p>
+              {supportHref ? (
+                <a
+                  href={supportHref}
+                  {...(supportHref.startsWith('http')
+                    ? { target: '_blank', rel: 'noopener noreferrer' }
+                    : {})}
+                >
+                  Contact support
+                </a>
+              ) : null}
+            </div>
+          </section>
+        </div>
 
-        <aside className="invoice-detail-v2-sidebar">
-          <section className="invoice-balance-card">
-            <span>{invoice.status === 'paid' ? 'Amount paid' : 'Outstanding balance'}</span>
-            <strong>{money(invoice.totalCents, invoice.currency)}</strong>
-            <small>{invoice.status === 'paid' ? 'No further action is required.' : isOverdue ? 'This invoice is now overdue.' : `Due by ${new Date(invoice.dueAt).toLocaleDateString()}`}</small>
-            {invoice.service && <Link to={`/services/${invoice.service.id}`}><Server size={13} /> View service <ArrowRight size={13} /></Link>}
+        <aside className="client-invoice-detail__aside">
+          <section className="client-invoice-detail__side">
+            <div className="client-invoice-detail__side-head">
+              <span className={`client-invoice-detail__status is-${statusKey}`}>{statusLabel}</span>
+              <div>
+                <small>{invoice.status === 'paid' ? 'Amount paid' : 'Outstanding'}</small>
+                <strong>{money(invoice.totalCents, invoice.currency)}</strong>
+              </div>
+            </div>
+            <p className="client-invoice-detail__side-note">
+              {invoice.status === 'paid'
+                ? 'No further action is required.'
+                : invoice.status === 'cancelled'
+                  ? 'No payment is required for this invoice.'
+                  : isOverdue
+                    ? 'This invoice is overdue.'
+                    : `Due by ${dueLabel}.`}
+            </p>
+            {invoice.service ? (
+              <Link
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                to={`/services/${invoice.service.id}`}
+              >
+                View service <ArrowRight size={13} />
+              </Link>
+            ) : null}
           </section>
 
-          {invoice.status === 'unpaid' && (
+          {invoice.status === 'unpaid' ? (
             <>
-              <section className="invoice-credit-card">
-                <header><span><WalletCards size={15} /></span><div><strong>Pay with credits</strong><small>{money(creditBalance, invoice.currency)} available</small></div></header>
-                <div><span style={{ width: `${invoice.totalCents ? Math.min(100, (creditToApply / invoice.totalCents) * 100) : 0}%` }} /></div>
-                <p>
+              <section className="client-invoice-detail__side">
+                <div className="client-invoice-detail__side-head">
+                  <WalletCards size={16} />
+                  <div>
+                    <small>Pay with credits</small>
+                    <strong>{money(creditBalance, invoice.currency)} available</strong>
+                  </div>
+                </div>
+                <div className="client-invoice-detail__credit-bar" aria-hidden>
+                  <span style={{ width: `${creditCoverPercent}%` }} />
+                </div>
+                <p className="client-invoice-detail__side-note">
                   {canPayCredits
-                    ? `${money(creditToApply, invoice.currency)} will be applied${remainingAfterCredit ? `, leaving ${money(remainingAfterCredit, invoice.currency)} due` : isUpgrade ? ` and upgrade to ${upgrade?.name}` : ' and fully cover this invoice'}.`
+                    ? `${money(creditToApply, invoice.currency)} will be applied${
+                        remainingAfterCredit
+                          ? `, leaving ${money(remainingAfterCredit, invoice.currency)} due`
+                          : isUpgrade
+                            ? ` and upgrade to ${upgrade?.name}`
+                            : ' and fully cover this invoice'
+                      }.`
                     : 'You do not currently have credits available for this invoice.'}
                 </p>
-                <button type="button" disabled={!canPayCredits || paying} onClick={() => setPayConfirmOpen(true)}>
-                  {paying ? 'Applying credits…' : willFullyPay ? (isUpgrade ? 'Pay & upgrade' : 'Pay & provision') : 'Apply account credits'} <ArrowRight size={13} />
+                <button
+                  type="button"
+                  className="client-home__btn client-home__btn--primary client-home__btn--sm"
+                  disabled={!canPayCredits || paying}
+                  onClick={() => setPayConfirmOpen(true)}
+                >
+                  {paying
+                    ? 'Applying credits…'
+                    : willFullyPay
+                      ? isUpgrade
+                        ? 'Pay & upgrade'
+                        : 'Pay & provision'
+                      : 'Apply account credits'}
+                  <ArrowRight size={13} />
                 </button>
               </section>
 
-              <section className="invoice-payment-card">
-                <header><span><CircleDollarSign size={15} /></span><div><strong>Manual payment</strong><small>Payment instructions</small></div></header>
-                <p>{invoice.paymentInstructions || 'Contact support for payment instructions.'}</p>
-                <div><AlertCircle size={13} /><span>Use <strong>{invoice.number}</strong> as your payment reference.</span></div>
-                {supportHref && (
-                  <p style={{ marginTop: '0.65rem' }}>
-                    <a href={supportHref} {...(supportHref.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}>
-                      Need help? Contact support
-                    </a>
-                  </p>
-                )}
+              <section className="client-invoice-detail__side">
+                <div className="client-invoice-detail__side-head">
+                  <CircleDollarSign size={16} />
+                  <div>
+                    <small>Manual payment</small>
+                    <strong>Payment instructions</strong>
+                  </div>
+                </div>
+                <p className="client-invoice-detail__side-note">
+                  {invoice.paymentInstructions || 'Contact support for payment instructions.'}
+                </p>
+                <div className="client-invoice-detail__reference">
+                  <AlertCircle size={13} />
+                  <span>
+                    Use <strong>{invoice.number}</strong> as your payment reference.
+                  </span>
+                </div>
+                {supportHref ? (
+                  <a
+                    className="client-home__btn client-home__btn--text"
+                    href={supportHref}
+                    {...(supportHref.startsWith('http')
+                      ? { target: '_blank', rel: 'noopener noreferrer' }
+                      : {})}
+                  >
+                    Contact support <ArrowRight size={13} />
+                  </a>
+                ) : null}
               </section>
 
-              {invoice.canCancelUpgrade && (
-                <section className="invoice-cancel-upgrade-card">
-                  <header>
-                    <X size={15} />
+              {invoice.canCancelUpgrade ? (
+                <section className="client-invoice-detail__side is-danger">
+                  <div className="client-invoice-detail__side-head">
+                    <X size={16} />
                     <div>
-                      <strong>Cancel this upgrade</strong>
-                      <small>Keep your current plan. Applied credits on this invoice are refunded.</small>
+                      <small>Cancel upgrade</small>
+                      <strong>Keep your current plan</strong>
                     </div>
-                  </header>
-                  <button type="button" disabled={cancelling} onClick={() => setCancelOpen(true)}>
+                  </div>
+                  <p className="client-invoice-detail__side-note">
+                    Applied credits on this invoice are refunded if you cancel.
+                  </p>
+                  <button
+                    type="button"
+                    className="client-invoice-detail__danger-btn"
+                    disabled={cancelling}
+                    onClick={() => setCancelOpen(true)}
+                  >
                     Cancel upgrade invoice
                   </button>
                 </section>
-              )}
+              ) : null}
 
-              <section className="invoice-next-step">
-                <Clock3 size={14} />
-                <span>
-                  <strong>What happens next?</strong>
-                  <small>
-                    {isUpgrade
-                      ? 'Once paid, your plan upgrades and Spirit-Panel resources update automatically.'
-                      : 'Once payment is confirmed, your invoice is marked paid and the server provisions automatically.'}
-                  </small>
-                </span>
+              <section className="client-invoice-detail__side is-help">
+                <div className="client-invoice-detail__side-head">
+                  <Clock3 size={16} />
+                  <div>
+                    <small>Next step</small>
+                    <strong>After payment</strong>
+                  </div>
+                </div>
+                <p className="client-invoice-detail__side-note">
+                  {isUpgrade
+                    ? 'Once paid, your plan upgrades and Spirit-Panel resources update automatically.'
+                    : 'Once payment is confirmed, this invoice is marked paid and the server provisions automatically.'}
+                </p>
               </section>
             </>
-          )}
+          ) : null}
 
-          {invoice.status === 'paid' && (
-            <section className="invoice-paid-card">
-              <span><CheckCircle2 size={22} /></span>
-              <h3>{isUpgrade ? 'Upgrade complete' : 'Payment complete'}</h3>
-              <p>
+          {invoice.status === 'paid' ? (
+            <section className="client-invoice-detail__side is-success">
+              <div className="client-invoice-detail__side-head">
+                <CheckCircle2 size={16} />
+                <div>
+                  <small>Complete</small>
+                  <strong>{isUpgrade ? 'Upgrade complete' : 'Payment received'}</strong>
+                </div>
+              </div>
+              <p className="client-invoice-detail__side-note">
                 {isUpgrade && upgrade
                   ? `Your service is now on ${upgrade.name}.`
                   : 'Your service should be active and ready to manage in Spirit-Panel.'}
               </p>
-              {invoice.service && <Link to={`/services/${invoice.service.id}`}>Manage service <ArrowRight size={13} /></Link>}
+              {invoice.service ? (
+                <Link
+                  className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                  to={`/services/${invoice.service.id}`}
+                >
+                  Manage service <ArrowRight size={13} />
+                </Link>
+              ) : null}
             </section>
-          )}
+          ) : null}
 
-          {invoice.status === 'cancelled' && (
-            <section className="invoice-cancelled-card"><X size={18} /><span><strong>Invoice cancelled</strong><small>No payment is required for this invoice.</small></span></section>
-          )}
+          {invoice.status === 'cancelled' ? (
+            <section className="client-invoice-detail__side is-muted">
+              <div className="client-invoice-detail__side-head">
+                <X size={16} />
+                <div>
+                  <small>Closed</small>
+                  <strong>Invoice cancelled</strong>
+                </div>
+              </div>
+              <p className="client-invoice-detail__side-note">
+                No payment is required for this invoice.
+              </p>
+            </section>
+          ) : null}
         </aside>
       </div>
 

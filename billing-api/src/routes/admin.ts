@@ -7,6 +7,7 @@ import {
   addBillingCycle,
   getDefaultCurrency,
   getInvoiceDueDays,
+  getServiceRefundWindowDays,
   getInvoicePrefix,
   getSetting,
   setSetting,
@@ -1793,6 +1794,7 @@ export async function adminRoutes(app: FastifyInstance) {
       invoicePrefix: await getInvoicePrefix(),
       defaultCurrency: await getDefaultCurrency(),
       invoiceDueDays: await getInvoiceDueDays(),
+      serviceRefundWindowDays: await getServiceRefundWindowDays(),
       overdueSuspendDays: await getOverdueSuspendDays(),
       overdueTerminateDays: await getOverdueTerminateDays(),
       panelWebUrl: panel.panelWebUrl,
@@ -1939,6 +1941,7 @@ export async function adminRoutes(app: FastifyInstance) {
         invoicePrefix: z.string().min(1).max(12).optional(),
         defaultCurrency: z.string().length(3).optional(),
         invoiceDueDays: z.number().int().min(1).max(90).optional(),
+        serviceRefundWindowDays: z.number().int().min(0).max(90).optional(),
         overdueSuspendDays: z.number().int().min(0).max(365).optional(),
         overdueTerminateDays: z.number().int().min(0).max(365).optional(),
         panelApiUrl: z.string().min(1).max(2048).optional(),
@@ -2018,6 +2021,9 @@ export async function adminRoutes(app: FastifyInstance) {
       }
       if (body.invoiceDueDays !== undefined) {
         await setSetting('invoice_due_days', String(body.invoiceDueDays));
+      }
+      if (body.serviceRefundWindowDays !== undefined) {
+        await setSetting('service_refund_window_days', String(body.serviceRefundWindowDays));
       }
       if (body.overdueSuspendDays !== undefined || body.overdueTerminateDays !== undefined) {
         const currentSuspend = await getOverdueSuspendDays();

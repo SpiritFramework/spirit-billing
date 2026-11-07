@@ -6,6 +6,9 @@ import './atmosphere.css';
 import './client-home.css';
 import './client-profile.css';
 import './client-services.css';
+import './client-service-detail.css';
+import './client-invoices.css';
+import './client-invoice-detail.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

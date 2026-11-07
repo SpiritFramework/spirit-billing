@@ -30,6 +30,13 @@ export async function getInvoiceDueDays(): Promise<number> {
   return Math.min(90, Math.max(1, Math.round(raw)));
 }
 
+/** Days after purchase during which deleting a service can still refund unused time. */
+export async function getServiceRefundWindowDays(): Promise<number> {
+  const raw = Number(await getSetting('service_refund_window_days', '3'));
+  if (!Number.isFinite(raw)) return 3;
+  return Math.min(90, Math.max(0, Math.round(raw)));
+}
+
 export async function nextInvoiceNumber(): Promise<string> {
   const prefix = await getInvoicePrefix();
   const year = new Date().getFullYear();
@@ -103,8 +110,6 @@ export function prorateRemainingCents(
   const fraction = Math.min(1, remainingMs / cycleLen);
   return Math.max(0, Math.round(amountCents * fraction));
 }
-
-export const SERVICE_REFUND_MIN_AGE_MS = 3 * 24 * 60 * 60 * 1000;
 
 export function formatMoney(cents: number, currency: string): string {
   try {
