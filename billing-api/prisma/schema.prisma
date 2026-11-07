@@ -61,6 +61,8 @@ enum SystemLogLevel {
 enum SystemLogCategory {
   auth
   billing
+  support
+  provision
   admin
   panel
   system

@@ -8,7 +8,7 @@ import { createReadStream, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { ZodError } from 'zod/v3';
 import { getConfig } from './lib/env.js';
-import { recordLogFireAndForget } from './lib/system-log.js';
+import { recordLogFireAndForget, remapLegacyLogCategories } from './lib/system-log.js';
 import { ensureDefaultTicketCategories } from './lib/tickets.js';
 import { ensureUploadsRoot, getUploadsRoot } from './lib/uploads.js';
 import { repairInvalidProductFeatures } from './lib/product-features.js';
@@ -181,6 +181,12 @@ try {
   if (fixed) app.log.info({ fixed }, 'Repaired empty product features values');
 } catch (err) {
   app.log.warn({ err }, 'Could not repair product features');
+}
+
+try {
+  await remapLegacyLogCategories();
+} catch (err) {
+  app.log.warn({ err }, 'Could not remap legacy log categories');
 }
 
 await app.listen({ port: config.port, host: config.host });

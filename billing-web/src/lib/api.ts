@@ -98,6 +98,8 @@ export function money(cents: number, currency = 'GBP'): string {
 export function statusBadge(status: string): string {
   if (status === 'paid' || status === 'active') return 'ds-badge ds-badge--success';
   if (status === 'unpaid' || status === 'pending_payment') return 'ds-badge ds-badge--warning';
-  if (status === 'cancelled' || status === 'suspended') return 'ds-badge ds-badge--danger';
+  if (status === 'cancelled' || status === 'suspended' || status === 'overdue') {
+    return 'ds-badge ds-badge--danger';
+  }
   return 'ds-badge';
 }

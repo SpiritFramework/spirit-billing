@@ -178,31 +178,74 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/stats', async () => {
     const now = new Date();
     const chartStart = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const dueSoonEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const clientsSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const invoicePerson = {
+      username: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      avatarUrl: true,
+    } as const;
+
     const [
       users,
       linkedUsers,
+      newClients30d,
       totalServices,
       activeServices,
       pendingServices,
       suspendedServices,
+      renewalsDueSoon,
       unpaidInvoices,
+      overdueInvoices,
+      dueSoonInvoices,
+      paidThisMonth,
+      paidLastMonth,
       activeProducts,
       totalProducts,
       revenuePaid,
       paidTimeline,
       recentInvoices,
+      overdueInvoiceList,
       recentServices,
     ] = await Promise.all([
       prisma.user.count({ where: { role: 'client' } }),
       prisma.user.count({ where: { role: 'client', panelUserId: { not: null } } }),
+      prisma.user.count({ where: { role: 'client', createdAt: { gte: clientsSince } } }),
       prisma.service.count(),
       prisma.service.count({ where: { status: 'active' } }),
       prisma.service.count({ where: { status: 'pending_payment' } }),
       prisma.service.count({ where: { status: 'suspended' } }),
+      prisma.service.count({
+        where: {
+          status: 'active',
+          nextDueAt: { gte: now, lte: dueSoonEnd },
+        },
+      }),
       prisma.invoice.aggregate({
         where: { status: 'unpaid' },
         _count: { _all: true },
         _sum: { totalCents: true },
+      }),
+      prisma.invoice.count({
+        where: { status: 'unpaid', dueAt: { lt: now } },
+      }),
+      prisma.invoice.count({
+        where: { status: 'unpaid', dueAt: { gte: now, lte: dueSoonEnd } },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: monthStart } },
+        _count: { _all: true },
+        _sum: { totalCents: true, creditAppliedCents: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: lastMonthStart, lt: monthStart } },
+        _count: { _all: true },
+        _sum: { totalCents: true, creditAppliedCents: true },
       }),
       prisma.product.count({ where: { active: true } }),
       prisma.product.count(),
@@ -216,7 +259,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }),
       prisma.invoice.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 6,
+        take: 8,
         select: {
           id: true,
           number: true,
@@ -224,25 +267,89 @@ export async function adminRoutes(app: FastifyInstance) {
           totalCents: true,
           creditAppliedCents: true,
           currency: true,
+          dueAt: true,
+          paidAt: true,
           createdAt: true,
-          user: { select: { username: true, email: true } },
+          user: { select: invoicePerson },
+          service: { select: { name: true } },
+        },
+      }),
+      prisma.invoice.findMany({
+        where: { status: 'unpaid', dueAt: { lt: now } },
+        orderBy: { dueAt: 'asc' },
+        take: 5,
+        select: {
+          id: true,
+          number: true,
+          totalCents: true,
+          currency: true,
+          dueAt: true,
+          user: { select: invoicePerson },
           service: { select: { name: true } },
         },
       }),
       prisma.service.findMany({
         orderBy: { createdAt: 'desc' },
-        take: 5,
+        take: 6,
         select: {
           id: true,
           name: true,
           status: true,
           createdAt: true,
+          nextDueAt: true,
           panelServerId: true,
           user: { select: { username: true } },
-          product: { select: { name: true } },
+          product: {
+            select: {
+              name: true,
+              category: { select: { name: true, color: true, icon: true, logoUrl: true } },
+            },
+          },
         },
       }),
     ]);
+
+    const ticketBundle = await Promise.allSettled([
+      prisma.ticket.count({ where: { status: 'open' } }),
+      prisma.ticket.count({ where: { status: 'awaiting_customer' } }),
+      prisma.ticket.count({ where: { status: 'answered' } }),
+      prisma.ticket.findMany({
+        where: { status: { in: ['open', 'answered', 'awaiting_customer'] } },
+        orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+        take: 6,
+        select: {
+          id: true,
+          number: true,
+          subject: true,
+          status: true,
+          priority: true,
+          updatedAt: true,
+          user: { select: { username: true, firstName: true, lastName: true, avatarUrl: true } },
+          category: { select: { name: true, color: true, icon: true } },
+        },
+      }),
+      prisma.systemLog.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        select: {
+          id: true,
+          level: true,
+          category: true,
+          action: true,
+          message: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const settledValue = <T,>(result: PromiseSettledResult<T>, fallback: T) =>
+      result.status === 'fulfilled' ? result.value : fallback;
+
+    const openTickets = settledValue(ticketBundle[0], 0);
+    const awaitingTickets = settledValue(ticketBundle[1], 0);
+    const answeredTickets = settledValue(ticketBundle[2], 0);
+    const recentTickets = settledValue(ticketBundle[3], []);
+    const recentLogs = settledValue(ticketBundle[4], []);
 
     const revenueByMonth = Array.from({ length: 6 }, (_, index) => {
       const date = new Date(now.getFullYear(), now.getMonth() - 5 + index, 1);
@@ -260,28 +367,47 @@ export async function adminRoutes(app: FastifyInstance) {
       if (bucket) bucket.revenueCents += invoice.totalCents + invoice.creditAppliedCents;
     }
 
+    const settled = (row: { _sum: { totalCents: number | null; creditAppliedCents: number | null } }) =>
+      (row._sum.totalCents ?? 0) + (row._sum.creditAppliedCents ?? 0);
+
     return {
+      generatedAt: now.toISOString(),
       users,
       linkedUsers,
+      newClients30d,
       services: {
         total: totalServices,
         active: activeServices,
         pending: pendingServices,
         suspended: suspendedServices,
+        renewalsDueSoon,
       },
       invoices: {
         unpaid: unpaidInvoices._count._all,
         unpaidCents: unpaidInvoices._sum.totalCents ?? 0,
+        overdue: overdueInvoices,
+        dueSoon: dueSoonInvoices,
       },
       products: {
         total: totalProducts,
         active: activeProducts,
       },
-      revenuePaidCents:
-        (revenuePaid._sum.totalCents ?? 0) + (revenuePaid._sum.creditAppliedCents ?? 0),
+      tickets: {
+        open: openTickets,
+        awaiting: awaitingTickets,
+        answered: answeredTickets,
+        hot: openTickets + awaitingTickets,
+      },
+      revenuePaidCents: settled(revenuePaid),
+      revenueThisMonthCents: settled(paidThisMonth),
+      revenueLastMonthCents: settled(paidLastMonth),
+      paidThisMonthCount: paidThisMonth._count._all,
       revenueByMonth: revenueByMonth.map(({ label, revenueCents }) => ({ label, revenueCents })),
       recentInvoices,
+      overdueInvoices: overdueInvoiceList,
       recentServices,
+      recentTickets,
+      recentLogs,
     };
   });
 
@@ -639,7 +765,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const result = await syncPanelServersIntoBilling({ createMissingUsers });
       recordLogFireAndForget({
         level: 'info',
-        category: 'admin',
+        category: 'provision',
         action: 'services.sync_panel',
         message: `Synced panel servers (imported ${result.imported.length}, users ${result.usersCreated.length}, updated ${result.updated.length})`,
         actorUserId: request.user!.id,
@@ -686,7 +812,7 @@ export async function adminRoutes(app: FastifyInstance) {
       const result = await adminCreateCustomService(body);
       recordLogFireAndForget({
         level: 'info',
-        category: 'admin',
+        category: 'provision',
         action: 'services.create_custom',
         message: `Created custom server ${result.service.name}`,
         actorUserId: request.user!.id,
@@ -710,7 +836,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const result = await runDueRenewals();
     recordLogFireAndForget({
       level: 'info',
-      category: 'admin',
+      category: 'billing',
       action: 'services.run_renewals',
       message: `Ran renewals: created ${result.created.length}, skipped ${result.skipped.length}`,
       actorUserId: request.user!.id,
@@ -726,7 +852,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const result = await runOverdueEnforcement();
     recordLogFireAndForget({
       level: 'info',
-      category: 'admin',
+      category: 'billing',
       action: 'services.run_overdue',
       message: `Overdue enforcement: suspended ${result.suspended.length}, terminated ${result.terminated.length}`,
       actorUserId: request.user!.id,
@@ -990,6 +1116,7 @@ export async function adminRoutes(app: FastifyInstance) {
             username: true,
             firstName: true,
             lastName: true,
+            avatarUrl: true,
             creditBalanceCents: true,
           },
         },
@@ -1000,13 +1127,25 @@ export async function adminRoutes(app: FastifyInstance) {
             name: true,
             status: true,
             panelServerId: true,
+            panelEggName: true,
+            memoryMb: true,
+            diskMb: true,
+            cpuPercent: true,
+            priceCents: true,
+            currency: true,
+            cycle: true,
+            nextDueAt: true,
             product: {
               select: {
                 id: true,
                 name: true,
+                description: true,
                 cycle: true,
                 priceCents: true,
                 currency: true,
+                memoryMb: true,
+                diskMb: true,
+                cpuPercent: true,
                 category: {
                   select: { id: true, name: true, color: true, icon: true, logoUrl: true },
                 },
@@ -1418,7 +1557,21 @@ export async function adminRoutes(app: FastifyInstance) {
         services: {
           orderBy: { createdAt: 'desc' },
           include: {
-            product: { select: { id: true, name: true, cycle: true, priceCents: true, currency: true } },
+            category: {
+              select: { id: true, name: true, color: true, icon: true, logoUrl: true },
+            },
+            product: {
+              select: {
+                id: true,
+                name: true,
+                cycle: true,
+                priceCents: true,
+                currency: true,
+                category: {
+                  select: { id: true, name: true, color: true, icon: true, logoUrl: true },
+                },
+              },
+            },
           },
         },
         invoices: {
@@ -1430,9 +1583,29 @@ export async function adminRoutes(app: FastifyInstance) {
             status: true,
             totalCents: true,
             currency: true,
+            description: true,
             createdAt: true,
+            dueAt: true,
             paidAt: true,
             serviceId: true,
+            service: {
+              select: {
+                id: true,
+                name: true,
+                category: {
+                  select: { id: true, name: true, color: true, icon: true, logoUrl: true },
+                },
+                product: {
+                  select: {
+                    id: true,
+                    name: true,
+                    category: {
+                      select: { id: true, name: true, color: true, icon: true, logoUrl: true },
+                    },
+                  },
+                },
+              },
+            },
           },
         },
         creditLedgers: {
@@ -1467,6 +1640,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
     return {
       ...user,
+      services: user.services.map(withEffectiveServiceCategory),
+      invoices: user.invoices.map((invoice) => ({
+        ...invoice,
+        service: invoice.service ? withEffectiveServiceCategory(invoice.service) : null,
+      })),
       panelUserId: link.panelUserId,
       panelLinked: link.panelLinked,
       panelStatus: link.panelStatus,
@@ -2099,7 +2277,9 @@ export async function adminRoutes(app: FastifyInstance) {
   app.get('/logs', async (request) => {
     const query = z
       .object({
-        category: z.enum(['auth', 'billing', 'admin', 'panel', 'system']).optional(),
+        category: z
+          .enum(['auth', 'billing', 'support', 'provision', 'admin', 'panel', 'system'])
+          .optional(),
         level: z.enum(['info', 'warn', 'error']).optional(),
         q: z.string().max(120).optional(),
         take: z.coerce.number().int().min(1).max(200).default(80),
@@ -2120,7 +2300,7 @@ export async function adminRoutes(app: FastifyInstance) {
         : {}),
     };
 
-    const [logs, totals] = await Promise.all([
+    const [logs, levelTotals, categoryTotals] = await Promise.all([
       prisma.systemLog.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -2134,15 +2314,32 @@ export async function adminRoutes(app: FastifyInstance) {
         by: ['level'],
         _count: { _all: true },
       }),
+      prisma.systemLog.groupBy({
+        by: ['category'],
+        _count: { _all: true },
+      }),
     ]);
 
     const counts = { info: 0, warn: 0, error: 0, total: 0 };
-    for (const row of totals) {
+    for (const row of levelTotals) {
       counts[row.level] = row._count._all;
       counts.total += row._count._all;
     }
 
-    return { logs, counts };
+    const categories = {
+      auth: 0,
+      billing: 0,
+      support: 0,
+      provision: 0,
+      admin: 0,
+      panel: 0,
+      system: 0,
+    };
+    for (const row of categoryTotals) {
+      categories[row.category] = row._count._all;
+    }
+
+    return { logs, counts, categories };
   });
 
   app.delete('/logs', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request) => {

@@ -15,15 +15,15 @@ import {
   Search,
   Server,
   Shield,
-  SlidersHorizontal,
+  ShieldOff,
+  ShieldCheck,
   Trash2,
-  UserCheck,
   UserRound,
-  Users,
-  UserX,
   WalletCards,
+  X,
 } from 'lucide-react';
 import { api, ApiError, money, safeExternalHref, statusBadge } from '../../lib/api';
+import { CategoryMark } from '../../lib/icons';
 import { useAuth } from '../../context/AuthContext';
 import { isFullAdmin } from '../../lib/roles';
 import { ConfirmModal } from '../../components/ConfirmModal';
@@ -66,7 +66,20 @@ type AdminUserDetail = AdminUserListItem & {
     cycle: string | null;
     nextDueAt: string | null;
     createdAt: string;
-    product: { id: string; name: string; cycle: string; priceCents: number; currency: string };
+    product: {
+      id: string;
+      name: string;
+      cycle: string;
+      priceCents: number;
+      currency: string;
+      category?: {
+        id: string;
+        name: string;
+        color: string;
+        icon: string;
+        logoUrl: string | null;
+      } | null;
+    };
   }>;
   invoices: Array<{
     id: string;
@@ -74,9 +87,26 @@ type AdminUserDetail = AdminUserListItem & {
     status: string;
     totalCents: number;
     currency: string;
+    description: string | null;
     createdAt: string;
+    dueAt: string | null;
     paidAt: string | null;
     serviceId: string | null;
+    service: {
+      id: string;
+      name: string;
+      product: {
+        id: string;
+        name: string;
+        category?: {
+          id: string;
+          name: string;
+          color: string;
+          icon: string;
+          logoUrl: string | null;
+        } | null;
+      };
+    } | null;
   }>;
   creditLedgers: Array<{
     id: string;
@@ -138,11 +168,19 @@ function Avatar({
   );
 }
 
+function roleLabel(role: string) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'staff') return 'Staff';
+  return 'Client';
+}
+
 export function AdminUsers() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
   const [query, setQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'admin' | 'staff' | 'client'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'disabled'>('all');
+  const [panelFilter, setPanelFilter] = useState<'all' | 'linked' | 'unlinked'>('all');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -151,19 +189,6 @@ export function AdminUsers() {
       .finally(() => setLoading(false));
   }, []);
 
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return users.filter((u) => {
-      if (roleFilter !== 'all' && u.role !== roleFilter) return false;
-      if (!q) return true;
-      const hay = [u.username, u.email, u.firstName, u.lastName, u.panelUserId]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [users, query, roleFilter]);
-
   const stats = useMemo(
     () => ({
       total: users.length,
@@ -171,61 +196,348 @@ export function AdminUsers() {
       staff: users.filter((u) => u.role === 'staff').length,
       clients: users.filter((u) => u.role === 'client').length,
       linked: users.filter((u) => Boolean(u.panelUserId)).length,
+      unlinked: users.filter((u) => !u.panelUserId).length,
+      active: users.filter((u) => u.enabled).length,
       disabled: users.filter((u) => !u.enabled).length,
     }),
     [users],
   );
 
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return users
+      .filter((u) => {
+        if (roleFilter !== 'all' && u.role !== roleFilter) return false;
+        if (statusFilter === 'active' && !u.enabled) return false;
+        if (statusFilter === 'disabled' && u.enabled) return false;
+        if (panelFilter === 'linked' && !u.panelUserId) return false;
+        if (panelFilter === 'unlinked' && u.panelUserId) return false;
+        if (!q) return true;
+        const hay = [u.username, u.email, u.firstName, u.lastName, u.panelUserId]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return hay.includes(q);
+      })
+      .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+  }, [users, query, roleFilter, statusFilter, panelFilter]);
+
+  const coverage = stats.total ? Math.round((stats.linked / stats.total) * 100) : 0;
+  const filtersActive =
+    roleFilter !== 'all' || statusFilter !== 'all' || panelFilter !== 'all' || Boolean(query.trim());
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (roleFilter !== 'all') parts.push(roleLabel(roleFilter));
+    if (statusFilter === 'active') parts.push('Active');
+    if (statusFilter === 'disabled') parts.push('Disabled');
+    if (panelFilter === 'linked') parts.push('Linked');
+    if (panelFilter === 'unlinked') parts.push('Not linked');
+    if (query.trim()) parts.push(`“${query.trim()}”`);
+    return parts;
+  }, [roleFilter, statusFilter, panelFilter, query]);
+
+  function clearFilters() {
+    setRoleFilter('all');
+    setStatusFilter('all');
+    setPanelFilter('all');
+    setQuery('');
+  }
+
+  function onAccountsChip() {
+    clearFilters();
+  }
+
+  function onPanelChip() {
+    setRoleFilter('all');
+    setStatusFilter('all');
+    setQuery('');
+    setPanelFilter(coverage < 100 ? 'unlinked' : 'linked');
+  }
+
+  function onDisabledChip() {
+    setRoleFilter('all');
+    setPanelFilter('all');
+    setQuery('');
+    setStatusFilter('disabled');
+  }
+
   return (
-    <div className="au-v2">
-      <header className="au-v2__header">
-        <div><span>User management</span><h1>Users</h1><p>Manage client access, panel links, billing activity, and account security.</p></div>
-        <div className="au-v2__health"><UserCheck size={16} /><span><strong>{stats.linked} linked</strong><small>{stats.total ? Math.round((stats.linked / stats.total) * 100) : 0}% panel coverage</small></span></div>
+    <div className="ops-users">
+      <header className="ops-users__mast">
+        <div className="ops-users__mast-copy">
+          <span>Directory</span>
+          <h1>Users</h1>
+          <p>Account access, panel linkage, credits, and billing activity in one ops view.</p>
+        </div>
+        <div className="ops-users__mast-meta">
+          <button
+            type="button"
+            className={`ops-users__chip${!filtersActive ? ' is-active' : ''}`}
+            onClick={onAccountsChip}
+            title="Show all accounts"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <UserRound size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Accounts</small>
+              <strong>{stats.total}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${
+              panelFilter === (coverage < 100 ? 'unlinked' : 'linked') &&
+              roleFilter === 'all' &&
+              statusFilter === 'all' &&
+              !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={onPanelChip}
+            title={coverage < 100 ? 'Show accounts missing panel link' : 'Show panel-linked accounts'}
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <Link2 size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Panel</small>
+              <strong>{coverage}%</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${stats.disabled ? ' is-warn' : ''}${
+              statusFilter === 'disabled' && roleFilter === 'all' && panelFilter === 'all' && !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={onDisabledChip}
+            title="Show disabled accounts"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <Ban size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Disabled</small>
+              <strong>{stats.disabled}</strong>
+            </span>
+          </button>
+        </div>
       </header>
 
-      <section className="au-v2-metrics">
-        <div><span><Users size={16} /></span><p>All users<small>{stats.clients} client accounts</small></p><strong>{stats.total}</strong></div>
-        <div><span><Shield size={16} /></span><p>Administrators<small>Elevated access</small></p><strong>{stats.admins}</strong></div>
-        <div><span><UserCheck size={16} /></span><p>Panel linked<small>Ready to provision</small></p><strong>{stats.linked}</strong></div>
-        <div className={stats.disabled ? 'has-warning' : ''}><span><UserX size={16} /></span><p>Disabled<small>Access suspended</small></p><strong>{stats.disabled}</strong></div>
-      </section>
+      <div className="ops-users__shell">
+        <aside className="ops-users__rail" aria-label="User filters">
+          <div className="ops-users__rail-block">
+            <span>Role</span>
+            <div>
+              {(
+                [
+                  ['all', 'All roles', stats.total],
+                  ['client', 'Clients', stats.clients],
+                  ['staff', 'Staff', stats.staff],
+                  ['admin', 'Admins', stats.admins],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={roleFilter === value ? 'is-on' : ''}
+                  onClick={() => setRoleFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <section className="au-v2-toolbar">
-        <label><Search size={15} /><input placeholder="Search name, email, username, or panel ID…" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-        <div>
-          {([
-            ['all', 'All'],
-            ['client', 'Clients'],
-            ['staff', 'Staff'],
-            ['admin', 'Admins'],
-          ] as const).map(([value, label]) => (
-            <button
-              key={value}
-              type="button"
-              className={roleFilter === value ? 'is-active' : ''}
-              onClick={() => setRoleFilter(value)}
-            >
-              {label}
-            </button>
-          ))}
+          <div className="ops-users__rail-block">
+            <span>Status</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any status', stats.total],
+                  ['active', 'Active', stats.active],
+                  ['disabled', 'Disabled', stats.disabled],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={statusFilter === value ? 'is-on' : ''}
+                  onClick={() => setStatusFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="ops-users__rail-block">
+            <span>Panel</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any link', stats.total],
+                  ['linked', 'Linked', stats.linked],
+                  ['unlinked', 'Not linked', stats.unlinked],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={panelFilter === value ? 'is-on' : ''}
+                  onClick={() => setPanelFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <div className="ops-users__main">
+          <div className="ops-users__command">
+            <label className="ops-users__search">
+              <Search size={16} aria-hidden />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setQuery('');
+                  }
+                }}
+                placeholder="Filter by name, email, username, or panel ID"
+                aria-label="Search users"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  className="ops-users__search-clear"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </label>
+            <div className="ops-users__command-meta">
+              <span>
+                Showing <strong>{filtered.length}</strong> / {stats.total}
+              </span>
+              {filtersActive ? (
+                <>
+                  <span className="ops-users__filter-summary">{filterSummary.join(' · ')}</span>
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <section className="ops-users__table" aria-label="Users">
+            <div className="ops-users__head" aria-hidden>
+              <span>Account</span>
+              <span>Role</span>
+              <span>Panel</span>
+              <span>Credits</span>
+              <span>Activity</span>
+              <span>Joined</span>
+              <span />
+            </div>
+
+            {filtered.map((user) => (
+              <button
+                type="button"
+                key={user.id}
+                className="ops-users__row"
+                onClick={() => navigate(`/admin/users/${user.id}`)}
+              >
+                <span className="ops-users__who">
+                  <span
+                    className={`ops-users__avatar-wrap ${user.enabled ? 'is-on' : 'is-off'}`}
+                    title={user.enabled ? 'Active' : 'Disabled'}
+                  >
+                    <Avatar user={user} size="2.35rem" />
+                  </span>
+                  <span>
+                    <strong>{displayName(user)}</strong>
+                    <small>
+                      @{user.username}
+                      <span aria-hidden="true"> · </span>
+                      {user.email}
+                    </small>
+                  </span>
+                </span>
+
+                <span
+                  className={`ops-users__role${
+                    user.role === 'admin' ? ' is-admin' : user.role === 'staff' ? ' is-staff' : ' is-client'
+                  }`}
+                >
+                  <Shield size={12} aria-hidden />
+                  {roleLabel(user.role)}
+                </span>
+
+                <span className={`ops-users__panel ${user.panelUserId ? 'is-yes' : 'is-no'}`}>
+                  {user.panelUserId ? <Check size={12} aria-hidden /> : <Ban size={12} aria-hidden />}
+                  {user.panelUserId ? 'Linked' : 'Missing'}
+                </span>
+
+                <span className="ops-users__credit">{money(user.creditBalanceCents ?? 0, 'GBP')}</span>
+
+                <span className="ops-users__activity">
+                  <span title="Services">
+                    <Server size={12} aria-hidden />
+                    <strong>{user._count.services}</strong>
+                  </span>
+                  <span title="Invoices">
+                    <FileText size={12} aria-hidden />
+                    <strong>{user._count.invoices}</strong>
+                  </span>
+                </span>
+
+                <span className="ops-users__date">
+                  {new Date(user.createdAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                    year: '2-digit',
+                  })}
+                </span>
+
+                <ChevronRight size={14} aria-hidden />
+              </button>
+            ))}
+
+            {!loading && !filtered.length && (
+              <div className="ops-users__empty">
+                <Search size={20} aria-hidden />
+                <strong>No matching accounts</strong>
+                <span>Adjust filters or clear the search query.</span>
+                {filtersActive ? (
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            )}
+
+            {loading && (
+              <div className="ops-users__empty">
+                <Activity size={20} aria-hidden />
+                <strong>Loading directory…</strong>
+              </div>
+            )}
+          </section>
         </div>
-      </section>
-
-      <section className="au-v2-list">
-        <header><span>User</span><span>Access</span><span>Panel</span><span>Activity</span><span>Joined</span><span /></header>
-        {filtered.map((user) => (
-          <button type="button" key={user.id} className="au-v2-row" onClick={() => navigate(`/admin/users/${user.id}`)}>
-            <span className="au-v2-row__identity"><Avatar user={user} size="2.3rem" /><span><strong>{displayName(user)}</strong><small>@{user.username} · {user.email}</small></span></span>
-            <span className="au-v2-row__access"><i className={user.enabled ? 'is-active' : ''} /> <span><strong>{user.enabled ? 'Active' : 'Disabled'}</strong><small>{user.role === 'admin' ? 'Administrator' : user.role === 'staff' ? 'Staff' : 'Client'}</small></span></span>
-            <span className={`au-v2-row__panel ${user.panelUserId ? 'is-linked' : ''}`}>{user.panelUserId ? <Check size={13} /> : <Ban size={13} />}{user.panelUserId ? 'Linked' : 'Not linked'}</span>
-            <span className="au-v2-row__activity"><span><Server size={12} /> {user._count.services}</span><span><FileText size={12} /> {user._count.invoices}</span></span>
-            <span className="au-v2-row__date">{new Date(user.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-            <ChevronRight size={15} />
-          </button>
-        ))}
-        {!loading && !filtered.length && <div className="au-v2-empty"><Search size={22} /><strong>No users found</strong><span>Try another search or filter.</span></div>}
-        {loading && <div className="au-v2-empty"><Activity size={22} /><strong>Loading users…</strong></div>}
-      </section>
+      </div>
     </div>
   );
 }
@@ -432,294 +744,245 @@ export function AdminUserDetail() {
 
   if (error && !user) {
     return (
-      <div className="ds-stack">
-        <Link to="/admin/users" className="ds-back"><ArrowLeft size={14} /> Back to users</Link>
-        <div className="ds-alert ds-alert--error">{error}</div>
+      <div className="ops-user">
+        <Link to="/admin/users" className="ops-user__back">
+          <ArrowLeft size={14} /> Directory
+        </Link>
+        <div className="ops-user__alert is-error">{error}</div>
       </div>
     );
   }
 
-  if (!user) return <div className="ds-muted">Loading user…</div>;
+  if (!user) {
+    return (
+      <div className="ops-user">
+        <div className="ops-user__loading">
+          <Activity size={18} aria-hidden />
+          Loading account…
+        </div>
+      </div>
+    );
+  }
 
   const name = displayName(user);
+  const panelHref = user.panelLinked ? safeExternalHref(user.panelWebUrl) : null;
+  const panelLabel = user.panelLinked
+    ? 'Connected'
+    : user.panelStatus === 'unreachable'
+      ? 'Unreachable'
+      : 'Not linked';
 
   return (
-    <div className="aud-v2">
-      <Link to="/admin/users" className="aud-v2__back"><ArrowLeft size={14} /> User directory</Link>
+    <div className="ops-user">
+      <Link to="/admin/users" className="ops-user__back">
+        <ArrowLeft size={14} /> Directory
+      </Link>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
-      {message && <div className="ds-alert ds-alert--info">{message}</div>}
+      {error ? <div className="ops-user__alert is-error">{error}</div> : null}
+      {message ? <div className="ops-user__alert is-info">{message}</div> : null}
 
-      <section className="aud-v2-hero">
-        <Avatar user={user} size="4.25rem" />
-        <div className="aud-v2-hero__identity">
-          <span>Customer account</span>
-          <h1>{name}</h1>
-          <p>@{user.username} <i /> {user.email}</p>
-          <div>
-            <span className={user.role === 'admin' || user.role === 'staff' ? 'is-admin' : ''}><Shield size={11} /> {user.role === 'admin' ? 'Admin' : user.role === 'staff' ? 'Staff' : 'Client'}</span>
-            <span className={user.enabled ? 'is-active' : 'is-disabled'}><i /> {user.enabled ? 'Active' : 'Disabled'}</span>
-            <span className={user.panelLinked ? 'is-linked' : 'is-missing'}><Server size={11} /> {user.panelLinked ? 'Panel linked' : 'Panel missing'}</span>
+      <header className="ops-user__mast">
+        <div className="ops-user__identity">
+          <span className={`ops-user__avatar-wrap ${user.enabled ? 'is-on' : 'is-off'}`}>
+            <Avatar user={user} size="3.25rem" />
+          </span>
+          <div className="ops-user__identity-copy">
+            <span>Account</span>
+            <h1>{name}</h1>
+            <p>
+              @{user.username}
+              <span aria-hidden="true"> · </span>
+              {user.email}
+            </p>
+            <div className="ops-user__badges">
+              <span
+                className={`ops-users__role${
+                  user.role === 'admin' ? ' is-admin' : user.role === 'staff' ? ' is-staff' : ' is-client'
+                }`}
+              >
+                <Shield size={12} aria-hidden />
+                {roleLabel(user.role)}
+              </span>
+              <span className={`ops-user__state ${user.enabled ? 'is-on' : 'is-off'}`}>
+                <i aria-hidden />
+                {user.enabled ? 'Active' : 'Disabled'}
+              </span>
+              <span className={`ops-users__panel ${user.panelLinked ? 'is-yes' : 'is-no'}`}>
+                {user.panelLinked ? <Check size={12} aria-hidden /> : <Ban size={12} aria-hidden />}
+                {panelLabel}
+              </span>
+            </div>
           </div>
         </div>
-        <div className="aud-v2-hero__actions">
-          {user.panelLinked && safeExternalHref(user.panelWebUrl) && (
-            <a href={safeExternalHref(user.panelWebUrl)} target="_blank" rel="noopener noreferrer">
-              <ExternalLink size={15} /> Open panel
+        <div className="ops-user__actions">
+          {panelHref ? (
+            <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn">
+              <ExternalLink size={14} /> Open panel
             </a>
-          )}
-          {fullAdmin && (
-          <button
-            className={user.enabled ? 'is-disable' : 'is-enable'}
-            type="button"
-            disabled={saving}
-            onClick={() => void patchUser({ enabled: !user.enabled })}
-          >
-            {user.enabled ? 'Disable account' : 'Enable account'}
-          </button>
-          )}
+          ) : null}
+          {fullAdmin ? (
+            <button
+              type="button"
+              className={`ops-user__btn ${user.enabled ? 'is-danger' : 'is-ok'}`}
+              disabled={saving}
+              onClick={() => void patchUser({ enabled: !user.enabled })}
+            >
+              {user.enabled ? <ShieldOff size={14} /> : <ShieldCheck size={14} />}
+              {user.enabled ? 'Disable' : 'Enable'}
+            </button>
+          ) : null}
+        </div>
+      </header>
+
+      <section className="ops-user__metrics" aria-label="Account metrics">
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <WalletCards size={15} />
+          </span>
+          <div>
+            <small>Credits</small>
+            <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
+          </div>
+        </div>
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <Server size={15} />
+          </span>
+          <div>
+            <small>Services</small>
+            <strong>{user.stats.services}</strong>
+          </div>
+        </div>
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <FileText size={15} />
+          </span>
+          <div>
+            <small>Invoices</small>
+            <strong>{user.stats.invoices}</strong>
+          </div>
+        </div>
+        <div className={`ops-users__chip ops-user__metric${user.stats.unpaidInvoices ? ' is-warn' : ''}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            <CircleDollarSign size={15} />
+          </span>
+          <div>
+            <small>Unpaid</small>
+            <strong>{user.stats.unpaidInvoices}</strong>
+          </div>
         </div>
       </section>
 
-      <section className="aud-v2-metrics">
-        <div><span><WalletCards size={15} /></span><p>Credit balance<small>Available to spend</small></p><strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong></div>
-        <div><span><Server size={15} /></span><p>Services<small>{user.stats.activeServices} currently active</small></p><strong>{user.stats.services}</strong></div>
-        <div><span><FileText size={15} /></span><p>Invoices<small>{user.stats.paidInvoices} paid</small></p><strong>{user.stats.invoices}</strong></div>
-        <div className={user.stats.unpaidInvoices ? 'has-warning' : ''}><span><CircleDollarSign size={15} /></span><p>Unpaid invoices<small>Awaiting payment</small></p><strong>{user.stats.unpaidInvoices}</strong></div>
-      </section>
-
-      <div className="aud-v2-tabs" role="tablist">
-        <button type="button" className={tab === 'overview' ? 'is-active' : ''} onClick={() => setTab('overview')}>
+      <div className="ops-user__tabs" role="tablist" aria-label="Account sections">
+        <button type="button" role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'is-on' : ''} onClick={() => setTab('overview')}>
           <UserRound size={14} /> Overview
         </button>
-        <button type="button" className={tab === 'services' ? 'is-active' : ''} onClick={() => setTab('services')}>
-          <Server size={14} /> Services <span>{user.services.length}</span>
+        <button type="button" role="tab" aria-selected={tab === 'services'} className={tab === 'services' ? 'is-on' : ''} onClick={() => setTab('services')}>
+          <Server size={14} /> Services <em>{user.services.length}</em>
         </button>
-        <button type="button" className={tab === 'invoices' ? 'is-active' : ''} onClick={() => setTab('invoices')}>
-          <FileText size={14} /> Invoices <span>{user.invoices.length}</span>
+        <button type="button" role="tab" aria-selected={tab === 'invoices'} className={tab === 'invoices' ? 'is-on' : ''} onClick={() => setTab('invoices')}>
+          <FileText size={14} /> Invoices <em>{user.invoices.length}</em>
         </button>
       </div>
 
-      {tab === 'overview' && (
-        <div className="aud-v2-overview">
-          <div className="aud-v2-card aud-v2-account">
-            <div>
-              <span className="aud-v2-card__icon"><UserRound size={15} /></span>
-              <div><h3>Account details</h3><p>Identity and permissions for this user.</p></div>
-            </div>
-            <div className="aud-v2-details">
-              <div className="pf-link-row">
-                <div>
-                  <div className="ds-faint" style={{ fontSize: '0.72rem' }}>Full name</div>
-                  <strong>{name}</strong>
-                </div>
+      {tab === 'overview' ? (
+        <div className="ops-user__overview">
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <UserRound size={15} />
+              </span>
+              <div>
+                <span>Identity</span>
+                <h2>Account</h2>
               </div>
-              <div className="pf-link-row">
-                <div>
-                  <div className="ds-faint" style={{ fontSize: '0.72rem' }}>Username</div>
-                  <strong>@{user.username}</strong>
-                </div>
+            </header>
+            <dl className="ops-user__facts">
+              <div>
+                <dt>Full name</dt>
+                <dd>{name}</dd>
               </div>
-              <div className="pf-link-row">
-                <div>
-                  <div className="ds-faint" style={{ fontSize: '0.72rem' }}>Email</div>
-                  <strong style={{ wordBreak: 'break-all' }}>{user.email}</strong>
-                </div>
+              <div>
+                <dt>Username</dt>
+                <dd>@{user.username}</dd>
               </div>
-              <div className="pf-link-row">
-                <div>
-                  <div className="ds-faint" style={{ fontSize: '0.72rem' }}>User ID</div>
-                  <span className="pf-mono">{user.id}</span>
-                </div>
+              <div>
+                <dt>Email</dt>
+                <dd className="is-wrap">{user.email}</dd>
               </div>
-            </div>
-            <label className="aud-v2-role">
-              <span>Account role</span>
+              <div>
+                <dt>User ID</dt>
+                <dd className="is-mono">{user.id}</dd>
+              </div>
+              <div>
+                <dt>Joined</dt>
+                <dd>
+                  {new Date(user.createdAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                    year: 'numeric',
+                  })}
+                </dd>
+              </div>
+            </dl>
+            <label className="ops-user__field">
+              <span>Role</span>
               {fullAdmin ? (
-              <ThemedSelect
-                ariaLabel="Account role"
-                value={user.role}
-                disabled={saving}
-                onChange={(role) => void patchUser({ role: role as 'admin' | 'staff' | 'client' })}
-                options={[
-                  { value: 'client', label: 'Client', description: 'Standard billing and hosting access' },
-                  { value: 'staff', label: 'Staff', description: 'Light admin: tickets, suspend, read-only settings' },
-                  { value: 'admin', label: 'Administrator', description: 'Full billing administration access' },
-                ]}
-              />
+                <ThemedSelect
+                  ariaLabel="Account role"
+                  value={user.role}
+                  disabled={saving}
+                  onChange={(role) => void patchUser({ role: role as 'admin' | 'staff' | 'client' })}
+                  options={[
+                    { value: 'client', label: 'Client', description: 'Standard billing and hosting access' },
+                    { value: 'staff', label: 'Staff', description: 'Light admin: tickets, suspend, read-only settings' },
+                    { value: 'admin', label: 'Administrator', description: 'Full billing administration access' },
+                  ]}
+                />
               ) : (
-                <strong>{user.role === 'admin' ? 'Administrator' : user.role === 'staff' ? 'Staff' : 'Client'}</strong>
+                <strong>{roleLabel(user.role)}</strong>
               )}
             </label>
-          </div>
+          </section>
 
-          {fullAdmin && (
-          <div className="aud-v2-card aud-v2-password">
-            <div>
-              <span className="aud-v2-card__icon"><KeyRound size={15} /></span>
-              <div><h3>Change password</h3><p>Updates billing and the linked panel, then signs the user out.</p></div>
-            </div>
-            <form onSubmit={(event) => void changePassword(event)}>
-              <label><span>New password</span><input type="password" autoComplete="new-password" minLength={16} maxLength={200} value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 16 characters" required /></label>
-              <label><span>Confirm password</span><input type="password" autoComplete="new-password" minLength={16} maxLength={200} value={passwordConfirm} onChange={(event) => setPasswordConfirm(event.target.value)} placeholder="Repeat new password" required /></label>
-              <button type="submit" disabled={passwordBusy}>{passwordBusy ? 'Updating…' : 'Update password'} <KeyRound size={13} /></button>
-            </form>
-          </div>
-          )}
-
-          {fullAdmin && (
-          <div className="aud-v2-card aud-v2-credits">
-            <div className="aud-v2-credits__head">
-              <span className="aud-v2-card__icon"><WalletCards size={15} /></span>
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Server size={15} />
+              </span>
               <div>
-                <h3>Account credits</h3>
-                <p>Wallet balance used for invoices, upgrades, and refunds.</p>
+                <span>Provisioning</span>
+                <h2>Spirit-Panel</h2>
               </div>
-            </div>
-
-            <div className="aud-v2-credits__balance">
+            </header>
+            <dl className="ops-user__facts">
               <div>
-                <small>Available balance</small>
-                <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
+                <dt>Status</dt>
+                <dd>
+                  <span className={`ops-users__panel ${user.panelLinked ? 'is-yes' : 'is-no'}`}>{panelLabel}</span>
+                </dd>
               </div>
               <div>
-                <small>Admin adjustments</small>
-                <strong>{user.creditLedgers?.length ?? 0}</strong>
+                <dt>Panel user ID</dt>
+                <dd className="is-mono ops-user__copy-row">
+                  <span>{user.panelUserId || '—'}</span>
+                  {user.panelUserId ? (
+                    <button type="button" className="ops-user__icon-btn" onClick={() => void copyPanelId()} title="Copy panel ID">
+                      {copied ? <Check size={13} /> : <Copy size={13} />}
+                    </button>
+                  ) : null}
+                </dd>
               </div>
-              <div>
-                <small>Last movement</small>
-                <strong>
-                  {user.creditLedgers?.[0]
-                    ? new Date(user.creditLedgers[0].createdAt).toLocaleDateString(undefined, {
-                        day: 'numeric',
-                        month: 'short',
-                      })
-                    : '—'}
-                </strong>
-              </div>
-            </div>
-
-            <form className="aud-v2-credits__form" onSubmit={(e) => void adjustCredits(e)}>
-              <div className="aud-v2-credits__quick">
-                {[10, 25, 50, -10].map((amount) => (
-                  <button
-                    key={amount}
-                    type="button"
-                    disabled={creditBusy}
-                    onClick={() => setCreditAmount(String(amount))}
-                  >
-                    {amount > 0 ? `+£${amount}` : `−£${Math.abs(amount)}`}
-                  </button>
-                ))}
-              </div>
-              <div className="aud-v2-credits__fields">
-                <label>
-                  <span>Amount (£)</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={creditAmount}
-                    onChange={(e) => setCreditAmount(e.target.value)}
-                    placeholder="10.00 or -5.00"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Note</span>
-                  <input
-                    value={creditNote}
-                    onChange={(e) => setCreditNote(e.target.value)}
-                    placeholder="Reason for this adjustment"
-                    maxLength={500}
-                  />
-                </label>
-              </div>
-              <button type="submit" disabled={creditBusy}>
-                <WalletCards size={14} /> {creditBusy ? 'Saving…' : 'Apply credit adjustment'}
-              </button>
-            </form>
-
-            <div className="aud-v2-credits__ledger">
-              <header>
-                <span>Admin credit adjustments</span>
-                <small>Adds and removals from this panel only</small>
-              </header>
-              {(user.creditLedgers?.length ?? 0) > 0 ? (
-                <ul>
-                  {user.creditLedgers.map((row) => (
-                    <li key={row.id}>
-                      <span className={`aud-v2-credits__delta ${row.amountCents >= 0 ? 'is-credit' : 'is-debit'}`}>
-                        {row.amountCents >= 0 ? '+' : ''}
-                        {money(row.amountCents, 'GBP')}
-                      </span>
-                      <span>
-                        <strong>{row.amountCents >= 0 ? 'Credit added' : 'Credit removed'}</strong>
-                        <small>
-                          {row.note || 'No note'}
-                          {' · '}
-                          {new Date(row.createdAt).toLocaleString(undefined, {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </small>
-                      </span>
-                      <em>Bal {money(row.balanceAfterCents, 'GBP')}</em>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="aud-v2-credits__empty">
-                  <WalletCards size={18} />
-                  <span>No admin credit adjustments yet for this account.</span>
-                </div>
-              )}
-            </div>
-          </div>
-          )}
-
-          <div className="aud-v2-card aud-v2-panel">
-            <div>
-              <span className="aud-v2-card__icon"><Server size={15} /></span>
-              <div><h3>Spirit-Panel link</h3><p>Verified live against the game panel. Stale IDs are cleared automatically.</p></div>
-            </div>
-            <div className="pf-link-row">
-              <div style={{ minWidth: 0 }}>
-                <div className="ds-faint" style={{ fontSize: '0.72rem' }}>Panel user ID</div>
-                <div className="pf-mono">{user.panelUserId || 'Not linked'}</div>
-              </div>
-              {user.panelUserId && (
-                <button className="ds-btn ds-btn--ghost ds-btn--sm" type="button" onClick={() => void copyPanelId()}>
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              )}
-            </div>
-            <div className="pf-link-row">
-              <div>
-                <div className="ds-faint" style={{ fontSize: '0.72rem' }}>Status</div>
-                <span className={user.panelLinked ? 'ds-badge ds-badge--success' : 'ds-badge ds-badge--warning'}>
-                  {user.panelLinked
-                    ? 'Connected'
-                    : user.panelStatus === 'unreachable'
-                      ? 'Panel unreachable'
-                      : 'Not connected'}
-                </span>
-              </div>
-              <Shield size={16} style={{ color: 'var(--muted)' }} />
-            </div>
-            {user.panelLinked && safeExternalHref(user.panelWebUrl) && (
-              <a className="ds-btn ds-btn--ghost" href={safeExternalHref(user.panelWebUrl)} target="_blank" rel="noopener noreferrer" style={{ alignSelf: 'start' }}>
+            </dl>
+            {panelHref ? (
+              <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn is-ghost">
                 <ExternalLink size={14} /> Open game panel
               </a>
-            )}
-            {fullAdmin && (!user.panelLinked || user.panelStatus === 'unreachable') && (
-              <form className="ds-stack" onSubmit={(event) => void relinkPanel(event)} style={{ marginTop: '0.35rem' }}>
-                <p className="ds-faint" style={{ margin: 0, fontSize: '0.72rem', lineHeight: 1.45 }}>
-                  Recreate or attach a Spirit-Panel account for this user. Provide a password that meets panel policy (16+ characters).
-                </p>
-                <label>
+            ) : null}
+            {fullAdmin && (!user.panelLinked || user.panelStatus === 'unreachable') ? (
+              <form className="ops-user__form" onSubmit={(event) => void relinkPanel(event)}>
+                <p>Create or attach a Spirit-Panel account. Password must be 16+ characters.</p>
+                <label className="ops-user__field">
                   <span>Panel password</span>
                   <input
                     type="password"
@@ -732,7 +995,7 @@ export function AdminUserDetail() {
                     required
                   />
                 </label>
-                <label>
+                <label className="ops-user__field">
                   <span>Confirm password</span>
                   <input
                     type="password"
@@ -745,111 +1008,315 @@ export function AdminUserDetail() {
                     required
                   />
                 </label>
-                <button type="submit" className="ds-btn ds-btn--primary" disabled={relinkBusy}>
-                  <Link2 size={13} /> {relinkBusy ? 'Linking…' : 'Relink Spirit-Panel'}
+                <button type="submit" className="ops-user__btn is-primary" disabled={relinkBusy}>
+                  <Link2 size={14} /> {relinkBusy ? 'Linking…' : 'Relink Spirit-Panel'}
                 </button>
               </form>
-            )}
+            ) : null}
+          </section>
+
+          {fullAdmin ? (
+            <section className="ops-user__panel ops-user__panel--wide">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <KeyRound size={15} />
+                </span>
+                <div>
+                  <span>Security</span>
+                  <h2>Password</h2>
+                </div>
+              </header>
+              <p className="ops-user__hint">Updates billing and the linked panel, then signs the user out everywhere.</p>
+              <form className="ops-user__form ops-user__form--split" onSubmit={(event) => void changePassword(event)}>
+                <label className="ops-user__field">
+                  <span>New password</span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={16}
+                    maxLength={200}
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    placeholder="At least 16 characters"
+                    required
+                  />
+                </label>
+                <label className="ops-user__field">
+                  <span>Confirm password</span>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    minLength={16}
+                    maxLength={200}
+                    value={passwordConfirm}
+                    onChange={(event) => setPasswordConfirm(event.target.value)}
+                    placeholder="Repeat new password"
+                    required
+                  />
+                </label>
+                <button type="submit" className="ops-user__btn is-primary" disabled={passwordBusy}>
+                  <KeyRound size={14} /> {passwordBusy ? 'Updating…' : 'Update password'}
+                </button>
+              </form>
+            </section>
+          ) : null}
+
+          {fullAdmin ? (
+            <section className="ops-user__panel ops-user__panel--wide">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <WalletCards size={15} />
+                </span>
+                <div>
+                  <span>Wallet</span>
+                  <h2>Credits</h2>
+                </div>
+              </header>
+              <div className="ops-user__credit-stats">
+                <div>
+                  <small>Available</small>
+                  <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
+                </div>
+                <div>
+                  <small>Adjustments</small>
+                  <strong>{user.creditLedgers?.length ?? 0}</strong>
+                </div>
+                <div>
+                  <small>Last movement</small>
+                  <strong>
+                    {user.creditLedgers?.[0]
+                      ? new Date(user.creditLedgers[0].createdAt).toLocaleDateString(undefined, {
+                          day: 'numeric',
+                          month: 'short',
+                        })
+                      : '—'}
+                  </strong>
+                </div>
+              </div>
+              <form className="ops-user__credit-form" onSubmit={(event) => void adjustCredits(event)}>
+                <div className="ops-user__quick">
+                  {[10, 25, 50, -10].map((amount) => (
+                    <button key={amount} type="button" disabled={creditBusy} onClick={() => setCreditAmount(String(amount))}>
+                      {amount > 0 ? `+£${amount}` : `−£${Math.abs(amount)}`}
+                    </button>
+                  ))}
+                </div>
+                <label className="ops-user__field">
+                  <span>Amount (£)</span>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={creditAmount}
+                    onChange={(event) => setCreditAmount(event.target.value)}
+                    placeholder="10.00 or -5.00"
+                    required
+                  />
+                </label>
+                <label className="ops-user__field">
+                  <span>Note</span>
+                  <input
+                    value={creditNote}
+                    onChange={(event) => setCreditNote(event.target.value)}
+                    placeholder="Reason for this adjustment"
+                    maxLength={500}
+                  />
+                </label>
+                <button type="submit" className="ops-user__btn is-primary" disabled={creditBusy}>
+                  <WalletCards size={14} /> {creditBusy ? 'Saving…' : 'Apply adjustment'}
+                </button>
+              </form>
+              <div className="ops-user__ledger">
+                <header>
+                  <span>Ledger</span>
+                  <small>Admin adjustments only</small>
+                </header>
+                {(user.creditLedgers?.length ?? 0) > 0 ? (
+                  <ul>
+                    {user.creditLedgers.map((row) => (
+                      <li key={row.id}>
+                        <strong className={row.amountCents >= 0 ? 'is-credit' : 'is-debit'}>
+                          {row.amountCents >= 0 ? '+' : ''}
+                          {money(row.amountCents, 'GBP')}
+                        </strong>
+                        <span>
+                          <em>{row.note || 'No note'}</em>
+                          <small>
+                            {new Date(row.createdAt).toLocaleString(undefined, {
+                              day: 'numeric',
+                              month: 'short',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </small>
+                        </span>
+                        <b>Bal {money(row.balanceAfterCents, 'GBP')}</b>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <div className="ops-user__empty-inline">No admin credit adjustments yet.</div>
+                )}
+              </div>
+            </section>
+          ) : null}
+
+          {fullAdmin ? (
+            <section className="ops-user__panel ops-user__panel--danger ops-user__panel--wide">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <Trash2 size={15} />
+                </span>
+                <div>
+                  <span>Danger</span>
+                  <h2>Delete user</h2>
+                </div>
+              </header>
+              <div className="ops-user__danger">
+                <p>
+                  Permanently removes billing data and the linked panel account. Panel users that still own servers must have
+                  those services removed first.
+                </p>
+                <button type="button" className="ops-user__btn is-danger" disabled={deleting} onClick={() => setDeleteModalOpen(true)}>
+                  <Trash2 size={14} /> Delete user
+                </button>
+              </div>
+            </section>
+          ) : null}
+        </div>
+      ) : null}
+
+      {tab === 'services' ? (
+        <section className="ops-user__table" aria-label="Services">
+          <div className="ops-user__table-head ops-user__table-head--services" aria-hidden>
+            <span>Service</span>
+            <span>Plan</span>
+            <span>Status</span>
+            <span className="is-end">Price</span>
+            <span>Panel</span>
+            <span className="is-end">Next due</span>
+            <span />
           </div>
+          {user.services.map((s) => {
+            const category = s.product.category;
+            return (
+            <Link key={s.id} to={`/admin/services/${s.id}`} className="ops-user__table-row ops-user__table-row--services">
+              <span className="ops-user__table-service">
+                <CategoryMark
+                  icon={category?.icon || 'server'}
+                  logoUrl={category?.logoUrl}
+                  color={category?.color || '#38bdf8'}
+                  size={30}
+                  className="ops-user__table-service-mark"
+                />
+                <strong>{s.name}</strong>
+              </span>
+              <span className="ops-user__table-plan">{s.product.name}</span>
+              <span className="ops-user__table-status">
+                <em className={statusBadge(s.status)}>{s.status}</em>
+              </span>
+              <span className="is-mono is-end">
+                {money(s.priceCents ?? s.product.priceCents, s.currency ?? s.product.currency)}
+                <small>/{s.cycle ?? s.product.cycle}</small>
+              </span>
+              <span className="is-mono ops-user__table-panel-id" title={s.panelServerId || undefined}>
+                {s.panelServerId ?? '—'}
+              </span>
+              <span className="is-mono is-end">
+                {s.nextDueAt
+                  ? new Date(s.nextDueAt).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      year: '2-digit',
+                    })
+                  : '—'}
+              </span>
+              <ChevronRight size={15} aria-hidden />
+            </Link>
+            );
+          })}
+          {!user.services.length ? (
+            <div className="ops-user__empty-inline">No services for this account.</div>
+          ) : null}
+        </section>
+      ) : null}
 
-          {fullAdmin && (
-          <div className="aud-v2-card aud-v2-danger">
-            <div>
-              <span className="aud-v2-card__icon"><Trash2 size={15} /></span>
-              <div><h3>Delete user</h3><p>Permanently removes billing data and their linked panel account.</p></div>
-            </div>
-            <div className="aud-v2-danger__body">
-              <span><strong>This action cannot be undone.</strong><small>Panel users that still own servers must have those services removed first.</small></span>
-              <button type="button" disabled={deleting} onClick={() => setDeleteModalOpen(true)}><Trash2 size={13} /> Delete user</button>
-            </div>
+      {tab === 'invoices' ? (
+        <section className="ops-user__table" aria-label="Invoices">
+          <div className="ops-user__table-head ops-user__table-head--invoices" aria-hidden>
+            <span>Invoice</span>
+            <span>Status</span>
+            <span className="is-end">Total</span>
+            <span className="is-end">Created</span>
+            <span className="is-end">Paid</span>
+            <span aria-hidden />
+            <span />
           </div>
-          )}
-        </div>
-      )}
-
-      {tab === 'services' && (
-        <div className="ds-table-wrap aud-v2-table">
-          <table className="ds-table">
-            <thead>
-              <tr>
-                <th>Service</th>
-                <th>Plan</th>
-                <th>Status</th>
-                <th>Price</th>
-                <th>Panel server</th>
-                <th>Next due</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {user.services.map((s) => (
-                <tr key={s.id}>
-                  <td><strong>{s.name}</strong></td>
-                  <td>{s.product.name}</td>
-                  <td><span className={statusBadge(s.status)}>{s.status}</span></td>
-                  <td>{money(s.priceCents ?? s.product.priceCents, s.currency ?? s.product.currency)} / {s.cycle ?? s.product.cycle}</td>
-                  <td className="ds-muted">{s.panelServerId ?? '—'}</td>
-                  <td className="ds-muted">
-                    {s.nextDueAt ? new Date(s.nextDueAt).toLocaleDateString() : '—'}
-                  </td>
-                  <td>
-                    <Link to={`/admin/services/${s.id}`} className="ds-btn ds-btn--secondary ds-btn--sm">
-                      <SlidersHorizontal size={12} /> Open
-                    </Link>
-                  </td>
-                </tr>
-              ))}
-              {!user.services.length && (
-                <tr>
-                  <td colSpan={7} className="ds-muted" style={{ textAlign: 'center', padding: '1.5rem' }}>
-                    No services for this user.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === 'invoices' && (
-        <div className="ds-table-wrap aud-v2-table">
-          <table className="ds-table">
-            <thead>
-              <tr>
-                <th>Invoice</th>
-                <th>Status</th>
-                <th>Total</th>
-                <th>Created</th>
-                <th>Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {user.invoices.map((inv) => (
-                <tr key={inv.id}>
-                  <td>
-                    <Link to={`/admin/invoices/${inv.id}`} style={{ color: 'var(--accent-hover)', fontWeight: 600 }}>
-                      {inv.number}
-                    </Link>
-                  </td>
-                  <td><span className={statusBadge(inv.status)}>{inv.status}</span></td>
-                  <td>{money(inv.totalCents, inv.currency)}</td>
-                  <td className="ds-muted">{new Date(inv.createdAt).toLocaleDateString()}</td>
-                  <td className="ds-muted">
-                    {inv.paidAt ? new Date(inv.paidAt).toLocaleDateString() : '—'}
-                  </td>
-                </tr>
-              ))}
-              {!user.invoices.length && (
-                <tr>
-                  <td colSpan={5} className="ds-muted" style={{ textAlign: 'center', padding: '1.5rem' }}>
-                    No invoices for this user.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+          {user.invoices.map((inv) => {
+            const category = inv.service?.product.category;
+            const overdue =
+              inv.status === 'unpaid' && inv.dueAt ? new Date(inv.dueAt).getTime() < Date.now() : false;
+            const statusLabel = overdue ? 'overdue' : inv.status;
+            const subject = inv.service?.name || inv.description || 'Manual invoice';
+            return (
+              <Link
+                key={inv.id}
+                to={`/admin/invoices/${inv.id}`}
+                className={`ops-user__table-row ops-user__table-row--invoices${overdue ? ' is-overdue' : ''}`}
+              >
+                <span className="ops-user__table-invoice">
+                  {inv.service ? (
+                    <CategoryMark
+                      icon={category?.icon || 'server'}
+                      logoUrl={category?.logoUrl}
+                      color={category?.color || '#38bdf8'}
+                      size={30}
+                      className="ops-user__table-service-mark"
+                    />
+                  ) : (
+                    <span
+                      className={`ops-user__table-invoice-mark is-${overdue ? 'danger' : inv.status === 'paid' ? 'ok' : inv.status === 'unpaid' || inv.status === 'pending_payment' ? 'warn' : 'neutral'}`}
+                      aria-hidden
+                    >
+                      <FileText size={14} />
+                    </span>
+                  )}
+                  <span className="ops-user__table-invoice-copy">
+                    <strong className="is-mono">{inv.number}</strong>
+                    <em>{subject}</em>
+                  </span>
+                </span>
+                <span className="ops-user__table-status">
+                  <em className={`${statusBadge(inv.status)}${overdue ? ' is-overdue' : ''}`}>{statusLabel}</em>
+                </span>
+                <span className="is-mono is-end ops-user__table-amount">
+                  {money(inv.totalCents, inv.currency)}
+                </span>
+                <span className="is-mono is-end ops-user__table-date">
+                  {new Date(inv.createdAt).toLocaleDateString(undefined, {
+                    day: 'numeric',
+                    month: 'short',
+                    year: '2-digit',
+                  })}
+                </span>
+                <span className="is-mono is-end ops-user__table-date">
+                  {inv.paidAt
+                    ? new Date(inv.paidAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                        year: '2-digit',
+                      })
+                    : '—'}
+                </span>
+                <span aria-hidden />
+                <ChevronRight size={15} aria-hidden />
+              </Link>
+            );
+          })}
+          {!user.invoices.length ? (
+            <div className="ops-user__empty-inline">No invoices for this account.</div>
+          ) : null}
+        </section>
+      ) : null}
 
       <ConfirmModal
         open={deleteModalOpen}

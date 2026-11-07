@@ -76,3 +76,29 @@ export async function pruneSystemLogs(keepDays = 30) {
   });
   return { deleted: result.count, cutoff };
 }
+
+/** One-shot remap after category enum expansions. Safe to call on every boot. */
+export async function remapLegacyLogCategories(): Promise<void> {
+  try {
+    await prisma.systemLog.updateMany({
+      where: { action: { startsWith: 'ticket.' }, category: { in: ['billing', 'admin'] } },
+      data: { category: 'support' },
+    });
+    await prisma.systemLog.updateMany({
+      where: {
+        action: { in: ['services.sync_panel', 'services.create_custom', 'invoice.provision_failed'] },
+        category: { in: ['admin', 'billing'] },
+      },
+      data: { category: 'provision' },
+    });
+    await prisma.systemLog.updateMany({
+      where: {
+        action: { in: ['services.run_renewals', 'services.run_overdue'] },
+        category: 'admin',
+      },
+      data: { category: 'billing' },
+    });
+  } catch {
+    // Enum may not be migrated yet; ignore until db push lands.
+  }
+}

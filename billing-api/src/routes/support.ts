@@ -153,7 +153,7 @@ export async function supportClientRoutes(app: FastifyInstance) {
 
         recordLogFireAndForget({
           level: 'info',
-          category: 'billing',
+          category: 'support',
           action: 'ticket.created',
           message: `${request.user!.username} opened ticket ${ticket.number}`,
           actorUserId: request.user!.id,
@@ -256,7 +256,7 @@ export async function supportClientRoutes(app: FastifyInstance) {
 
     recordLogFireAndForget({
       level: 'info',
-      category: 'billing',
+      category: 'support',
       action: 'ticket.closed',
       message: `Client closed ticket ${ticket.number}`,
       actorUserId: request.user!.id,
@@ -428,7 +428,7 @@ export async function supportAdminRoutes(app: FastifyInstance) {
 
     recordLogFireAndForget({
       level: 'info',
-      category: 'admin',
+      category: 'support',
       action: 'ticket.reply',
       message: `Admin replied to ${ticket.number}`,
       actorUserId: request.user!.id,
@@ -507,7 +507,7 @@ export async function supportAdminRoutes(app: FastifyInstance) {
     await prisma.ticket.delete({ where: { id } });
     recordLogFireAndForget({
       level: 'warn',
-      category: 'admin',
+      category: 'support',
       action: 'ticket.deleted',
       message: `Deleted ticket ${ticket.number}`,
       actorUserId: request.user!.id,

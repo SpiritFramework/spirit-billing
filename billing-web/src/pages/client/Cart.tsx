@@ -85,11 +85,15 @@ export function CartPage() {
   useEffect(() => {
     setCoupon(null);
   }, [totalCents, items.length]);
+
   const afterDiscount = Math.max(0, totalCents - discountCents);
   const availableCredits = creditBalance + creditBonusCents;
   const creditApplied = user && applyCredits ? Math.min(availableCredits, afterDiscount) : 0;
   const amountDue = Math.max(0, afterDiscount - creditApplied);
   const fullyCoveredByCredit = Boolean(user) && amountDue === 0 && creditApplied > 0;
+  const creditCoverPercent = afterDiscount
+    ? Math.min(100, (creditApplied / afterDiscount) * 100)
+    : 0;
 
   async function applyCoupon() {
     if (!user) {
@@ -197,298 +201,497 @@ export function CartPage() {
         ];
 
   return (
-    <div className="cart-v2">
-      <header className="cart-v2__header">
-        <div>
-          <Link to="/game-hosting"><ArrowLeft size={14} /> Continue shopping</Link>
-          <h1>Your cart</h1>
-          <p>Review your servers, apply rewards, and finish your order.</p>
+    <div className="client-cart">
+      <Link to="/game-hosting" className="client-cart__back">
+        <ArrowLeft size={14} /> Continue shopping
+      </Link>
+
+      <header className="client-cart__intro">
+        <div className="client-cart__intro-copy">
+          <p>Checkout</p>
+          <h1>Cart</h1>
+          <span>Review servers, apply rewards, and finish your order.</span>
         </div>
-        {items.length > 0 && (
-          <span className="cart-v2__count"><ShoppingCart size={15} /> {count} server{count === 1 ? '' : 's'}</span>
-        )}
+        <div className="client-cart__intro-actions">
+          {items.length > 0 ? (
+            <Link className="client-home__btn client-home__btn--ghost client-home__btn--cta" to="/game-hosting">
+              <span className="client-home__btn-icon" aria-hidden>
+                <Plus size={15} />
+              </span>
+              <span>Add another</span>
+            </Link>
+          ) : (
+            <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to="/game-hosting">
+              <span className="client-home__btn-icon" aria-hidden>
+                <PackageOpen size={15} />
+              </span>
+              <span>Browse hosting</span>
+              <ArrowRight size={14} className="client-home__btn-arrow" />
+            </Link>
+          )}
+        </div>
       </header>
 
-      <div className="cart-progress" aria-label="Checkout progress">
-        <span className="is-done"><CheckCircle2 size={15} /><em>1</em><strong>Choose hosting</strong></span>
-        <i />
-        <span className="is-active"><ShoppingCart size={15} /><em>2</em><strong>Review cart</strong></span>
-        <i />
-        <span><ShieldCheck size={15} /><em>3</em><strong>Complete order</strong></span>
+      <div className="client-cart__steps" aria-label="Checkout progress">
+        <span className="is-done">
+          <CheckCircle2 size={14} />
+          Choose hosting
+        </span>
+        <i aria-hidden />
+        <span className="is-active">
+          <ShoppingCart size={14} />
+          Review cart
+        </span>
+        <i aria-hidden />
+        <span>
+          <ShieldCheck size={14} />
+          Complete order
+        </span>
       </div>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
+      {error ? <div className="ds-alert ds-alert--error">{error}</div> : null}
 
       {!items.length ? (
-        <section className="cart-v2-empty">
-          <div className="cart-v2-empty__art">
-            <span><ShoppingCart size={35} /></span>
-            <i className="cart-v2-empty__orbit-one" />
-            <i className="cart-v2-empty__orbit-two" />
-          </div>
-          <span className="cart-v2-empty__kicker">Nothing here yet</span>
-          <h2>Your next server starts here.</h2>
-          <p>Explore game hosting, pick the right configuration, and it will be waiting for you here.</p>
-          <Link className="ds-btn ds-btn--primary" to="/game-hosting">
-            <PackageOpen size={16} /> Browse game hosting
+        <section className="client-cart__empty">
+          <span aria-hidden>
+            <ShoppingCart size={22} />
+          </span>
+          <strong>Your cart is empty</strong>
+          <p>Pick a game and plan — it will show up here ready for checkout.</p>
+          <Link className="client-home__btn client-home__btn--primary client-home__btn--cta client-home__btn--sm" to="/game-hosting">
+            <span className="client-home__btn-icon" aria-hidden>
+              <PackageOpen size={14} />
+            </span>
+            <span>Browse game hosting</span>
+            <ArrowRight size={13} className="client-home__btn-arrow" />
           </Link>
         </section>
       ) : (
-        <div className="cart-v2-layout">
-          <main className="cart-v2-items">
-            <div className="cart-v2-items__header">
-              <div><span>Order items</span><h2>Your servers</h2></div>
-              <button type="button" disabled={checkingOut} onClick={clear}><Trash2 size={13} /> Clear all</button>
+        <>
+          <div className="client-cart__pulse" aria-label="Cart snapshot">
+            <div className="client-cart__pulse-item">
+              <span className="client-cart__pulse-copy">
+                <small>Servers</small>
+                <strong>{count}</strong>
+                <span>
+                  {items.length} plan{items.length === 1 ? '' : 's'} in cart
+                </span>
+              </span>
+              <span className="client-cart__pulse-icon is-servers" aria-hidden>
+                <ShoppingCart size={17} />
+              </span>
             </div>
-
-            {items.map((item) => {
-              const features = (item.features ?? []).filter(Boolean).slice(0, 4);
-              return (
-                <article
-                  key={item.id}
-                  className="cart-v2-item"
-                  style={item.categoryColor ? { ['--cart-accent' as string]: item.categoryColor } : undefined}
-                >
-                  <div className="cart-v2-item__top">
-                    <CategoryMark
-                      icon={item.categoryIcon || 'gamepad'}
-                      logoUrl={item.categoryLogoUrl}
-                      color={item.categoryColor || '#6366f1'}
-                      size={52}
-                      className="cart-v2-item__mark"
-                    />
-                    <div className="cart-v2-item__identity">
-                      <small>{item.categoryName || 'Game hosting'}</small>
-                      <h3>{item.name}</h3>
-                      <p>
-                        {item.description?.trim()
-                          || `${formatRam(item.memoryMb)} · ${formatCpu(item.cpuPercent)} CPU · ${formatDisk(item.diskMb)} disk · billed each ${cycleLabel(item.cycle)}`}
-                      </p>
-                    </div>
-                    <div className="cart-v2-item__price">
-                      <strong>{money(item.priceCents * item.qty, item.currency)}</strong>
-                      <span>{money(item.priceCents, item.currency)} / {cycleLabel(item.cycle)}</span>
-                    </div>
-                    <button
-                      type="button"
-                      className="cart-v2-item__remove"
-                      onClick={() => removeItem(item.id)}
-                      aria-label={`Remove ${item.name}`}
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
-
-                  <div className="cart-v2-item__specs">
-                    <span><MemoryStick size={14} /><small>Memory</small><strong>{formatRam(item.memoryMb)}</strong></span>
-                    <span><Cpu size={14} /><small>CPU limit</small><strong>{formatCpu(item.cpuPercent)}</strong></span>
-                    <span><HardDrive size={14} /><small>Disk</small><strong>{formatDisk(item.diskMb)}</strong></span>
-                    {(item.backupLimit ?? 0) > 0 && (
-                      <span><Archive size={14} /><small>Backups</small><strong>{item.backupLimit}</strong></span>
-                    )}
-                    {(item.databaseLimit ?? 0) > 0 && (
-                      <span><Database size={14} /><small>Databases</small><strong>{item.databaseLimit}</strong></span>
-                    )}
-                  </div>
-
-                  {features.length > 0 && (
-                    <ul className="cart-v2-item__features">
-                      {features.map((feature) => (
-                        <li key={feature}><Sparkles size={12} /> {feature}</li>
-                      ))}
-                    </ul>
-                  )}
-
-                  <div className="cart-v2-item__footer">
-                    <label>
-                      <span>Server name <small>optional</small></span>
-                      <input
-                        value={item.serverName ?? ''}
-                        placeholder={`${item.categoryName || item.name} server`}
-                        maxLength={64}
-                        onChange={(event) => setServerName(item.id, event.target.value)}
-                      />
-                    </label>
-                    <div className="cart-v2-qty">
-                      <span>Quantity</span>
-                      <div>
-                        <button type="button" onClick={() => setQty(item.id, item.qty - 1)} aria-label="Decrease quantity">
-                          <Minus size={13} />
-                        </button>
-                        <strong>{item.qty}</strong>
-                        <button type="button" onClick={() => setQty(item.id, item.qty + 1)} disabled={item.qty >= 5} aria-label="Increase quantity">
-                          <Plus size={13} />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-
-            <Link className="cart-v2-add-more" to="/game-hosting">
-              <Plus size={16} /><span><strong>Add another server</strong><small>Browse more games and configurations</small></span>
-              <ArrowRight size={15} />
-            </Link>
-          </main>
-
-          <aside className="cart-v2-summary">
-            <header>
-              <span>Checkout</span>
-              <h2>Order summary</h2>
-            </header>
-
-            {user && (
-              <>
-                <section className="cart-v2-coupon">
-                  <label htmlFor="cart-coupon"><Tag size={14} /> Coupon or reward code</label>
-                  <div>
-                    <input
-                      id="cart-coupon"
-                      value={couponInput}
-                      placeholder="ENTER CODE"
-                      maxLength={64}
-                      onChange={(event) => {
-                        setCouponInput(event.target.value.toUpperCase());
-                        if (coupon) setCoupon(null);
-                      }}
-                    />
-                    <button type="button" disabled={couponBusy || !couponInput.trim()} onClick={() => void applyCoupon()}>
-                      {couponBusy ? '…' : 'Apply'}
-                    </button>
-                  </div>
-                  {coupon && (
-                    <div className="cart-v2-coupon__applied">
-                      <CheckCircle2 size={14} />
-                      <span><strong>{coupon.code}</strong><small>{coupon.description || 'Reward applied'}</small></span>
-                      <button type="button" onClick={() => setCoupon(null)}>Remove</button>
-                    </div>
-                  )}
-                </section>
-
-                <label className={`cart-v2-credits ${applyCredits ? 'is-active' : ''}`}>
-                  <span className="cart-v2-credits__icon"><WalletCards size={17} /></span>
-                  <span>
-                    <strong>Use account credit</strong>
-                    <small>
-                      {money(creditBalance, currency)} available
-                      {creditBonusCents > 0 ? ` + ${money(creditBonusCents, currency)} bonus` : ''}
-                    </small>
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={applyCredits}
-                    disabled={availableCredits <= 0}
-                    onChange={(event) => setApplyCredits(event.target.checked)}
-                  />
-                  <i />
-                </label>
-              </>
-            )}
-
-            <div className="cart-v2-breakdown">
-              <div>
-                <span>Plan subtotal ({count} server{count === 1 ? '' : 's'})</span>
+            <div className="client-cart__pulse-item">
+              <span className="client-cart__pulse-copy">
+                <small>Subtotal</small>
                 <strong>{money(totalCents, currency)}</strong>
-              </div>
-              {discountCents > 0 && (
-                <div className="is-saving">
-                  <span>Coupon discount</span>
-                  <strong>−{money(discountCents, currency)}</strong>
+                <span>Before discounts</span>
+              </span>
+              <span className="client-cart__pulse-icon is-subtotal" aria-hidden>
+                <Tag size={17} />
+              </span>
+            </div>
+            <div className="client-cart__pulse-item">
+              <span className="client-cart__pulse-copy">
+                <small>Credits</small>
+                <strong>{money(creditBalance, currency)}</strong>
+                <span>{user ? 'Available balance' : 'Sign in to use'}</span>
+              </span>
+              <span className="client-cart__pulse-icon is-credits" aria-hidden>
+                <WalletCards size={17} />
+              </span>
+            </div>
+            <div className="client-cart__pulse-item">
+              <span className="client-cart__pulse-copy">
+                <small>Amount due</small>
+                <strong className={fullyCoveredByCredit ? 'is-ok' : undefined}>
+                  {money(amountDue, currency)}
+                </strong>
+                <span>{fullyCoveredByCredit ? 'Covered by credit' : 'Ready at checkout'}</span>
+              </span>
+              <span className="client-cart__pulse-icon is-due" aria-hidden>
+                <CheckCircle2 size={17} />
+              </span>
+            </div>
+          </div>
+
+          <div className="client-cart__layout">
+            <div className="client-cart__primary">
+              <section className="client-cart__panel">
+                <div className="client-cart__panel-head">
+                  <div>
+                    <h2>Your servers</h2>
+                    <p>
+                      {count} server{count === 1 ? '' : 's'} ready for checkout
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="client-cart__clear"
+                    disabled={checkingOut}
+                    onClick={clear}
+                  >
+                    <Trash2 size={13} /> Clear all
+                  </button>
                 </div>
-              )}
-              {creditBonusCents > 0 && (
-                <div className="is-saving">
-                  <span>Credit reward added</span>
-                  <strong>+{money(creditBonusCents, currency)}</strong>
+
+                <div className="client-cart__list">
+                  {items.map((item) => {
+                    const features = (item.features ?? []).filter(Boolean).slice(0, 4);
+                    return (
+                      <article
+                        key={item.id}
+                        className="client-cart__item"
+                        style={
+                          item.categoryColor
+                            ? { ['--cart-tone' as string]: item.categoryColor }
+                            : undefined
+                        }
+                      >
+                        <div className="client-cart__item-top">
+                          <span className="client-cart__item-mark" aria-hidden>
+                            <CategoryMark
+                              icon={item.categoryIcon || 'gamepad'}
+                              logoUrl={item.categoryLogoUrl}
+                              color={item.categoryColor || '#6366f1'}
+                              size={36}
+                            />
+                          </span>
+                          <div className="client-cart__item-main">
+                            <small>{item.categoryName || 'Game hosting'}</small>
+                            <strong>{item.name}</strong>
+                            <p>
+                              {item.description?.trim()
+                                || `${formatRam(item.memoryMb)} · ${formatCpu(item.cpuPercent)} CPU · ${formatDisk(item.diskMb)} disk`}
+                            </p>
+                          </div>
+                          <div className="client-cart__item-price">
+                            <strong>{money(item.priceCents * item.qty, item.currency)}</strong>
+                            <span>
+                              {money(item.priceCents, item.currency)} / {cycleLabel(item.cycle)}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="client-cart__item-remove"
+                            onClick={() => removeItem(item.id)}
+                            aria-label={`Remove ${item.name}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+
+                        <div className="client-cart__item-specs" aria-label="Plan resources">
+                          <span>
+                            <MemoryStick size={14} aria-hidden />
+                            <span>
+                              <em>{formatRam(item.memoryMb)}</em>
+                              <small>Memory</small>
+                            </span>
+                          </span>
+                          <span>
+                            <Cpu size={14} aria-hidden />
+                            <span>
+                              <em>{formatCpu(item.cpuPercent)}</em>
+                              <small>CPU</small>
+                            </span>
+                          </span>
+                          <span>
+                            <HardDrive size={14} aria-hidden />
+                            <span>
+                              <em>{formatDisk(item.diskMb)}</em>
+                              <small>Disk</small>
+                            </span>
+                          </span>
+                          {(item.backupLimit ?? 0) > 0 ? (
+                            <span>
+                              <Archive size={14} aria-hidden />
+                              <span>
+                                <em>{item.backupLimit}</em>
+                                <small>Backups</small>
+                              </span>
+                            </span>
+                          ) : null}
+                          {(item.databaseLimit ?? 0) > 0 ? (
+                            <span>
+                              <Database size={14} aria-hidden />
+                              <span>
+                                <em>{item.databaseLimit}</em>
+                                <small>Databases</small>
+                              </span>
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {features.length > 0 ? (
+                          <ul className="client-cart__item-features">
+                            {features.map((feature) => (
+                              <li key={feature}>
+                                <Sparkles size={12} aria-hidden />
+                                {feature}
+                              </li>
+                            ))}
+                          </ul>
+                        ) : null}
+
+                        <div className="client-cart__item-foot">
+                          <label>
+                            <span>
+                              Server name <em>optional</em>
+                            </span>
+                            <input
+                              value={item.serverName ?? ''}
+                              placeholder={`${item.categoryName || item.name} server`}
+                              maxLength={64}
+                              onChange={(event) => setServerName(item.id, event.target.value)}
+                            />
+                          </label>
+                          <div className="client-cart__qty">
+                            <span>Quantity</span>
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => setQty(item.id, item.qty - 1)}
+                                aria-label="Decrease quantity"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <strong>{item.qty}</strong>
+                              <button
+                                type="button"
+                                onClick={() => setQty(item.id, item.qty + 1)}
+                                disabled={item.qty >= 5}
+                                aria-label="Increase quantity"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
-              )}
-              {creditApplied > 0 && (
-                <div className="is-saving">
-                  <span>{fullyCoveredByCredit ? 'Paid with account credit' : 'Account credit applied'}</span>
-                  <strong>−{money(creditApplied, currency)}</strong>
-                </div>
-              )}
+
+                <Link className="client-cart__add-more" to="/game-hosting">
+                  <span className="client-cart__add-more-icon" aria-hidden>
+                    <Plus size={16} />
+                  </span>
+                  <span>
+                    <strong>Add another server</strong>
+                    <small>Browse more games and configurations</small>
+                  </span>
+                  <ArrowRight size={15} />
+                </Link>
+              </section>
             </div>
 
-            <div className={`cart-v2-total ${fullyCoveredByCredit ? 'is-covered' : ''}`}>
-              <span>
-                <strong>{fullyCoveredByCredit ? 'Nothing left to pay' : 'Amount due'}</strong>
-                <small>
+            <aside className="client-cart__aside">
+              <section className="client-cart__side">
+                <div className="client-cart__side-head">
+                  <ShoppingCart size={16} />
+                  <div>
+                    <small>Order summary</small>
+                    <strong>{money(amountDue, currency)} due</strong>
+                  </div>
+                </div>
+                <p className="client-cart__side-note">
                   {fullyCoveredByCredit
                     ? 'Your credit balance covers this order in full.'
-                    : creditApplied > 0
-                      ? `${money(creditApplied, currency)} credit applied · ${money(amountDue, currency)} remaining`
-                      : 'Taxes included where applicable'}
-                </small>
-              </span>
-              <strong>{money(amountDue, currency)}</strong>
-            </div>
+                    : `${count} server${count === 1 ? '' : 's'} · billed after discounts and credits.`}
+                </p>
+              </section>
 
-            {!user ? (
-              <div className="cart-v2-warning">
-                <ShieldCheck size={16} />
-                <span>
-                  <strong>Account required to buy</strong>
-                  <small>Browse freely — sign in or create an account to complete checkout. Your cart is saved.</small>
-                </span>
-              </div>
-            ) : !canCheckout ? (
-              <div className="cart-v2-warning">
-                <ShieldCheck size={16} />
-                <span>
-                  <strong>{panelStatus === 'unreachable' ? 'Panel unreachable' : 'Panel link required'}</strong>
-                  <small>
+              {user ? (
+                <>
+                  <section className="client-cart__side">
+                    <div className="client-cart__side-head">
+                      <Tag size={16} />
+                      <div>
+                        <small>Rewards</small>
+                        <strong>Coupon code</strong>
+                      </div>
+                    </div>
+                    <div className="client-cart__coupon">
+                      <input
+                        value={couponInput}
+                        placeholder="ENTER CODE"
+                        maxLength={64}
+                        aria-label="Coupon or reward code"
+                        onChange={(event) => {
+                          setCouponInput(event.target.value.toUpperCase());
+                          if (coupon) setCoupon(null);
+                        }}
+                      />
+                      <button
+                        type="button"
+                        className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                        disabled={couponBusy || !couponInput.trim()}
+                        onClick={() => void applyCoupon()}
+                      >
+                        {couponBusy ? '…' : 'Apply'}
+                      </button>
+                    </div>
+                    {coupon ? (
+                      <div className="client-cart__coupon-applied">
+                        <CheckCircle2 size={14} />
+                        <span>
+                          <strong>{coupon.code}</strong>
+                          <small>{coupon.description || 'Reward applied'}</small>
+                        </span>
+                        <button type="button" onClick={() => setCoupon(null)}>
+                          Remove
+                        </button>
+                      </div>
+                    ) : null}
+                  </section>
+
+                  <section className={`client-cart__side${applyCredits ? ' is-credit' : ''}`}>
+                    <label className="client-cart__credits">
+                      <span className="client-cart__credits-icon" aria-hidden>
+                        <WalletCards size={16} />
+                      </span>
+                      <span>
+                        <strong>Use account credit</strong>
+                        <small>
+                          {money(creditBalance, currency)} available
+                          {creditBonusCents > 0 ? ` + ${money(creditBonusCents, currency)} bonus` : ''}
+                        </small>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={applyCredits}
+                        disabled={availableCredits <= 0}
+                        onChange={(event) => setApplyCredits(event.target.checked)}
+                      />
+                      <i aria-hidden />
+                    </label>
+                    {creditApplied > 0 ? (
+                      <div className="client-cart__credit-bar" aria-hidden>
+                        <span style={{ width: `${creditCoverPercent}%` }} />
+                      </div>
+                    ) : null}
+                  </section>
+                </>
+              ) : null}
+
+              <section className="client-cart__side">
+                <div className="client-cart__totals">
+                  <div>
+                    <span>
+                      Plan subtotal ({count} server{count === 1 ? '' : 's'})
+                    </span>
+                    <strong>{money(totalCents, currency)}</strong>
+                  </div>
+                  {discountCents > 0 ? (
+                    <div className="is-saving">
+                      <span>Coupon discount</span>
+                      <strong>−{money(discountCents, currency)}</strong>
+                    </div>
+                  ) : null}
+                  {creditBonusCents > 0 ? (
+                    <div className="is-saving">
+                      <span>Credit reward added</span>
+                      <strong>+{money(creditBonusCents, currency)}</strong>
+                    </div>
+                  ) : null}
+                  {creditApplied > 0 ? (
+                    <div className="is-saving">
+                      <span>
+                        {fullyCoveredByCredit ? 'Paid with account credit' : 'Account credit applied'}
+                      </span>
+                      <strong>−{money(creditApplied, currency)}</strong>
+                    </div>
+                  ) : null}
+                  <div className={`is-total${fullyCoveredByCredit ? ' is-covered' : ''}`}>
+                    <span>{fullyCoveredByCredit ? 'Nothing left to pay' : 'Amount due'}</span>
+                    <strong>{money(amountDue, currency)}</strong>
+                  </div>
+                </div>
+              </section>
+
+              {!user ? (
+                <section className="client-cart__side is-warn">
+                  <div className="client-cart__side-head">
+                    <ShieldCheck size={16} />
+                    <div>
+                      <small>Account required</small>
+                      <strong>Sign in to buy</strong>
+                    </div>
+                  </div>
+                  <p className="client-cart__side-note">
+                    Your cart is saved. Sign in or create an account to complete checkout.
+                  </p>
+                  <div className="client-cart__guest-actions">
+                    <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to={authNext}>
+                      Sign in to checkout
+                      <ArrowRight size={14} className="client-home__btn-arrow" />
+                    </Link>
+                    {registrationOpen ? (
+                      <Link className="client-home__btn client-home__btn--ghost client-home__btn--sm" to={registerNext}>
+                        Create an account
+                      </Link>
+                    ) : null}
+                  </div>
+                </section>
+              ) : !canCheckout ? (
+                <section className="client-cart__side is-warn">
+                  <div className="client-cart__side-head">
+                    <ShieldCheck size={16} />
+                    <div>
+                      <small>
+                        {panelStatus === 'unreachable' ? 'Panel unreachable' : 'Panel link required'}
+                      </small>
+                      <strong>Checkout paused</strong>
+                    </div>
+                  </div>
+                  <p className="client-cart__side-note">
                     {panelStatus === 'unreachable'
                       ? 'Checkout is paused until Spirit-Panel responds again.'
                       : 'Contact support before checking out.'}
-                  </small>
-                </span>
-              </div>
-            ) : null}
+                  </p>
+                </section>
+              ) : null}
 
-            {!user ? (
-              <div className="cart-v2-guest-actions">
-                <Link className="cart-v2-checkout" to={authNext}>
-                  Sign in to checkout <ArrowRight size={16} />
-                </Link>
-                {registrationOpen && (
-                  <Link className="ds-btn ds-btn--ghost" to={registerNext} style={{ width: '100%', justifyContent: 'center' }}>
-                    Create an account
-                  </Link>
-                )}
-              </div>
-            ) : (
-              <button
-                className="cart-v2-checkout"
-                type="button"
-                disabled={checkingOut || !canCheckout}
-                onClick={openCheckoutConfirm}
-              >
-                {checkingOut
-                  ? 'Processing your order…'
-                  : fullyCoveredByCredit
-                    ? 'Pay with credit & provision'
-                    : amountDue === 0
-                      ? 'Pay & provision'
-                      : 'Continue to checkout'}
-                {!checkingOut && <ArrowRight size={16} />}
-              </button>
-            )}
+              {user ? (
+                <button
+                  type="button"
+                  className="client-home__btn client-home__btn--primary client-home__btn--cta client-cart__checkout"
+                  disabled={checkingOut || !canCheckout}
+                  onClick={openCheckoutConfirm}
+                >
+                  <span className="client-home__btn-icon" aria-hidden>
+                    <CheckCircle2 size={15} />
+                  </span>
+                  <span>
+                    {checkingOut
+                      ? 'Processing your order…'
+                      : fullyCoveredByCredit
+                        ? 'Pay with credit & provision'
+                        : amountDue === 0
+                          ? 'Pay & provision'
+                          : 'Continue to checkout'}
+                  </span>
+                  {!checkingOut ? <ArrowRight size={14} className="client-home__btn-arrow" /> : null}
+                </button>
+              ) : null}
 
-            <div className="cart-v2-secure">
-              <ShieldCheck size={14} />
-              <span>
-                <strong>Secure checkout</strong>
-                <small>
-                  {fullyCoveredByCredit
-                    ? 'Credit-paid orders provision automatically after confirm.'
-                    : 'Fully covered orders provision automatically.'}
-                </small>
-              </span>
-            </div>
-          </aside>
-        </div>
+              <section className="client-cart__side is-secure">
+                <div className="client-cart__side-head">
+                  <ShieldCheck size={16} />
+                  <div>
+                    <small>Secure checkout</small>
+                    <strong>
+                      {fullyCoveredByCredit
+                        ? 'Credit-paid orders provision automatically'
+                        : 'Fully covered orders provision automatically'}
+                    </strong>
+                  </div>
+                </div>
+              </section>
+            </aside>
+          </div>
+        </>
       )}
 
       <ConfirmModal

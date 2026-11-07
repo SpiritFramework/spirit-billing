@@ -1,9 +1,12 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  AlertTriangle,
   ArrowLeft,
-  Clock3,
-  ExternalLink,
+  CalendarDays,
+  CheckCircle2,
+  ChevronRight,
+  Copy,
   LifeBuoy,
   MessageCircle,
   Paperclip,
@@ -14,6 +17,7 @@ import {
   Ticket,
   Trash2,
   UserRound,
+  X,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import { CategoryMark } from '../../lib/icons';
@@ -21,16 +25,11 @@ import { ConfirmModal } from '../../components/ConfirmModal';
 import { TicketAttachments, TicketAvatar } from '../../components/TicketMedia';
 import { ThemedSelect } from '../../components/ThemedSelect';
 import { useAuth } from '../../context/AuthContext';
-
 type TicketStatus = 'open' | 'answered' | 'awaiting_customer' | 'closed';
 type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
-
-type TicketAttachment = {
-  url: string;
-  name: string;
-  mime: string;
-  size: number;
-};
+type StatusFilter = 'all' | TicketStatus;
+type PriorityFilter = 'all' | TicketPriority;
+type AttentionFilter = 'all' | 'hot';
 
 type TicketCategory = {
   id: string;
@@ -69,6 +68,59 @@ type TicketSummary = {
   _count?: { messages: number };
 };
 
+function ticketStatusLabel(status: TicketStatus) {
+  return status.replaceAll('_', ' ');
+}
+
+function ticketPriorityLabel(priority: TicketPriority) {
+  return priority;
+}
+
+function displayName(user: TicketUser) {
+  const full = [user.firstName, user.lastName].filter(Boolean).join(' ');
+  return full || user.username;
+}
+
+function formatUpdated(value: string) {
+  const date = new Date(value);
+  const now = Date.now();
+  const diff = now - date.getTime();
+  const mins = Math.round(diff / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: '2-digit',
+  });
+}
+
+function statusTone(status: TicketStatus) {
+  if (status === 'open') return 'is-open';
+  if (status === 'answered') return 'is-answered';
+  if (status === 'awaiting_customer') return 'is-waiting';
+  return 'is-closed';
+}
+
+function priorityTone(priority: TicketPriority) {
+  if (priority === 'urgent') return 'is-urgent';
+  if (priority === 'high') return 'is-high';
+  if (priority === 'low') return 'is-low';
+  return 'is-normal';
+}
+
+
+type TicketAttachment = {
+  url: string;
+  name: string;
+  mime: string;
+  size: number;
+};
+
 type TicketMessage = {
   id: string;
   body: string;
@@ -81,12 +133,6 @@ type TicketDetail = TicketSummary & {
   messages: TicketMessage[];
 };
 
-type StatusFilter = 'all' | TicketStatus;
-
-function ticketStatusLabel(status: TicketStatus) {
-  return status.replaceAll('_', ' ');
-}
-
 function ticketStatusTone(status: TicketStatus) {
   if (status === 'open') return 'is-open';
   if (status === 'answered') return 'is-answered';
@@ -94,29 +140,11 @@ function ticketStatusTone(status: TicketStatus) {
   return 'is-closed';
 }
 
-function ticketPriorityLabel(priority: TicketPriority) {
-  return priority;
-}
-
 function ticketPriorityTone(priority: TicketPriority) {
   if (priority === 'urgent') return 'is-urgent';
   if (priority === 'high') return 'is-high';
   if (priority === 'low') return 'is-low';
   return 'is-normal';
-}
-
-function displayName(user: TicketUser) {
-  const full = [user.firstName, user.lastName].filter(Boolean).join(' ');
-  return full || user.username;
-}
-
-function initials(name: string) {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? '')
-    .join('') || '?';
 }
 
 function formatDay(value: string) {
@@ -139,11 +167,13 @@ async function uploadImage(file: File) {
   fd.append('file', file);
   return api<TicketAttachment>('/admin/tickets/upload', { method: 'POST', body: fd });
 }
-
 export function AdminTickets() {
   const navigate = useNavigate();
   const [tickets, setTickets] = useState<TicketSummary[]>([]);
-  const [filter, setFilter] = useState<StatusFilter>('all');
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>('all');
+  const [attentionFilter, setAttentionFilter] = useState<AttentionFilter>('all');
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -167,163 +197,452 @@ export function AdminTickets() {
     void load('');
   }, []);
 
-  const visible = tickets.filter((ticket) => {
-    const matchesFilter = filter === 'all' || ticket.status === filter;
-    const haystack = `${ticket.number} ${ticket.subject} ${ticket.user.username} ${ticket.user.email}`.toLowerCase();
-    const matchesQuery = !query.trim() || haystack.includes(query.trim().toLowerCase());
-    return matchesFilter && matchesQuery;
-  });
+  const categories = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; count: number; color?: string }>();
+    for (const ticket of tickets) {
+      const category = ticket.category;
+      if (!category) continue;
+      const existing = map.get(category.id);
+      if (existing) existing.count += 1;
+      else map.set(category.id, { id: category.id, name: category.name, count: 1, color: category.color });
+    }
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name));
+  }, [tickets]);
 
-  const openCount = tickets.filter((t) => t.status === 'open').length;
-  const answeredCount = tickets.filter((t) => t.status === 'answered').length;
-  const waitingCount = tickets.filter((t) => t.status === 'awaiting_customer').length;
-  const closedCount = tickets.filter((t) => t.status === 'closed').length;
+  const stats = useMemo(
+    () => ({
+      total: tickets.length,
+      open: tickets.filter((t) => t.status === 'open').length,
+      answered: tickets.filter((t) => t.status === 'answered').length,
+      waiting: tickets.filter((t) => t.status === 'awaiting_customer').length,
+      closed: tickets.filter((t) => t.status === 'closed').length,
+      urgent: tickets.filter((t) => t.priority === 'urgent').length,
+      high: tickets.filter((t) => t.priority === 'high').length,
+      normal: tickets.filter((t) => t.priority === 'normal').length,
+      low: tickets.filter((t) => t.priority === 'low').length,
+      needsAttention: tickets.filter((t) => t.status === 'open' || t.priority === 'urgent' || t.priority === 'high')
+        .length,
+    }),
+    [tickets],
+  );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return tickets.filter((ticket) => {
+      if (statusFilter !== 'all' && ticket.status !== statusFilter) return false;
+      if (priorityFilter !== 'all' && ticket.priority !== priorityFilter) return false;
+      if (attentionFilter === 'hot') {
+        const hot =
+          ticket.status === 'open' || ticket.priority === 'urgent' || ticket.priority === 'high';
+        if (!hot) return false;
+      }
+      if (categoryFilter !== 'all' && ticket.category?.id !== categoryFilter) return false;
+      if (!q) return true;
+      const hay = [
+        ticket.number,
+        ticket.subject,
+        ticket.user.username,
+        ticket.user.email,
+        ticket.user.firstName,
+        ticket.user.lastName,
+        ticket.category?.name,
+        ticket.service?.name,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [tickets, query, statusFilter, priorityFilter, attentionFilter, categoryFilter]);
+
+  const filtersActive =
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    attentionFilter !== 'all' ||
+    categoryFilter !== 'all' ||
+    Boolean(query.trim());
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (attentionFilter === 'hot') parts.push('Needs attention');
+    if (statusFilter !== 'all') parts.push(ticketStatusLabel(statusFilter));
+    if (priorityFilter !== 'all') parts.push(ticketPriorityLabel(priorityFilter));
+    if (categoryFilter !== 'all') {
+      parts.push(categories.find((c) => c.id === categoryFilter)?.name || 'Category');
+    }
+    if (query.trim()) parts.push(`“${query.trim()}”`);
+    return parts;
+  }, [attentionFilter, statusFilter, priorityFilter, categoryFilter, query, categories]);
+
+  function clearFilters() {
+    setStatusFilter('all');
+    setPriorityFilter('all');
+    setAttentionFilter('all');
+    setCategoryFilter('all');
+    setQuery('');
+  }
+
+  function setChipFilter(next: {
+    status?: StatusFilter;
+    priority?: PriorityFilter;
+    attention?: AttentionFilter;
+  }) {
+    setStatusFilter(next.status ?? 'all');
+    setPriorityFilter(next.priority ?? 'all');
+    setAttentionFilter(next.attention ?? 'all');
+    setCategoryFilter('all');
+    setQuery('');
+  }
 
   return (
-    <div className="support-v3 support-v3--admin">
-      <header className="support-v3__hero">
-        <div>
-          <span>Operations</span>
-          <h1>Support inbox</h1>
-          <p>Triage client tickets, reply in-thread, and close resolved requests.</p>
+    <div className="ops-users ops-tickets">
+      <header className="ops-users__mast">
+        <div className="ops-users__mast-copy">
+          <span>Inbox</span>
+          <h1>Tickets</h1>
+          <p>Triage client support, reply in-thread, and close resolved requests.</p>
         </div>
-        <button type="button" className="support-v3__ghost" disabled={loading} onClick={() => void load()}>
-          <RefreshCw size={14} className={loading ? 'support-v3__spin' : undefined} /> Refresh
-        </button>
+        <div className="ops-users__mast-meta">
+          <button
+            type="button"
+            className={`ops-users__chip${!filtersActive ? ' is-active' : ''}`}
+            onClick={clearFilters}
+            title="Show all tickets"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <Ticket size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Inbox</small>
+              <strong>{stats.total}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${stats.open ? ' is-warn' : ''}${
+              statusFilter === 'open' &&
+              priorityFilter === 'all' &&
+              attentionFilter === 'all' &&
+              categoryFilter === 'all' &&
+              !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={() => setChipFilter({ status: 'open' })}
+            title="Show open tickets"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <MessageCircle size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Open</small>
+              <strong>{stats.open}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${stats.needsAttention ? ' is-warn' : ''}${
+              attentionFilter === 'hot' &&
+              statusFilter === 'all' &&
+              priorityFilter === 'all' &&
+              categoryFilter === 'all' &&
+              !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={() => setChipFilter({ attention: 'hot' })}
+            title="Show tickets that need attention"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <AlertTriangle size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Hot</small>
+              <strong>{stats.needsAttention}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip is-ok${
+              statusFilter === 'answered' &&
+              priorityFilter === 'all' &&
+              attentionFilter === 'all' &&
+              categoryFilter === 'all' &&
+              !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={() => setChipFilter({ status: 'answered' })}
+            title="Show answered tickets"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <CheckCircle2 size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Answered</small>
+              <strong>{stats.answered}</strong>
+            </span>
+          </button>
+        </div>
       </header>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
+      {error ? <div className="ds-alert ds-alert--error">{error}</div> : null}
 
-      <section className="support-v3__metrics">
-        <article>
-          <span className="is-sky"><Ticket size={17} /></span>
-          <div><small>Total</small><strong>{tickets.length}</strong></div>
-        </article>
-        <article>
-          <span className="is-amber"><MessageCircle size={17} /></span>
-          <div><small>Open</small><strong>{openCount}</strong></div>
-        </article>
-        <article>
-          <span className="is-mint"><LifeBuoy size={17} /></span>
-          <div><small>Answered</small><strong>{answeredCount}</strong></div>
-        </article>
-        <article>
-          <span className="is-rose"><Clock3 size={17} /></span>
-          <div><small>Waiting / closed</small><strong>{waitingCount + closedCount}</strong></div>
-        </article>
-      </section>
-
-      <section className="support-v3__inbox">
-        <header>
-          <div>
-            <span>Queue</span>
-            <h2>All tickets</h2>
+      <div className="ops-users__shell">
+        <aside className="ops-users__rail" aria-label="Ticket filters">
+          <div className="ops-users__rail-block">
+            <span>Status</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any status', stats.total],
+                  ['open', 'Open', stats.open],
+                  ['answered', 'Answered', stats.answered],
+                  ['awaiting_customer', 'Awaiting client', stats.waiting],
+                  ['closed', 'Closed', stats.closed],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={statusFilter === value ? 'is-on' : ''}
+                  onClick={() => {
+                    setStatusFilter(value);
+                    setAttentionFilter('all');
+                  }}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
           </div>
-          <label>
-            <Search size={14} />
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
+
+          <div className="ops-users__rail-block">
+            <span>Priority</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any priority', stats.total],
+                  ['urgent', 'Urgent', stats.urgent],
+                  ['high', 'High', stats.high],
+                  ['normal', 'Normal', stats.normal],
+                  ['low', 'Low', stats.low],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={priorityFilter === value ? 'is-on' : ''}
+                  onClick={() => {
+                    setPriorityFilter(value);
+                    setAttentionFilter('all');
+                  }}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {categories.length ? (
+            <div className="ops-users__rail-block">
+              <span>Category</span>
+              <div>
+                <button
+                  type="button"
+                  className={categoryFilter === 'all' ? 'is-on' : ''}
+                  onClick={() => setCategoryFilter('all')}
+                >
+                  All categories
+                  <em>{stats.total}</em>
+                </button>
+                {categories.map((category) => (
+                  <button
+                    key={category.id}
+                    type="button"
+                    className={categoryFilter === category.id ? 'is-on' : ''}
+                    onClick={() => setCategoryFilter(category.id)}
+                  >
+                    {category.name}
+                    <em>{category.count}</em>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </aside>
+
+        <div className="ops-users__main">
+          <div className="ops-users__command ops-tickets__command">
+            <label className="ops-users__search">
+              <Search size={16} aria-hidden />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setQuery('');
+                  }
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    setLoading(true);
+                    void load(query);
+                  }
+                }}
+                placeholder="Filter by number, subject, client, or service"
+                aria-label="Search tickets"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  className="ops-users__search-clear"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </label>
+
+            <div className="ops-services__jobs" role="group" aria-label="Inbox actions">
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
                   setLoading(true);
-                  void load(query);
-                }
-              }}
-              placeholder="Search number, subject, or client…"
-            />
-          </label>
-          <div className="support-v3__filters">
-            {([
-              ['all', 'All'],
-              ['open', 'Open'],
-              ['answered', 'Answered'],
-              ['awaiting_customer', 'Awaiting client'],
-              ['closed', 'Closed'],
-            ] as const).map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                className={filter === value ? 'is-active' : ''}
-                onClick={() => setFilter(value)}
+                  void load();
+                }}
               >
-                {label}
+                <RefreshCw size={14} /> Refresh
               </button>
-            ))}
+            </div>
+
+            <div className="ops-users__command-meta">
+              <span>
+                Showing <strong>{filtered.length}</strong> / {stats.total}
+              </span>
+              {filtersActive ? (
+                <>
+                  <span className="ops-users__filter-summary">{filterSummary.join(' · ')}</span>
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear
+                  </button>
+                </>
+              ) : null}
+            </div>
           </div>
-        </header>
 
-        <div className="support-v3__admin-list">
-          {visible.map((ticket) => {
-            const client = displayName(ticket.user);
-            return (
-              <button
-                type="button"
-                key={ticket.id}
-                className={`support-v3__admin-row ${ticketStatusTone(ticket.status)}`}
-                onClick={() => navigate(`/admin/tickets/${ticket.id}`)}
-                style={ticket.category?.color ? { ['--ticket-accent' as string]: ticket.category.color } : undefined}
-              >
-                <span className="support-v3__admin-row-mark">
-                  {ticket.category ? (
-                    <CategoryMark
-                      color={ticket.category.color}
-                      icon={ticket.category.icon || 'life-buoy'}
-                      size={38}
-                    />
-                  ) : (
-                    <span className="support-v3__ticket-fallback"><Ticket size={16} /></span>
-                  )}
-                </span>
-                <span className="support-v3__admin-row-main">
-                  <small>
-                    {ticket.number}
-                    {ticket.category ? ` · ${ticket.category.name}` : ''}
-                  </small>
-                  <strong>{ticket.subject}</strong>
-                  {ticket.service && (
-                    <em><Server size={11} /> {ticket.service.name}</em>
-                  )}
-                </span>
-                <span className="support-v3__admin-row-client">
-                  <span className="support-v3__avatar is-sm" aria-hidden>{initials(client)}</span>
-                  <span>
-                    <strong>{client}</strong>
-                    <em>{ticket.user.email}</em>
+          <section className="ops-users__table" aria-label="Tickets">
+            <div className="ops-users__head ops-tickets__head" aria-hidden>
+              <span>Ticket</span>
+              <span>Client</span>
+              <span>Priority</span>
+              <span>Status</span>
+              <span className="is-end">Msgs</span>
+              <span className="is-end">Updated</span>
+              <span />
+            </div>
+
+            {filtered.map((ticket) => {
+              const client = displayName(ticket.user);
+              const messages = ticket._count?.messages ?? 0;
+              return (
+                <button
+                  type="button"
+                  key={ticket.id}
+                  className={`ops-users__row ops-tickets__row ${statusTone(ticket.status)}${
+                    ticket.priority === 'urgent' || ticket.priority === 'high' ? ' is-hot' : ''
+                  }`}
+                  onClick={() => navigate(`/admin/tickets/${ticket.id}`)}
+                >
+                  <span className="ops-tickets__who">
+                    {ticket.category ? (
+                      <CategoryMark
+                        color={ticket.category.color || '#38bdf8'}
+                        icon={ticket.category.icon || 'life-buoy'}
+                        size={30}
+                        className="ops-services__mark"
+                      />
+                    ) : (
+                      <span className="ops-tickets__mark-fallback" aria-hidden>
+                        <Ticket size={15} />
+                      </span>
+                    )}
+                    <span>
+                      <strong>{ticket.number}</strong>
+                      <small>{ticket.subject}</small>
+                      <em>
+                        {ticket.category?.name || 'Uncategorized'}
+                        {ticket.service ? ` · ${ticket.service.name}` : ''}
+                      </em>
+                    </span>
                   </span>
-                </span>
-                <span className={`support-v3__priority ${ticketPriorityTone(ticket.priority)}`}>
-                  {ticketPriorityLabel(ticket.priority)}
-                </span>
-                <span className="support-v3__admin-row-meta">
-                  <small>{ticket._count?.messages ?? 0} msgs</small>
-                  <time>{formatDay(ticket.updatedAt)}</time>
-                </span>
-                <span className={`support-v3__status ${ticketStatusTone(ticket.status)}`}>
-                  {ticketStatusLabel(ticket.status)}
-                </span>
-              </button>
-            );
-          })}
 
-          {!loading && !visible.length && (
-            <div className="support-v3__empty">
-              <LifeBuoy size={28} />
-              <h3>{tickets.length ? 'No matching tickets' : 'Inbox empty'}</h3>
-              <p>Try another search or status filter.</p>
-            </div>
-          )}
-          {loading && (
-            <div className="support-v3__empty">
-              <RefreshCw size={24} className="support-v3__spin" />
-              <h3>Loading inbox…</h3>
-            </div>
-          )}
+                  <span className="ops-tickets__client">
+                    <TicketAvatar
+                      name={client}
+                      avatarUrl={ticket.user.avatarUrl}
+                      className="ops-tickets__avatar"
+                    />
+                    <span>
+                      <strong>{client}</strong>
+                      <small>@{ticket.user.username}</small>
+                    </span>
+                  </span>
+
+                  <span className={`ops-tickets__priority ${priorityTone(ticket.priority)}`}>
+                    {ticketPriorityLabel(ticket.priority)}
+                  </span>
+
+                  <span className="ops-tickets__status">
+                    <em className={statusTone(ticket.status)}>{ticketStatusLabel(ticket.status)}</em>
+                  </span>
+
+                  <span className="ops-tickets__msgs is-end">
+                    <MessageCircle size={12} aria-hidden />
+                    {messages}
+                  </span>
+
+                  <span className="ops-tickets__updated is-end">{formatUpdated(ticket.updatedAt)}</span>
+
+                  <ChevronRight size={15} aria-hidden />
+                </button>
+              );
+            })}
+
+            {!loading && !filtered.length ? (
+              <div className="ops-users__empty">
+                <LifeBuoy size={20} aria-hidden />
+                <strong>{tickets.length ? 'No matching tickets' : 'Inbox empty'}</strong>
+                <span>
+                  {tickets.length
+                    ? 'Try another search or filter.'
+                    : 'New client tickets appear here as soon as they are opened.'}
+                </span>
+                {filtersActive ? (
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
+            {loading ? (
+              <div className="ops-users__empty">
+                <RefreshCw size={20} aria-hidden />
+                <strong>Loading inbox…</strong>
+              </div>
+            ) : null}
+          </section>
         </div>
-      </section>
+      </div>
     </div>
   );
 }
+
 
 export function AdminTicketDetail() {
   const { id } = useParams();
@@ -341,22 +660,28 @@ export function AdminTicketDetail() {
   const [uploading, setUploading] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
 
   async function load() {
     if (!id) return;
     setError('');
-    const data = await api<TicketDetail>(`/admin/tickets/${id}`);
-    setTicket(data);
+    try {
+      setTicket(await api<TicketDetail>(`/admin/tickets/${id}`));
+    } catch (err) {
+      setTicket(null);
+      setError(err instanceof ApiError ? err.message : 'Ticket not found');
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     if (!id) return;
-    void load().catch((err) => {
-      setTicket(null);
-      setError(err instanceof ApiError ? err.message : 'Ticket not found');
-    });
+    setLoading(true);
+    void load();
   }, [id]);
 
   useEffect(() => {
@@ -367,6 +692,7 @@ export function AdminTicketDetail() {
     if (!id || !ticket || ticket.status === status) return;
     setStatusBusy(true);
     setError('');
+    setNotice('');
     try {
       const updated = await api<TicketDetail>(`/admin/tickets/${id}`, {
         method: 'PATCH',
@@ -385,6 +711,7 @@ export function AdminTicketDetail() {
     if (!id || !ticket || ticket.priority === priority) return;
     setPriorityBusy(true);
     setError('');
+    setNotice('');
     try {
       const updated = await api<TicketDetail>(`/admin/tickets/${id}`, {
         method: 'PATCH',
@@ -460,238 +787,465 @@ export function AdminTicketDetail() {
     }
   }
 
+  async function copyNumber() {
+    if (!ticket) return;
+    try {
+      await navigator.clipboard.writeText(ticket.number);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError('Could not copy ticket number');
+    }
+  }
+
   if (error && !ticket) {
     return (
-      <div className="ticket-chat">
-        <Link to="/admin/tickets" className="ticket-chat__back"><ArrowLeft size={14} /> Inbox</Link>
-        <div className="ds-alert ds-alert--error">{error}</div>
+      <div className="ops-user ops-tkt">
+        <Link to="/admin/tickets" className="ops-user__back">
+          <ArrowLeft size={14} /> Inbox
+        </Link>
+        <div className="ops-user__alert is-error">{error}</div>
       </div>
     );
   }
 
-  if (!ticket) {
+  if (loading || !ticket) {
     return (
-      <div className="ticket-chat">
-        <div className="ticket-chat__empty">
-          <RefreshCw size={24} className="support-v3__spin" />
-          <h3>Opening ticket…</h3>
+      <div className="ops-user ops-tkt">
+        <div className="ops-user__loading">
+          <RefreshCw size={18} aria-hidden />
+          Opening ticket…
         </div>
       </div>
     );
   }
 
   const client = displayName(ticket.user);
-  const accent = ticket.category?.color;
+  const needsReply = ticket.status === 'open';
+  const isHot = ticket.priority === 'urgent' || ticket.priority === 'high';
+  const waitingOnClient = ticket.status === 'awaiting_customer';
 
   return (
-    <div
-      className="ticket-chat ticket-chat--admin"
-      style={accent ? { ['--ticket-accent' as string]: accent } : undefined}
-    >
-      <Link to="/admin/tickets" className="ticket-chat__back"><ArrowLeft size={14} /> Inbox</Link>
+    <div className="ops-user ops-tkt">
+      <Link to="/admin/tickets" className="ops-user__back">
+        <ArrowLeft size={14} /> Inbox
+      </Link>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
-      {notice && <div className="ds-alert ds-alert--success">{notice}</div>}
+      {error ? <div className="ops-user__alert is-error">{error}</div> : null}
+      {notice ? <div className="ops-user__alert is-info">{notice}</div> : null}
 
-      <header className="ticket-chat__hero">
-        <div className="ticket-chat__hero-glow" aria-hidden />
-        <CategoryMark
-          color={ticket.category?.color}
-          icon={ticket.category?.icon || 'life-buoy'}
-          size={58}
-          className="ticket-chat__hero-mark"
-        />
-        <div className="ticket-chat__hero-copy">
-          <span>
-            {ticket.number}
-            {ticket.category ? ` · ${ticket.category.name}` : ''}
-          </span>
-          <h1>{ticket.subject}</h1>
-          <div className="ticket-chat__hero-meta">
-            <span className={`support-v3__status ${ticketStatusTone(ticket.status)}`}>
-              {ticketStatusLabel(ticket.status)}
-            </span>
-            <span className={`support-v3__priority ${ticketPriorityTone(ticket.priority)}`}>
-              {ticketPriorityLabel(ticket.priority)}
-            </span>
-            {ticket.service && (
-              <Link to={`/admin/services/${ticket.service.id}`} className="ticket-chat__pill is-link">
-                <Server size={12} /> {ticket.service.name}
-              </Link>
+      <header className="ops-user__mast">
+        <div className="ops-user__identity">
+          <span
+            className={`ops-svc__mark-wrap${
+              needsReply || isHot
+                ? ' is-warn'
+                : ticket.status === 'answered'
+                  ? ' is-ok'
+                  : ticket.status === 'closed'
+                    ? ' is-muted'
+                    : ''
+            }`}
+          >
+            {ticket.category ? (
+              <CategoryMark
+                color={ticket.category.color || '#38bdf8'}
+                icon={ticket.category.icon || 'life-buoy'}
+                size={52}
+                className="ops-svc__mark"
+              />
+            ) : (
+              <span className="ops-tkt__mark-fallback" aria-hidden>
+                <Ticket size={22} />
+              </span>
             )}
-            <span className="ticket-chat__pill">
-              <UserRound size={12} /> {client}
-            </span>
+          </span>
+          <div className="ops-user__identity-copy">
+            <span>{ticket.number}</span>
+            <h1>{ticket.subject}</h1>
+            <p>
+              {ticket.category?.name || 'Uncategorized'}
+              {ticket.service ? ` · ${ticket.service.name}` : ''}
+              <span aria-hidden="true"> · </span>
+              {client}
+            </p>
+            <div className="ops-user__badges">
+              <span className={`ops-tkt__pill ${ticketStatusTone(ticket.status)}`}>
+                {ticketStatusLabel(ticket.status)}
+              </span>
+              <span className={`ops-tkt__pill ${ticketPriorityTone(ticket.priority)}`}>
+                {ticketPriorityLabel(ticket.priority)}
+              </span>
+            </div>
           </div>
+        </div>
+
+        <div className="ops-user__actions">
+          {ticket.status === 'closed' ? (
+            <span className="ops-tkt__resolved">
+              <CheckCircle2 size={14} aria-hidden /> Closed
+            </span>
+          ) : null}
+          <button type="button" className="ops-user__btn is-ghost" onClick={() => void copyNumber()}>
+            <Copy size={14} /> {copied ? 'Copied' : 'Copy #'}
+          </button>
+          <button type="button" className="ops-user__btn is-ghost" onClick={() => void load()}>
+            <RefreshCw size={14} /> Refresh
+          </button>
         </div>
       </header>
 
-      <div className="ticket-chat__layout">
-        <section className="ticket-chat__panel">
-          <div className="ticket-chat__thread">
-            {ticket.messages.map((msg, index) => {
-              const staff = msg.author.role === 'admin' || msg.author.role === 'staff';
-              const mine = msg.author.id === user?.id;
-              const name = displayName(msg.author);
-              const prev = ticket.messages[index - 1];
-              const showDay =
-                !prev ||
-                new Date(prev.createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
-
-              return (
-                <div key={msg.id} className="ticket-chat__block">
-                  {showDay && (
-                    <div className="ticket-chat__day"><span>{formatDay(msg.createdAt)}</span></div>
-                  )}
-                  <article className={`ticket-chat__msg ${staff ? 'is-staff' : 'is-client'}`}>
-                    <TicketAvatar name={name} avatarUrl={msg.author.avatarUrl} />
-                    <div className="ticket-chat__bubble">
-                      <header>
-                        <strong>
-                          {mine ? 'You' : name}
-                          {staff ? ' · Staff' : ' · Client'}
-                        </strong>
-                        <time>{formatTime(msg.createdAt)}</time>
-                      </header>
-                      <p>{msg.body}</p>
-                      <TicketAttachments attachments={msg.attachments} />
-                    </div>
-                  </article>
-                </div>
-              );
-            })}
-            <div ref={threadEndRef} />
+      {needsReply || isHot || waitingOnClient ? (
+        <div className="ops-svc__attention" role="status">
+          <div
+            className={`ops-svc__attention-item ops-tkt__attention ${
+              needsReply || isHot ? 'is-warn' : 'is-ok'
+            }`}
+          >
+            {needsReply || isHot ? (
+              <AlertTriangle size={15} aria-hidden />
+            ) : (
+              <CheckCircle2 size={15} aria-hidden />
+            )}
+            <div>
+              <strong>
+                {needsReply
+                  ? 'Client waiting on reply'
+                  : isHot
+                    ? `${ticketPriorityLabel(ticket.priority)} priority`
+                    : 'Awaiting client'}
+              </strong>
+              <span>
+                {needsReply
+                  ? 'Open ticket — reply in-thread or set status when done.'
+                  : isHot
+                    ? 'Treat this as elevated priority while triaging.'
+                    : 'Ball is with the client. Follow up if they go quiet.'}
+              </span>
+            </div>
+            {needsReply ? (
+              <div className="ops-tkt__attention-actions">
+                <button
+                  type="button"
+                  className="ops-user__btn is-ok"
+                  disabled={statusBusy}
+                  onClick={() => void changeStatus('answered')}
+                >
+                  <CheckCircle2 size={14} /> Mark answered
+                </button>
+              </div>
+            ) : null}
           </div>
+        </div>
+      ) : null}
 
-          <form className="ticket-chat__composer is-staff" onSubmit={onReply}>
-            <div className="ticket-chat__composer-tools">
-              <label>
-                <span>Status after send</span>
-                <ThemedSelect
-                  ariaLabel="Status on reply"
-                  value={replyStatus}
-                  onChange={(status) => setReplyStatus(status as TicketStatus | '')}
-                  placeholder="Answered (default)"
-                  options={[
-                    { value: '', label: 'Answered (default)' },
-                    { value: 'answered', label: 'Answered' },
-                    { value: 'awaiting_customer', label: 'Awaiting customer' },
-                    { value: 'closed', label: 'Closed' },
-                  ]}
+      <section className="ops-user__metrics" aria-label="Ticket metrics">
+        <div className={`ops-users__chip ops-user__metric${needsReply ? ' is-warn' : ticket.status === 'answered' ? ' is-ok' : ''}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            <Ticket size={15} />
+          </span>
+          <div>
+            <small>Status</small>
+            <strong>{ticketStatusLabel(ticket.status)}</strong>
+          </div>
+        </div>
+        <div className={`ops-users__chip ops-user__metric${isHot ? ' is-warn' : ''}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            <AlertTriangle size={15} />
+          </span>
+          <div>
+            <small>Priority</small>
+            <strong>{ticketPriorityLabel(ticket.priority)}</strong>
+          </div>
+        </div>
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <MessageCircle size={15} />
+          </span>
+          <div>
+            <small>Messages</small>
+            <strong>{ticket.messages.length}</strong>
+          </div>
+        </div>
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <CalendarDays size={15} />
+          </span>
+          <div>
+            <small>Updated</small>
+            <strong className="ops-svc__metric-stack">
+              <span>{formatUpdated(ticket.updatedAt)}</span>
+              <em>{formatDay(ticket.createdAt)}</em>
+            </strong>
+          </div>
+        </div>
+      </section>
+
+      <div className="ops-inv__desk ops-tkt__desk">
+        <div className="ops-inv__main">
+          <section className="ops-user__panel ops-tkt__chat">
+            <header className="ops-tkt__chat-head">
+              <span className="ops-user__panel-icon" aria-hidden>
+                <MessageCircle size={15} />
+              </span>
+              <div>
+                <span>Conversation</span>
+                <h2>Thread</h2>
+              </div>
+              <em className="ops-tkt__chat-count">
+                {ticket.messages.length} message{ticket.messages.length === 1 ? '' : 's'}
+              </em>
+            </header>
+
+            <div className="ops-tkt__thread" aria-label="Ticket messages">
+              {ticket.messages.map((msg, index) => {
+                const staff = msg.author.role === 'admin' || msg.author.role === 'staff';
+                const mine = msg.author.id === user?.id;
+                const name = displayName(msg.author);
+                const prev = ticket.messages[index - 1];
+                const showDay =
+                  !prev ||
+                  new Date(prev.createdAt).toDateString() !== new Date(msg.createdAt).toDateString();
+
+                return (
+                  <div key={msg.id} className="ops-tkt__block">
+                    {showDay ? (
+                      <div className="ops-tkt__day">
+                        <span>{formatDay(msg.createdAt)}</span>
+                      </div>
+                    ) : null}
+                    <article className={`ops-tkt__msg ${staff ? 'is-staff' : 'is-client'}`}>
+                      <TicketAvatar
+                        name={name}
+                        avatarUrl={msg.author.avatarUrl}
+                        className="ops-tkt__avatar"
+                      />
+                      <div className="ops-tkt__bubble">
+                        <header>
+                          <strong>
+                            {mine ? 'You' : name}
+                            <em>{staff ? 'Staff' : 'Client'}</em>
+                          </strong>
+                          <time>{formatTime(msg.createdAt)}</time>
+                        </header>
+                        <p>{msg.body}</p>
+                        <TicketAttachments attachments={msg.attachments} />
+                      </div>
+                    </article>
+                  </div>
+                );
+              })}
+              {!ticket.messages.length ? (
+                <div className="ops-tkt__empty">
+                  <LifeBuoy size={18} aria-hidden />
+                  <strong>No messages yet</strong>
+                  <span>Send the first staff reply below.</span>
+                </div>
+              ) : null}
+              <div ref={threadEndRef} />
+            </div>
+
+            <form className="ops-tkt__composer" onSubmit={onReply}>
+              <div className="ops-tkt__composer-top">
+                <label className="ops-tkt__field ops-tkt__field--inline">
+                  <span>After send</span>
+                  <ThemedSelect
+                    ariaLabel="Status on reply"
+                    value={replyStatus}
+                    onChange={(status) => setReplyStatus(status as TicketStatus | '')}
+                    placeholder="Answered (default)"
+                    options={[
+                      { value: '', label: 'Answered (default)' },
+                      { value: 'answered', label: 'Answered' },
+                      { value: 'awaiting_customer', label: 'Awaiting customer' },
+                      { value: 'closed', label: 'Closed' },
+                    ]}
+                  />
+                </label>
+                <TicketAttachments
+                  attachments={pendingAttachments}
+                  onClear={() => setPendingAttachments([])}
                 />
-              </label>
-            </div>
-            <TicketAttachments
-              attachments={pendingAttachments}
-              onClear={() => setPendingAttachments([])}
-            />
-            <div className="ticket-chat__composer-bar">
-              <input
-                ref={fileRef}
-                type="file"
-                accept="image/*"
-                hidden
-                onChange={(event) => void onUpload(event.target.files)}
-              />
-              <button
-                type="button"
-                className="ticket-chat__attach"
-                disabled={uploading || pendingAttachments.length >= 5}
-                onClick={() => fileRef.current?.click()}
-                aria-label="Add image"
-              >
-                <Paperclip size={16} />
-              </button>
-              <textarea
-                rows={3}
-                required
-                maxLength={5000}
-                value={reply}
-                placeholder="Write a staff reply…"
-                onChange={(event) => setReply(event.target.value)}
-              />
-              <button type="submit" className="ticket-chat__send" disabled={sending || !reply.trim()}>
-                <Send size={15} />
-                <span>{sending ? 'Sending…' : 'Reply'}</span>
-              </button>
-            </div>
-          </form>
-        </section>
+              </div>
 
-        <aside className="ticket-chat__side">
-          <div className="ticket-chat__side-card">
-            <header><UserRound size={14} /><span>Client</span></header>
-            <div className="ticket-chat__side-client">
+              <div className="ops-tkt__composer-bar">
+                <input
+                  ref={fileRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={(event) => void onUpload(event.target.files)}
+                />
+                <button
+                  type="button"
+                  className="ops-user__icon-btn"
+                  disabled={uploading || pendingAttachments.length >= 5}
+                  onClick={() => fileRef.current?.click()}
+                  aria-label="Add image"
+                  title="Attach image"
+                >
+                  <Paperclip size={16} />
+                </button>
+                <textarea
+                  rows={3}
+                  required
+                  maxLength={5000}
+                  value={reply}
+                  placeholder="Write a staff reply…"
+                  onChange={(event) => setReply(event.target.value)}
+                />
+                <button
+                  type="submit"
+                  className="ops-user__btn is-primary"
+                  disabled={sending || !reply.trim()}
+                >
+                  <Send size={14} />
+                  {sending ? 'Sending…' : 'Reply'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+
+        <aside className="ops-inv__aside">
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <UserRound size={15} />
+              </span>
+              <div>
+                <span>Account</span>
+                <h2>Client</h2>
+              </div>
+            </header>
+            <Link
+              to={`/admin/users/${ticket.user.id}`}
+              className="ops-inv__person is-link"
+              title={`Open ${client}`}
+            >
               <TicketAvatar
                 name={client}
                 avatarUrl={ticket.user.avatarUrl}
-                className="ticket-chat__avatar is-lg"
+                className="ops-tkt__avatar is-lg"
               />
               <div>
                 <strong>{client}</strong>
-                <em>@{ticket.user.username}</em>
-                <a href={`mailto:${ticket.user.email}`}>{ticket.user.email}</a>
+                <small>@{ticket.user.username}</small>
               </div>
-            </div>
-            <Link to={`/admin/users/${ticket.user.id}`} className="ticket-chat__side-link">
-              Open client profile <ExternalLink size={12} />
+              <ChevronRight size={15} aria-hidden />
             </Link>
-          </div>
+          </section>
 
-          <div className="ticket-chat__side-card">
-            <header><Ticket size={14} /><span>Manage</span></header>
-            <dl>
-              <div><dt>Opened</dt><dd>{formatDay(ticket.createdAt)}</dd></div>
-              <div><dt>Updated</dt><dd>{formatDay(ticket.updatedAt)}</dd></div>
-              <div><dt>Messages</dt><dd>{ticket.messages.length}</dd></div>
-            </dl>
-            {ticket.service && (
-              <Link to={`/admin/services/${ticket.service.id}`} className="ticket-chat__side-link">
-                <span><Server size={12} /> {ticket.service.name}</span>
-                <ExternalLink size={12} />
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Server size={15} />
+              </span>
+              <div>
+                <span>Fleet</span>
+                <h2>{ticket.service ? 'Service' : 'Unlinked'}</h2>
+              </div>
+            </header>
+            {ticket.service ? (
+              <Link
+                to={`/admin/services/${ticket.service.id}`}
+                className="ops-inv__person is-link"
+                title={`Open ${ticket.service.name}`}
+              >
+                <span className="ops-tkt__service-mark" aria-hidden>
+                  <Server size={14} />
+                </span>
+                <div>
+                  <strong>{ticket.service.name}</strong>
+                  <small>{ticket.service.status.replaceAll('_', ' ')}</small>
+                </div>
+                <ChevronRight size={15} aria-hidden />
               </Link>
+            ) : (
+              <div className="ops-inv__empty">
+                <strong>No linked service</strong>
+                <span>General support request with no fleet server.</span>
+              </div>
             )}
-            <label className="ticket-chat__field">
+          </section>
+
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Ticket size={15} />
+              </span>
+              <div>
+                <span>Triage</span>
+                <h2>Manage</h2>
+              </div>
+            </header>
+            <dl className="ops-user__facts">
+              <div>
+                <dt>Opened</dt>
+                <dd>{formatDay(ticket.createdAt)}</dd>
+              </div>
+              <div>
+                <dt>Updated</dt>
+                <dd>{formatUpdated(ticket.updatedAt)}</dd>
+              </div>
+              <div>
+                <dt>Category</dt>
+                <dd>{ticket.category?.name || 'Uncategorized'}</dd>
+              </div>
+            </dl>
+            <label className="ops-tkt__field">
               <span>Status</span>
               <ThemedSelect
                 ariaLabel="Ticket status"
                 value={ticket.status}
                 disabled={statusBusy}
                 onChange={(status) => void changeStatus(status as TicketStatus)}
-                options={([
-                  'open',
-                  'answered',
-                  'awaiting_customer',
-                  'closed',
-                ] as TicketStatus[]).map((status) => ({
+                options={(
+                  ['open', 'answered', 'awaiting_customer', 'closed'] as TicketStatus[]
+                ).map((status) => ({
                   value: status,
                   label: ticketStatusLabel(status),
                 }))}
               />
             </label>
-            <label className="ticket-chat__field">
+            <label className="ops-tkt__field">
               <span>Priority</span>
               <ThemedSelect
                 ariaLabel="Ticket priority"
                 value={ticket.priority}
                 disabled={priorityBusy}
                 onChange={(priority) => void changePriority(priority as TicketPriority)}
-                options={([
-                  'low',
-                  'normal',
-                  'high',
-                  'urgent',
-                ] as TicketPriority[]).map((priority) => ({
+                options={(['low', 'normal', 'high', 'urgent'] as TicketPriority[]).map((priority) => ({
                   value: priority,
                   label: ticketPriorityLabel(priority),
                 }))}
               />
             </label>
-          </div>
+          </section>
 
-          <button type="button" className="ticket-chat__danger" onClick={() => setDeleteOpen(true)}>
-            <Trash2 size={14} /> Delete ticket
-          </button>
+          <section className="ops-user__panel ops-user__panel--danger">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Trash2 size={15} />
+              </span>
+              <div>
+                <span>Danger</span>
+                <h2>Delete ticket</h2>
+              </div>
+            </header>
+            <p className="ops-tkt__danger-copy">
+              {`Permanently removes this ticket and all ${ticket.messages.length} message${
+                ticket.messages.length === 1 ? '' : 's'
+              }.`}
+            </p>
+            <button
+              type="button"
+              className="ops-user__btn is-danger"
+              onClick={() => setDeleteOpen(true)}
+            >
+              <Trash2 size={14} /> Delete ticket
+            </button>
+          </section>
         </aside>
       </div>
 

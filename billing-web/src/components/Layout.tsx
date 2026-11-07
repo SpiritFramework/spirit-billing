@@ -543,7 +543,8 @@ export function AdminLayout() {
   const signOut = useLogout();
   const [openTickets, setOpenTickets] = useState(0);
   const { navOpen, setNavOpen, toggleNav } = useMobileNav();
-  const fluidPage = location.pathname.startsWith('/admin/settings');
+  const fluidPage =
+    location.pathname === '/admin' || location.pathname.startsWith('/admin/settings');
 
   useEffect(() => {
     if (loading || !isStaffOrAdmin(user?.role)) return;
@@ -573,24 +574,28 @@ export function AdminLayout() {
   const isNavbar = navLayout === 'navbar';
   const display = user.firstName || user.username;
 
+  const ticketsLink = (
+    <NavLink to="/admin/tickets">
+      <MessageSquare size={15} /> Tickets
+      {openTickets > 0 && (
+        <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
+      )}
+    </NavLink>
+  );
+
   const adminNavLinks = (
     <>
       <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
-      <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
-      {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
+      <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+      <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
+      <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
+      {ticketsLink}
       {fullAdmin && <NavLink to="/admin/categories"><FolderTree size={15} /> Categories</NavLink>}
       {fullAdmin && <NavLink to="/admin/products"><Package size={15} /> Products</NavLink>}
-      <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
-      <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
-      <NavLink to="/admin/tickets">
-        <MessageSquare size={15} /> Tickets
-        {openTickets > 0 && (
-          <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
-        )}
-      </NavLink>
-      {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Categories</NavLink>}
       {fullAdmin && <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>}
-      <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+      {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Ticket categories</NavLink>}
+      <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
+      {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
       <NavLink to="/game-hosting"><ShoppingBag size={15} /> Client</NavLink>
     </>
   );
@@ -617,27 +622,24 @@ export function AdminLayout() {
             <>
               <NavSection label="Overview">
                 <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
-                <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
-                {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
+              </NavSection>
+              <NavSection label="Operations">
+                <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+                <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
+                <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
+                {ticketsLink}
+                {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Ticket categories</NavLink>}
               </NavSection>
               {fullAdmin && (
                 <NavSection label="Catalog">
                   <NavLink to="/admin/categories"><FolderTree size={15} /> Categories</NavLink>
                   <NavLink to="/admin/products"><Package size={15} /> Products</NavLink>
+                  <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>
                 </NavSection>
               )}
-              <NavSection label="Billing">
-                <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
-                <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
-                <NavLink to="/admin/tickets">
-                  <MessageSquare size={15} /> Tickets
-                  {openTickets > 0 && (
-                    <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
-                  )}
-                </NavLink>
-                {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Ticket categories</NavLink>}
-                {fullAdmin && <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>}
-                <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+              <NavSection label="System">
+                <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
+                {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
               </NavSection>
               <NavSection label="Shortcuts">
                 <NavLink to="/game-hosting"><ShoppingBag size={15} /> Client area</NavLink>

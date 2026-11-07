@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
+  Activity,
   Archive,
   ArrowLeft,
   CalendarDays,
-  CheckCircle2,
+  Check,
   ChevronRight,
   CircleDollarSign,
+  Copy,
   Cpu,
   Database,
   ExternalLink,
@@ -14,6 +16,7 @@ import {
   Globe2,
   HardDrive,
   Layers3,
+  Link2,
   MemoryStick,
   Package,
   PauseCircle,
@@ -26,7 +29,6 @@ import {
   SlidersHorizontal,
   Trash2,
   UserRound,
-  X,
 } from 'lucide-react';
 import { api, ApiError, money, safeExternalHref, statusBadge } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
@@ -142,6 +144,53 @@ function displayName(user: AdminServiceDetail['user']) {
   return [user.firstName, user.lastName].filter(Boolean).join(' ') || user.username;
 }
 
+function formatResourceMb(value: number) {
+  return value <= 0 ? 'Unlimited' : `${Math.round(value / 1024)} GB`;
+}
+
+function dueRelative(iso: string | null) {
+  if (!iso) return null;
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return 'Due today';
+  if (days === 1) return 'in 1 day';
+  return `in ${days}d`;
+}
+
+function resourceFill(value: number, kind: 'memory' | 'cpu' | 'disk') {
+  if (value <= 0) return 100;
+  if (kind === 'cpu') return Math.min(100, Math.round((value / 400) * 100));
+  if (kind === 'memory') return Math.min(100, Math.round((value / 16_384) * 100));
+  return Math.min(100, Math.round((value / 102_400) * 100));
+}
+
+function invoiceKind(inv: AdminServiceDetail['invoices'][number]) {
+  if (inv.upgradeToProductId) return 'Upgrade';
+  const desc = (inv.description || '').toLowerCase();
+  if (desc.includes('renew')) return 'Renewal';
+  if (desc.includes('upgrade')) return 'Upgrade';
+  return 'Invoice';
+}
+
+function buildEditForm(service: AdminServiceDetail): ServiceEditForm {
+  return {
+    name: service.name,
+    priceCents: service.priceCents ?? service.product.priceCents,
+    currency: service.currency ?? service.product.currency,
+    cycle: (service.cycle ?? service.product.cycle) as ServiceEditForm['cycle'],
+    nextDueAt: toDateInputValue(service.nextDueAt),
+    memoryMb: service.memoryMb ?? service.product.memoryMb,
+    diskMb: service.diskMb ?? service.product.diskMb,
+    cpuPercent: service.cpuPercent ?? service.product.cpuPercent,
+    backupLimit: service.backupLimit ?? service.product.backupLimit,
+    databaseLimit: service.databaseLimit ?? service.product.databaseLimit,
+    allocationLimit: service.allocationLimit ?? service.product.allocationLimit,
+    subdomainAccess: Boolean(service.subdomainAccess),
+    fivemMarketplaceAccess: Boolean(service.fivemMarketplaceAccess),
+    minecraftPluginsAccess: Boolean(service.minecraftPluginsAccess),
+  };
+}
+
 export function AdminServiceDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -152,16 +201,27 @@ export function AdminServiceDetail() {
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
+  const [tab, setTab] = useState<'overview' | 'invoices' | 'settings'>('overview');
+  const [invoiceFilter, setInvoiceFilter] = useState<'all' | 'unpaid' | 'paid' | 'cancelled'>('all');
   const [editForm, setEditForm] = useState<ServiceEditForm | null>(null);
+  const [copied, setCopied] = useState<'service' | 'panel' | null>(null);
+
+  async function copyText(value: string, key: 'service' | 'panel') {
+    await navigator.clipboard.writeText(value);
+    setCopied(key);
+    window.setTimeout(() => setCopied((current) => (current === key ? null : current)), 1500);
+  }
 
   async function load() {
     if (!id) return;
     setError('');
     try {
-      setService(await api<AdminServiceDetail>(`/admin/services/${id}`));
+      const data = await api<AdminServiceDetail>(`/admin/services/${id}`);
+      setService(data);
+      setEditForm(buildEditForm(data));
     } catch (err) {
       setService(null);
+      setEditForm(null);
       setError(err instanceof ApiError ? err.message : 'Service not found');
     }
   }
@@ -170,29 +230,8 @@ export function AdminServiceDetail() {
     void load();
   }, [id]);
 
-  function openEditor() {
-    if (!service) return;
-    setEditForm({
-      name: service.name,
-      priceCents: service.priceCents ?? service.product.priceCents,
-      currency: service.currency ?? service.product.currency,
-      cycle: (service.cycle ?? service.product.cycle) as ServiceEditForm['cycle'],
-      nextDueAt: toDateInputValue(service.nextDueAt),
-      memoryMb: service.memoryMb ?? service.product.memoryMb,
-      diskMb: service.diskMb ?? service.product.diskMb,
-      cpuPercent: service.cpuPercent ?? service.product.cpuPercent,
-      backupLimit: service.backupLimit ?? service.product.backupLimit,
-      databaseLimit: service.databaseLimit ?? service.product.databaseLimit,
-      allocationLimit: service.allocationLimit ?? service.product.allocationLimit,
-      subdomainAccess: Boolean(service.subdomainAccess),
-      fivemMarketplaceAccess: Boolean(service.fivemMarketplaceAccess),
-      minecraftPluginsAccess: Boolean(service.minecraftPluginsAccess),
-    });
-    setEditOpen(true);
-    setError('');
-  }
-
-  async function saveService() {
+  async function saveService(event?: FormEvent) {
+    event?.preventDefault();
     if (!service || !editForm) return;
     setBusy(true);
     setError('');
@@ -215,8 +254,6 @@ export function AdminServiceDetail() {
           ? `${editForm.name} was updated in billing and Spirit-Panel.`
           : `${editForm.name} was updated and will use these limits when provisioned.`,
       );
-      setEditOpen(false);
-      setEditForm(null);
       await load();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not update server');
@@ -240,7 +277,7 @@ export function AdminServiceDetail() {
       );
       setMessage(
         dueImmediately
-          ? `Created ${result.invoice.number} due yesterday � use Run overdue enforcement to test suspend/terminate.`
+          ? `Created ${result.invoice.number} due yesterday — use Run overdue enforcement to test suspend/terminate.`
           : `Created renewal invoice ${result.invoice.number}.`,
       );
       await load();
@@ -286,250 +323,1079 @@ export function AdminServiceDetail() {
 
   if (error && !service) {
     return (
-      <div className="asd-v2">
-        <Link to="/admin/services" className="asd-v2__back"><ArrowLeft size={14} /> All services</Link>
-        <div className="ds-alert ds-alert--error">{error}</div>
+      <div className="ops-user ops-svc">
+        <Link to="/admin/services" className="ops-user__back">
+          <ArrowLeft size={14} /> Fleet
+        </Link>
+        <div className="ops-user__alert is-error">{error}</div>
       </div>
     );
   }
-  if (!service) return <div className="ds-muted">Loading�</div>;
+
+  if (!service) {
+    return (
+      <div className="ops-user ops-svc">
+        <div className="ops-user__loading">
+          <Activity size={18} aria-hidden />
+          Loading service…
+        </div>
+      </div>
+    );
+  }
 
   const category = service.product.category;
   const memory = service.memoryMb ?? service.product.memoryMb;
   const disk = service.diskMb ?? service.product.diskMb;
   const cpu = service.cpuPercent ?? service.product.cpuPercent;
+  const backups = service.backupLimit ?? service.product.backupLimit;
+  const databases = service.databaseLimit ?? service.product.databaseLimit;
+  const allocations = service.allocationLimit ?? service.product.allocationLimit;
   const price = service.priceCents ?? service.product.priceCents;
   const currency = service.currency ?? service.product.currency;
   const cycle = service.cycle ?? service.product.cycle;
-  const panelHref = safeExternalHref(service.panelWebUrl);
+  const panelHref = service.panelServerId ? safeExternalHref(service.panelWebUrl) : null;
   const canSuspend = service.status === 'active' && Boolean(service.panelServerId);
   const canUnsuspend = service.status === 'suspended' && Boolean(service.panelServerId);
+  const planName =
+    service.product.name === 'Custom' && service.panelEggName
+      ? `Custom · ${service.panelEggName}`
+      : service.product.name;
+  const unpaidInvoices = service.invoices.filter((inv) => inv.status === 'unpaid');
+  const unpaidCount = unpaidInvoices.length;
+  const unpaidCents = unpaidInvoices.reduce((sum, inv) => sum + inv.totalCents, 0);
+  const nextDueLabel = dueRelative(service.nextDueAt);
+  const recentInvoices = service.invoices.slice(0, 4);
+  const baselineForm = buildEditForm(service);
+  const isDirty = Boolean(editForm && JSON.stringify(editForm) !== JSON.stringify(baselineForm));
 
   return (
-    <div className="asd-v2">
-      <Link to="/admin/services" className="asd-v2__back"><ArrowLeft size={14} /> All services</Link>
+    <div className="ops-user ops-svc">
+      <Link to="/admin/services" className="ops-user__back">
+        <ArrowLeft size={14} /> Fleet
+      </Link>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
-      {message && <div className="ds-alert ds-alert--success">{message}</div>}
+      {error ? <div className="ops-user__alert is-error">{error}</div> : null}
+      {message ? <div className="ops-user__alert is-info">{message}</div> : null}
 
-      <section
-        className={`asd-v2-hero is-${service.status}`}
-        style={category?.color ? { ['--service-color' as string]: category.color } : undefined}
-      >
-        <div className="asd-v2-hero__glow" />
-        <CategoryMark
-          icon={category?.icon}
-          logoUrl={category?.logoUrl}
-          color={category?.color}
-          size={64}
-        />
-        <div className="asd-v2-hero__identity">
-          <span>{category?.name || 'Hosting service'}</span>
-          <h1>{service.name}</h1>
-          <p>
-            <span className={statusBadge(service.status)}>{statusLabel(service.status)}</span>
-            <i />
-            {service.product.name}
-            <i />
-            Created {new Date(service.createdAt).toLocaleDateString()}
-          </p>
+      <header className="ops-user__mast">
+        <div className="ops-user__identity">
+          <span
+            className={`ops-svc__mark-wrap ${
+              service.status === 'active'
+                ? 'is-ok'
+                : service.status === 'suspended' || service.status === 'cancelled'
+                  ? 'is-bad'
+                  : 'is-warn'
+            }`}
+          >
+            <CategoryMark
+              icon={category?.icon || 'server'}
+              logoUrl={category?.logoUrl}
+              color={category?.color || '#38bdf8'}
+              size={52}
+              className="ops-svc__mark"
+            />
+          </span>
+          <div className="ops-user__identity-copy">
+            <span>{category?.name || 'Service'}</span>
+            <h1>{service.name}</h1>
+            <p>
+              {planName}
+              <span aria-hidden="true"> · </span>
+              Created{' '}
+              {new Date(service.createdAt).toLocaleDateString(undefined, {
+                day: 'numeric',
+                month: 'short',
+                year: 'numeric',
+              })}
+            </p>
+            <div className="ops-user__badges">
+              <span className={`ops-svc__status-badge ${statusBadge(service.status)}`}>
+                {statusLabel(service.status)}
+              </span>
+              <span className={`ops-users__panel ${service.panelServerId ? 'is-yes' : 'is-no'}`}>
+                {service.panelServerId ? <Check size={12} aria-hidden /> : <Link2 size={12} aria-hidden />}
+                {service.panelServerId ? 'Panel linked' : 'Not provisioned'}
+              </span>
+            </div>
+          </div>
         </div>
-        <div className="asd-v2-hero__actions">
-          {fullAdmin && service.status !== 'cancelled' && (
-            <button type="button" disabled={busy} onClick={openEditor}>
-              <SlidersHorizontal size={14} /> Edit server
+        <div className="ops-user__actions">
+          {panelHref ? (
+            <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn">
+              <ExternalLink size={14} /> Open panel
+            </a>
+          ) : null}
+          {fullAdmin && service.status !== 'cancelled' && price > 0 ? (
+            <button type="button" className="ops-user__btn" disabled={busy} onClick={() => void createRenewal(false)}>
+              <Receipt size={14} /> Renewal
             </button>
-          )}
-          {fullAdmin && service.status !== 'cancelled' && price > 0 && (
-            <button type="button" disabled={busy} onClick={() => void createRenewal(false)}>
-              <Receipt size={14} /> Create renewal
-            </button>
-          )}
-          {fullAdmin && service.status !== 'cancelled' && price > 0 && (
-            <button type="button" disabled={busy} onClick={() => void createRenewal(true)}>
-              <CalendarDays size={14} /> Test overdue invoice
-            </button>
-          )}
-          {canSuspend && (
-            <button type="button" disabled={busy} onClick={() => void setSuspended(true)}>
+          ) : null}
+          {canSuspend ? (
+            <button type="button" className="ops-user__btn is-danger" disabled={busy} onClick={() => void setSuspended(true)}>
               <PauseCircle size={14} /> Suspend
             </button>
-          )}
-          {canUnsuspend && (
-            <button type="button" disabled={busy} onClick={() => void setSuspended(false)}>
+          ) : null}
+          {canUnsuspend ? (
+            <button type="button" className="ops-user__btn is-ok" disabled={busy} onClick={() => void setSuspended(false)}>
               <PlayCircle size={14} /> Unsuspend
             </button>
-          )}
-          {fullAdmin && service.status !== 'cancelled' && (
-            <button type="button" className="is-danger" disabled={busy} onClick={() => setDeleteOpen(true)}>
-              <Trash2 size={14} /> Delete
+          ) : null}
+          {fullAdmin && service.status !== 'cancelled' ? (
+            <button type="button" className="ops-user__btn is-ghost" disabled={busy} onClick={() => setTab('settings')}>
+              <SlidersHorizontal size={14} /> Configure
             </button>
-          )}
+          ) : null}
         </div>
-      </section>
+      </header>
 
-      <section className="asd-v2-metrics">
-        <article>
-          <span><ShieldCheck size={16} /></span>
+      {!service.panelServerId || unpaidCount > 0 ? (
+        <div className="ops-svc__attention" role="status">
+          {!service.panelServerId ? (
+            <div className="ops-svc__attention-item is-warn">
+              <Link2 size={15} aria-hidden />
+              <div>
+                <strong>Not provisioned</strong>
+                <span>No Spirit-Panel server is linked yet. Access appears after provisioning.</span>
+              </div>
+            </div>
+          ) : null}
+          {unpaidCount > 0 ? (
+            <button type="button" className="ops-svc__attention-item is-warn" onClick={() => setTab('invoices')}>
+              <FileText size={15} aria-hidden />
+              <div>
+                <strong>
+                  {unpaidCount} unpaid · {money(unpaidCents, currency)}
+                </strong>
+                <span>Open invoices to review balances and due dates.</span>
+              </div>
+              <ChevronRight size={15} aria-hidden />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <section className="ops-user__metrics" aria-label="Service metrics">
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <CircleDollarSign size={15} />
+          </span>
           <div>
-            <small>Status</small>
-            <strong>{statusLabel(service.status)}</strong>
-          </div>
-        </article>
-        <article>
-          <span><CalendarDays size={16} /></span>
-          <div>
-            <small>Next renewal</small>
+            <small>Price</small>
             <strong>
-              {service.nextDueAt
-                ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
-                    day: 'numeric',
-                    month: 'short',
-                    year: 'numeric',
-                  })
-                : 'Not scheduled'}
+              {money(price, currency)}
+              <em>/{cycle}</em>
             </strong>
           </div>
-        </article>
-        <article>
-          <span><CircleDollarSign size={16} /></span>
+        </div>
+        <div className={`ops-users__chip ops-user__metric${nextDueLabel?.includes('overdue') ? ' is-warn' : ''}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            <CalendarDays size={15} />
+          </span>
           <div>
-            <small>Plan price</small>
-            <strong>{money(price, currency)} / {cycle}</strong>
+            <small>Next due</small>
+            <strong className="ops-svc__metric-stack">
+              <span>
+                {service.nextDueAt
+                  ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
+                      day: 'numeric',
+                      month: 'short',
+                      year: '2-digit',
+                    })
+                  : '—'}
+              </span>
+              {nextDueLabel ? <em>{nextDueLabel}</em> : null}
+            </strong>
           </div>
-        </article>
-        <article>
-          <span><FileText size={16} /></span>
+        </div>
+        <div className={`ops-users__chip ops-user__metric ${service.panelServerId ? '' : 'is-warn'}`.trim()}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            <Link2 size={15} />
+          </span>
           <div>
-            <small>Invoices</small>
-            <strong>{service.invoices.length}</strong>
+            <small>Panel</small>
+            <strong>{service.panelServerId ? 'Linked' : 'Missing'}</strong>
           </div>
-        </article>
+        </div>
+        <button
+          type="button"
+          className={`ops-users__chip ops-user__metric ops-user__metric--action${unpaidCount ? ' is-warn' : ''}`}
+          onClick={() => setTab('invoices')}
+          title="Open invoices"
+        >
+          <span className="ops-user__metric-icon" aria-hidden>
+            <FileText size={15} />
+          </span>
+          <div>
+            <small>Unpaid</small>
+            <strong className="ops-svc__metric-stack">
+              <span>{unpaidCount}</span>
+              {unpaidCount ? <em>{money(unpaidCents, currency)}</em> : null}
+            </strong>
+          </div>
+        </button>
       </section>
 
-      <div className="asd-v2-layout">
-        <main>
-          <section className="asd-v2-card">
+      <div className="ops-user__tabs" role="tablist" aria-label="Service sections">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'overview'}
+          className={tab === 'overview' ? 'is-on' : ''}
+          onClick={() => setTab('overview')}
+        >
+          <Server size={14} /> Overview
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={tab === 'invoices'}
+          className={tab === 'invoices' ? 'is-on' : ''}
+          onClick={() => setTab('invoices')}
+        >
+          <FileText size={14} /> Invoices <em>{service.invoices.length}</em>
+        </button>
+        {fullAdmin && service.status !== 'cancelled' ? (
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === 'settings'}
+            className={tab === 'settings' ? 'is-on' : ''}
+            onClick={() => setTab('settings')}
+          >
+            <SlidersHorizontal size={14} /> Settings
+          </button>
+        ) : null}
+      </div>
+
+      {tab === 'overview' ? (
+        <div className="ops-user__overview ops-svc__overview">
+          <section className="ops-user__panel">
             <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <UserRound size={15} />
+              </span>
               <div>
-                <span>Configuration</span>
-                <h2>Server resources</h2>
+                <span>Owner</span>
+                <h2>Client</h2>
               </div>
-              <Server size={17} />
             </header>
-            <div className="asd-v2-resources">
-              <article>
-                <span className="is-purple"><MemoryStick size={16} /></span>
-                <div><small>Memory</small><strong>{memory <= 0 ? 'Unlimited' : `${Math.round(memory / 1024)} GB`}</strong></div>
-              </article>
-              <article>
-                <span className="is-blue"><Cpu size={16} /></span>
-                <div><small>CPU</small><strong>{cpu <= 0 ? 'Unlimited' : `${cpu}%`}</strong></div>
-              </article>
-              <article>
-                <span className="is-green"><HardDrive size={16} /></span>
-                <div><small>Disk</small><strong>{disk <= 0 ? 'Unlimited' : `${Math.round(disk / 1024)} GB`}</strong></div>
-              </article>
-            </div>
-            {service.product.description && <p className="asd-v2-card__note">{service.product.description}</p>}
+            <dl className="ops-user__facts">
+              <div>
+                <dt>Name</dt>
+                <dd>{displayName(service.user)}</dd>
+              </div>
+              <div>
+                <dt>Username</dt>
+                <dd>@{service.user.username}</dd>
+              </div>
+              <div>
+                <dt>Email</dt>
+                <dd className="is-wrap">{service.user.email}</dd>
+              </div>
+              <div>
+                <dt>Credits</dt>
+                <dd>{money(service.user.creditBalanceCents, 'GBP')}</dd>
+              </div>
+            </dl>
+            <Link to={`/admin/users/${service.user.id}`} className="ops-user__btn">
+              <UserRound size={14} /> Open account
+            </Link>
           </section>
 
-          <section className="asd-v2-card">
+          <section className={`ops-user__panel${service.panelServerId ? '' : ' ops-svc__panel--muted'}`}>
             <header>
+              <span className={`ops-user__panel-icon${service.panelServerId ? '' : ' is-warn'}`} aria-hidden>
+                <Server size={15} />
+              </span>
               <div>
-                <span>Billing</span>
-                <h2>Invoice history</h2>
-              </div>
-              <Link to="/admin/invoices">All invoices <ChevronRight size={13} /></Link>
-            </header>
-            <div className="asd-v2-invoices">
-              {service.invoices.map((invoice) => (
-                <Link key={invoice.id} to={`/admin/invoices/${invoice.id}`}>
-                  <span className={`asd-v2-invoices__icon is-${invoice.status}`}><FileText size={14} /></span>
-                  <span>
-                    <small>{invoice.number}</small>
-                    <strong>
-                      {invoice.upgradeToProductId
-                        ? 'Plan upgrade'
-                        : invoice.status === 'paid' && invoice.paidAt
-                          ? `Paid ${new Date(invoice.paidAt).toLocaleDateString()}`
-                          : `Due ${new Date(invoice.dueAt).toLocaleDateString()}`}
-                    </strong>
-                  </span>
-                  <span className={statusBadge(invoice.status)}>{invoice.status}</span>
-                  <strong>{money(invoice.totalCents, invoice.currency)}</strong>
-                  <ChevronRight size={14} />
-                </Link>
-              ))}
-              {!service.invoices.length && (
-                <div className="asd-v2-empty">
-                  <FileText size={20} />
-                  <span>No invoices linked to this service.</span>
-                </div>
-              )}
-            </div>
-          </section>
-        </main>
-
-        <aside>
-          <section className="asd-v2-side">
-            <header>
-              <UserRound size={15} />
-              <div>
-                <small>Client</small>
-                <strong>{displayName(service.user)}</strong>
+                <span>Spirit-Panel</span>
+                <h2>{service.panelServerId ? 'Linked server' : 'Not provisioned'}</h2>
               </div>
             </header>
-            <div><span>Email</span><strong>{service.user.email}</strong></div>
-            <div><span>Username</span><strong>@{service.user.username}</strong></div>
-            <div><span>Credits</span><strong>{money(service.user.creditBalanceCents, 'GBP')}</strong></div>
-            <Link to={`/admin/users/${service.user.id}`}>Open client <ChevronRight size={13} /></Link>
-          </section>
-
-          <section className="asd-v2-side">
-            <header>
-              <span className={service.panelServerId ? 'is-online' : ''}><i /></span>
-              <div>
-                <small>Spirit-Panel</small>
-                <strong>{service.panelServerId ? 'Server linked' : 'Not provisioned'}</strong>
-              </div>
-            </header>
-            <div><span>Panel server ID</span><strong>{service.panelServerId || '�'}</strong></div>
-            {service.panelServerId && panelHref ? (
-              <a href={panelHref} target="_blank" rel="noopener noreferrer">
-                Open panel <ExternalLink size={13} />
-              </a>
+            {service.panelServerId ? (
+              <>
+                <dl className="ops-user__facts">
+                  <div>
+                    <dt>Panel server ID</dt>
+                    <dd className="is-mono ops-user__copy-row">
+                      <span>{service.panelServerId}</span>
+                      <button
+                        type="button"
+                        className="ops-user__icon-btn"
+                        aria-label="Copy panel server ID"
+                        onClick={() => void copyText(service.panelServerId!, 'panel')}
+                      >
+                        {copied === 'panel' ? <Check size={13} /> : <Copy size={13} />}
+                      </button>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Access</dt>
+                    <dd>Ready</dd>
+                  </div>
+                </dl>
+                {panelHref ? (
+                  <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn">
+                    <ExternalLink size={14} /> Open Spirit-Panel
+                  </a>
+                ) : null}
+              </>
             ) : (
-              <span className="asd-v2-side__muted">Panel access appears after provisioning.</span>
+              <div className="ops-svc__empty">
+                <Server size={18} aria-hidden />
+                <strong>Waiting on provision</strong>
+                <span>Panel access appears after the first successful provisioning for this service.</span>
+              </div>
             )}
           </section>
 
-          <section className="asd-v2-side">
+          <section className="ops-user__panel ops-user__panel--wide">
             <header>
-              <CheckCircle2 size={15} />
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Package size={15} />
+              </span>
               <div>
-                <small>Current plan</small>
-                <strong>
-                  {service.product.name === 'Custom' && service.panelEggName
-                    ? `Custom � ${service.panelEggName}`
-                    : service.product.name}
-                </strong>
+                <span>Plan</span>
+                <h2>Billing profile</h2>
               </div>
             </header>
-            <div><span>Billing cycle</span><strong>{cycle}</strong></div>
-            <div><span>Recurring price</span><strong>{money(price, currency)}</strong></div>
-            {service.panelEggName && <div><span>Panel egg</span><strong>{service.panelEggName}</strong></div>}
-            <div><span>Updated</span><strong>{new Date(service.updatedAt).toLocaleString()}</strong></div>
+            <dl className="ops-user__facts ops-svc__facts--wide">
+              <div>
+                <dt>Plan</dt>
+                <dd>{planName}</dd>
+              </div>
+              <div>
+                <dt>Recurring</dt>
+                <dd>
+                  {money(price, currency)} / {cycle}
+                </dd>
+              </div>
+              <div>
+                <dt>Next renewal</dt>
+                <dd>
+                  {service.nextDueAt
+                    ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })
+                    : 'Not scheduled'}
+                </dd>
+              </div>
+              {service.panelEggName ? (
+                <div>
+                  <dt>Panel egg</dt>
+                  <dd>{service.panelEggName}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>Service ID</dt>
+                <dd className="is-mono ops-user__copy-row">
+                  <span>{service.id}</span>
+                  <button
+                    type="button"
+                    className="ops-user__icon-btn"
+                    aria-label="Copy service ID"
+                    onClick={() => void copyText(service.id, 'service')}
+                  >
+                    {copied === 'service' ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </dd>
+              </div>
+            </dl>
           </section>
-        </aside>
-      </div>
+
+          <section className="ops-user__panel ops-user__panel--wide">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Cpu size={15} />
+              </span>
+              <div>
+                <span>Capacity</span>
+                <h2>Resources</h2>
+              </div>
+            </header>
+            <div className="ops-svc__resources ops-svc__resources--wide" aria-label="Server resources">
+              <article>
+                <span aria-hidden>
+                  <MemoryStick size={15} />
+                </span>
+                <div>
+                  <small>Memory</small>
+                  <strong>{formatResourceMb(memory)}</strong>
+                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(memory, 'memory')}%` }} />
+                </div>
+              </article>
+              <article>
+                <span aria-hidden>
+                  <Cpu size={15} />
+                </span>
+                <div>
+                  <small>CPU</small>
+                  <strong>{cpu <= 0 ? 'Unlimited' : `${cpu}%`}</strong>
+                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(cpu, 'cpu')}%` }} />
+                </div>
+              </article>
+              <article>
+                <span aria-hidden>
+                  <HardDrive size={15} />
+                </span>
+                <div>
+                  <small>Disk</small>
+                  <strong>{formatResourceMb(disk)}</strong>
+                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(disk, 'disk')}%` }} />
+                </div>
+              </article>
+              <article>
+                <span aria-hidden>
+                  <Archive size={15} />
+                </span>
+                <div>
+                  <small>Backups</small>
+                  <strong>{backups <= 0 ? 'Off' : backups}</strong>
+                </div>
+              </article>
+              <article>
+                <span aria-hidden>
+                  <Database size={15} />
+                </span>
+                <div>
+                  <small>Databases</small>
+                  <strong>{databases <= 0 ? 'Off' : databases}</strong>
+                </div>
+              </article>
+              <article>
+                <span aria-hidden>
+                  <Layers3 size={15} />
+                </span>
+                <div>
+                  <small>Ports</small>
+                  <strong>{allocations <= 0 ? 'Off' : allocations}</strong>
+                </div>
+              </article>
+            </div>
+            <div className="ops-svc__features">
+              <span className={service.subdomainAccess ? 'is-on' : 'is-off'}>
+                <Globe2 size={13} /> Subdomain
+              </span>
+              <span className={service.fivemMarketplaceAccess ? 'is-on' : 'is-off'}>
+                <Package size={13} /> FiveM market
+              </span>
+              <span className={service.minecraftPluginsAccess ? 'is-on' : 'is-off'}>
+                <Puzzle size={13} /> MC plugins
+              </span>
+            </div>
+          </section>
+
+          <section className="ops-user__panel ops-user__panel--wide">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <FileText size={15} />
+              </span>
+              <div>
+                <span>Billing</span>
+                <h2>Recent invoices</h2>
+              </div>
+              <button type="button" className="ops-user__btn is-ghost ops-svc__panel-action" onClick={() => setTab('invoices')}>
+                View all <em>{service.invoices.length}</em>
+              </button>
+            </header>
+            {recentInvoices.length ? (
+              <div className="ops-svc__recent">
+                {recentInvoices.map((inv) => {
+                  const overdue =
+                    inv.status === 'unpaid' && inv.dueAt ? new Date(inv.dueAt).getTime() < Date.now() : false;
+                  const kind = invoiceKind(inv);
+                  return (
+                    <Link
+                      key={inv.id}
+                      to={`/admin/invoices/${inv.id}`}
+                      className={`ops-svc__recent-row${overdue ? ' is-overdue' : ''}`}
+                    >
+                      <CategoryMark
+                        icon={category?.icon || 'server'}
+                        logoUrl={category?.logoUrl}
+                        color={category?.color || '#38bdf8'}
+                        size={28}
+                        className="ops-user__table-service-mark"
+                      />
+                      <span className="ops-svc__recent-copy">
+                        <strong className="is-mono">{inv.number}</strong>
+                        <em>
+                          {kind}
+                          <span aria-hidden> · </span>
+                          {inv.description?.trim() || service.name}
+                        </em>
+                      </span>
+                      <span className="ops-user__table-status">
+                        <em className={`${statusBadge(inv.status)}${overdue ? ' is-overdue' : ''}`}>
+                          {overdue ? 'overdue' : inv.status}
+                        </em>
+                      </span>
+                      <strong className="ops-svc__recent-amount">{money(inv.totalCents, inv.currency)}</strong>
+                      <ChevronRight size={14} aria-hidden />
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="ops-svc__empty">
+                <FileText size={18} aria-hidden />
+                <strong>No invoices yet</strong>
+                <span>Renewals and upgrades for this service will show up here.</span>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {tab === 'invoices' ? (
+        <div className="ops-svc__invoices">
+          <div className="ops-svc__invoice-bar">
+            <div className="ops-svc__invoice-filters" role="group" aria-label="Invoice status">
+              {(
+                [
+                  ['all', 'All', service.invoices.length],
+                  ['unpaid', 'Unpaid', service.invoices.filter((inv) => inv.status === 'unpaid').length],
+                  ['paid', 'Paid', service.invoices.filter((inv) => inv.status === 'paid').length],
+                  ['cancelled', 'Cancelled', service.invoices.filter((inv) => inv.status === 'cancelled').length],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={invoiceFilter === value ? 'is-on' : ''}
+                  onClick={() => setInvoiceFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+            <div className="ops-svc__invoice-summary">
+              <span>
+                Unpaid{' '}
+                <strong>
+                  {money(
+                    service.invoices
+                      .filter((inv) => inv.status === 'unpaid')
+                      .reduce((sum, inv) => sum + inv.totalCents, 0),
+                    currency,
+                  )}
+                </strong>
+              </span>
+            </div>
+          </div>
+
+          <section className="ops-user__table" aria-label="Service invoices">
+            <div className="ops-user__table-head ops-svc__invoice-head" aria-hidden>
+              <span>Invoice</span>
+              <span>Kind</span>
+              <span>Status</span>
+              <span className="is-end">Total</span>
+              <span className="is-end">Due</span>
+              <span className="is-end">Paid</span>
+              <span aria-hidden />
+              <span />
+            </div>
+            {service.invoices
+              .filter((inv) => invoiceFilter === 'all' || inv.status === invoiceFilter)
+              .map((inv) => {
+                const overdue =
+                  inv.status === 'unpaid' && inv.dueAt ? new Date(inv.dueAt).getTime() < Date.now() : false;
+                const statusText = overdue ? 'overdue' : inv.status;
+                const kind = invoiceKind(inv);
+                const subject = inv.upgradeToProductId
+                  ? 'Plan upgrade'
+                  : inv.description?.trim() || service.name;
+                return (
+                  <Link
+                    key={inv.id}
+                    to={`/admin/invoices/${inv.id}`}
+                    className={`ops-user__table-row ops-svc__invoice-row${overdue ? ' is-overdue' : ''}`}
+                  >
+                    <span className="ops-user__table-invoice">
+                      <CategoryMark
+                        icon={category?.icon || 'server'}
+                        logoUrl={category?.logoUrl}
+                        color={category?.color || '#38bdf8'}
+                        size={30}
+                        className="ops-user__table-service-mark"
+                      />
+                      <span className="ops-user__table-invoice-copy">
+                        <strong className="is-mono">{inv.number}</strong>
+                        <em>{subject}</em>
+                      </span>
+                    </span>
+                    <span className={`ops-svc__invoice-kind is-${kind.toLowerCase()}`}>{kind}</span>
+                    <span className="ops-user__table-status">
+                      <em className={`${statusBadge(inv.status)}${overdue ? ' is-overdue' : ''}`}>{statusText}</em>
+                    </span>
+                    <span className="is-mono is-end ops-user__table-amount">
+                      {money(inv.totalCents, inv.currency)}
+                    </span>
+                    <span className={`is-mono is-end ops-user__table-date${overdue ? ' is-warn' : ''}`}>
+                      {inv.dueAt
+                        ? new Date(inv.dueAt).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: '2-digit',
+                          })
+                        : '—'}
+                    </span>
+                    <span className="is-mono is-end ops-user__table-date">
+                      {inv.paidAt
+                        ? new Date(inv.paidAt).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                            year: '2-digit',
+                          })
+                        : '—'}
+                    </span>
+                    <span aria-hidden />
+                    <ChevronRight size={15} aria-hidden />
+                  </Link>
+                );
+              })}
+            {!service.invoices.length ? (
+              <div className="ops-user__empty-inline">No invoices linked to this service.</div>
+            ) : null}
+            {service.invoices.length > 0 &&
+            !service.invoices.some((inv) => invoiceFilter === 'all' || inv.status === invoiceFilter) ? (
+              <div className="ops-user__empty-inline">No {invoiceFilter} invoices.</div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {tab === 'settings' && fullAdmin && editForm && service.status !== 'cancelled' ? (
+        <div className="ops-svc__settings">
+          {isDirty ? (
+            <div className="ops-svc__dirty-bar" role="status">
+              <div>
+                <strong>Unsaved changes</strong>
+                <span>Save to apply billing{service.panelServerId ? ' and panel' : ''} updates.</span>
+              </div>
+              <div className="ops-svc__action-row">
+                <button
+                  type="button"
+                  className="ops-user__btn is-ghost"
+                  disabled={busy}
+                  onClick={() => setEditForm(buildEditForm(service))}
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  className="ops-user__btn is-primary"
+                  disabled={busy || !editForm.name.trim()}
+                  onClick={() => void saveService()}
+                >
+                  <Save size={14} /> {busy ? 'Saving…' : 'Save changes'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="ops-svc__sync">
+            <ShieldCheck size={16} />
+            <div>
+              <strong>{service.panelServerId ? 'Panel sync enabled' : 'Applies during provisioning'}</strong>
+              <p>
+                {service.panelServerId
+                  ? 'Spirit-Panel and Wings must accept new limits before billing saves them.'
+                  : 'These limits are used when this service is provisioned.'}
+              </p>
+            </div>
+          </div>
+
+          <form className="ops-svc__settings-grid" onSubmit={(event) => void saveService(event)}>
+            <section className="ops-user__panel">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <Server size={15} />
+                </span>
+                <div>
+                  <span>Identity</span>
+                  <h2>Server name</h2>
+                </div>
+              </header>
+              <label className="ops-user__field">
+                <span>Display name</span>
+                <input
+                  value={editForm.name}
+                  maxLength={64}
+                  onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
+                />
+              </label>
+              <p className="ops-user__hint">Shown to the client and in Spirit-Panel. Max 64 characters.</p>
+            </section>
+
+            <section className="ops-user__panel">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <CircleDollarSign size={15} />
+                </span>
+                <div>
+                  <span>Billing</span>
+                  <h2>Price override</h2>
+                </div>
+              </header>
+              <div className="ops-svc__edit-grid ops-svc__edit-grid--2">
+                <label className="ops-user__field">
+                  <span>Recurring price</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.01"
+                    value={editForm.priceCents / 100}
+                    onChange={(event) =>
+                      setEditForm({ ...editForm, priceCents: Math.round(Number(event.target.value) * 100) })
+                    }
+                  />
+                </label>
+                <label className="ops-user__field">
+                  <span>Currency</span>
+                  <ThemedSelect
+                    value={editForm.currency}
+                    options={currencyOptions}
+                    ariaLabel="Service currency"
+                    onChange={(value) => setEditForm({ ...editForm, currency: value })}
+                  />
+                </label>
+                <label className="ops-user__field">
+                  <span>Billing interval</span>
+                  <ThemedSelect
+                    value={editForm.cycle}
+                    options={cycleOptions}
+                    ariaLabel="Service billing interval"
+                    onChange={(value) => setEditForm({ ...editForm, cycle: value as ServiceEditForm['cycle'] })}
+                  />
+                </label>
+                <label className="ops-user__field">
+                  <span>Next renewal</span>
+                  <input
+                    type="date"
+                    value={editForm.nextDueAt}
+                    onChange={(event) => setEditForm({ ...editForm, nextDueAt: event.target.value })}
+                  />
+                </label>
+              </div>
+              <p className="ops-user__hint">
+                Product baseline {money(service.product.priceCents, service.product.currency)} / {service.product.cycle}.
+                Clear date + £0 unschedules renewals.
+              </p>
+            </section>
+
+            <section className="ops-user__panel ops-user__panel--wide">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <Cpu size={15} />
+                </span>
+                <div>
+                  <span>Capacity</span>
+                  <h2>Resource limits</h2>
+                </div>
+              </header>
+              <div className="ops-svc__resource-edit">
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <MemoryStick size={14} /> Memory
+                    <em>{formatResourceMb(editForm.memoryMb)}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.memoryMb}
+                    onChange={(event) => setEditForm({ ...editForm, memoryMb: Number(event.target.value) })}
+                  />
+                  <div className="ops-svc__presets">
+                    {[1024, 2048, 4096, 8192].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={editForm.memoryMb === value ? 'is-on' : ''}
+                        onClick={() => setEditForm({ ...editForm, memoryMb: value })}
+                      >
+                        {value / 1024} GB
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setEditForm({ ...editForm, memoryMb: 0 })}>
+                      Unlimited
+                    </button>
+                  </div>
+                </label>
+
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <Cpu size={14} /> CPU
+                    <em>{editForm.cpuPercent <= 0 ? 'Unlimited' : `${editForm.cpuPercent}%`}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.cpuPercent}
+                    onChange={(event) => setEditForm({ ...editForm, cpuPercent: Number(event.target.value) })}
+                  />
+                  <div className="ops-svc__presets">
+                    {[100, 200, 400].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={editForm.cpuPercent === value ? 'is-on' : ''}
+                        onClick={() => setEditForm({ ...editForm, cpuPercent: value })}
+                      >
+                        {value}%
+                      </button>
+                    ))}
+                    <button type="button" onClick={() => setEditForm({ ...editForm, cpuPercent: 0 })}>
+                      Unlimited
+                    </button>
+                  </div>
+                </label>
+
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <HardDrive size={14} /> Disk
+                    <em>{formatResourceMb(editForm.diskMb)}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.diskMb}
+                    onChange={(event) => setEditForm({ ...editForm, diskMb: Number(event.target.value) })}
+                  />
+                  <div className="ops-svc__presets">
+                    {[10240, 20480, 51200, 102400].map((value) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className={editForm.diskMb === value ? 'is-on' : ''}
+                        onClick={() => setEditForm({ ...editForm, diskMb: value })}
+                      >
+                        {Math.round(value / 1024)} GB
+                      </button>
+                    ))}
+                  </div>
+                </label>
+
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <Archive size={14} /> Backups
+                    <em>{editForm.backupLimit <= 0 ? 'Off' : `${editForm.backupLimit} slots`}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.backupLimit}
+                    onChange={(event) => setEditForm({ ...editForm, backupLimit: Number(event.target.value) })}
+                  />
+                </label>
+
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <Database size={14} /> Databases
+                    <em>{editForm.databaseLimit <= 0 ? 'Off' : `${editForm.databaseLimit} slots`}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.databaseLimit}
+                    onChange={(event) => setEditForm({ ...editForm, databaseLimit: Number(event.target.value) })}
+                  />
+                </label>
+
+                <label className="ops-svc__resource-field">
+                  <span>
+                    <Layers3 size={14} /> Allocations
+                    <em>{editForm.allocationLimit <= 0 ? 'Off' : `${editForm.allocationLimit} ports`}</em>
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editForm.allocationLimit}
+                    onChange={(event) => setEditForm({ ...editForm, allocationLimit: Number(event.target.value) })}
+                  />
+                </label>
+              </div>
+              <p className="ops-user__hint">
+                Product defaults {formatResourceMb(service.product.memoryMb)} / {service.product.cpuPercent}% /{' '}
+                {formatResourceMb(service.product.diskMb)}. 0 = unlimited or disabled.
+              </p>
+            </section>
+
+            <section className="ops-user__panel ops-user__panel--wide">
+              <header>
+                <span className="ops-user__panel-icon" aria-hidden>
+                  <Package size={15} />
+                </span>
+                <div>
+                  <span>Access</span>
+                  <h2>Client features</h2>
+                </div>
+              </header>
+              <div className="ops-svc__checks ops-svc__checks--grid">
+                <label className={`ops-svc__check${editForm.subdomainAccess ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.subdomainAccess}
+                    onChange={(event) => setEditForm({ ...editForm, subdomainAccess: event.target.checked })}
+                  />
+                  <span>
+                    <strong>
+                      <Globe2 size={14} /> Subdomain manager
+                    </strong>
+                    <small>Let the client create a hostname for this server.</small>
+                  </span>
+                </label>
+                <label className={`ops-svc__check${editForm.fivemMarketplaceAccess ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.fivemMarketplaceAccess}
+                    onChange={(event) =>
+                      setEditForm({ ...editForm, fivemMarketplaceAccess: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>
+                      <Package size={14} /> FiveM marketplace
+                    </strong>
+                    <small>One-click marketplace resource installs.</small>
+                  </span>
+                </label>
+                <label className={`ops-svc__check${editForm.minecraftPluginsAccess ? ' is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={editForm.minecraftPluginsAccess}
+                    onChange={(event) =>
+                      setEditForm({ ...editForm, minecraftPluginsAccess: event.target.checked })
+                    }
+                  />
+                  <span>
+                    <strong>
+                      <Puzzle size={14} /> Minecraft plugins
+                    </strong>
+                    <small>One-click Minecraft plugin installs.</small>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            <div className="ops-svc__form-actions ops-svc__field-wide">
+              <button
+                type="button"
+                className="ops-user__btn is-ghost"
+                disabled={busy || !isDirty}
+                onClick={() => setEditForm(buildEditForm(service))}
+              >
+                Reset
+              </button>
+              <button
+                type="submit"
+                className="ops-user__btn is-primary"
+                disabled={busy || !editForm.name.trim() || !isDirty}
+              >
+                <Save size={14} /> {busy ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
+              </button>
+            </div>
+          </form>
+
+          <section className="ops-user__panel ops-user__panel--wide">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Receipt size={15} />
+              </span>
+              <div>
+                <span>Lifecycle</span>
+                <h2>Jobs & power</h2>
+              </div>
+            </header>
+            <div className="ops-svc__lifecycle">
+              <article>
+                <strong>Billing jobs</strong>
+                <span>Create renewals or overdue invoices for enforcement tests.</span>
+                <div className="ops-svc__action-row">
+                  <button
+                    type="button"
+                    className="ops-user__btn"
+                    disabled={busy || price <= 0}
+                    onClick={() => void createRenewal(false)}
+                  >
+                    <Receipt size={14} /> Create renewal
+                  </button>
+                  <button
+                    type="button"
+                    className="ops-user__btn is-ghost"
+                    disabled={busy || price <= 0}
+                    onClick={() => void createRenewal(true)}
+                  >
+                    <CalendarDays size={14} /> Test overdue
+                  </button>
+                </div>
+              </article>
+              <article>
+                <strong>Server power</strong>
+                <span>
+                  {service.panelServerId
+                    ? 'Suspend or resume the linked Spirit-Panel server.'
+                    : 'Available after this service is provisioned on Spirit-Panel.'}
+                </span>
+                <div className="ops-svc__action-row">
+                  {canSuspend ? (
+                    <button
+                      type="button"
+                      className="ops-user__btn is-danger"
+                      disabled={busy}
+                      onClick={() => void setSuspended(true)}
+                    >
+                      <PauseCircle size={14} /> Suspend
+                    </button>
+                  ) : null}
+                  {canUnsuspend ? (
+                    <button
+                      type="button"
+                      className="ops-user__btn is-ok"
+                      disabled={busy}
+                      onClick={() => void setSuspended(false)}
+                    >
+                      <PlayCircle size={14} /> Unsuspend
+                    </button>
+                  ) : null}
+                  {!canSuspend && !canUnsuspend ? (
+                    <span className="ops-svc__lifecycle-muted">No power actions available in the current state.</span>
+                  ) : null}
+                </div>
+              </article>
+            </div>
+          </section>
+
+          <section className="ops-user__panel ops-user__panel--danger ops-user__panel--wide">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Trash2 size={15} />
+              </span>
+              <div>
+                <span>Danger</span>
+                <h2>Delete service</h2>
+              </div>
+            </header>
+            <p className="ops-user__hint">
+              Permanently removes this service from billing and deletes its linked server from Spirit-Panel.
+            </p>
+            <button type="button" className="ops-user__btn is-danger" disabled={busy} onClick={() => setDeleteOpen(true)}>
+              <Trash2 size={14} /> Delete service
+            </button>
+          </section>
+        </div>
+      ) : null}
 
       <ConfirmModal
         open={deleteOpen}
         title={`Delete ${service.name}?`}
         description="This permanently removes the service from billing and deletes its linked server from Spirit-Panel."
         confirmLabel="Delete service"
-        busyLabel="Deleting�"
+        busyLabel="Deleting…"
         tone="danger"
         actionIcon="delete"
         requireText={service.name}
@@ -542,174 +1408,6 @@ export function AdminServiceDetail() {
         onCancel={() => !busy && setDeleteOpen(false)}
         onConfirm={() => void deleteService()}
       />
-
-      {editOpen && editForm && (
-        <div
-          className="service-edit-modal"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !busy) {
-              setEditOpen(false);
-              setEditForm(null);
-            }
-          }}
-        >
-          <section role="dialog" aria-modal="true" aria-labelledby="service-edit-title">
-            <header>
-              <span><SlidersHorizontal size={18} /></span>
-              <div>
-                <small>Server configuration</small>
-                <h2 id="service-edit-title">Edit {service.name}</h2>
-                <p>Changes are synchronized with Spirit-Panel before billing is updated.</p>
-              </div>
-              <button
-                type="button"
-                aria-label="Close editor"
-                disabled={busy}
-                onClick={() => {
-                  setEditOpen(false);
-                  setEditForm(null);
-                }}
-              >
-                <X size={16} />
-              </button>
-            </header>
-
-            <div className="service-edit-modal__body">
-              <label className="service-edit-modal__name">
-                <span>Server name <small>Shown to the client and in Spirit-Panel</small></span>
-                <input
-                  value={editForm.name}
-                  maxLength={64}
-                  onChange={(event) => setEditForm({ ...editForm, name: event.target.value })}
-                />
-              </label>
-
-              <div className="service-edit-modal__section">
-                <div><span>Resource limits</span><p>Set the resources assigned specifically to this server.</p></div>
-                <div className="service-edit-modal__resources">
-                  <label><MemoryStick size={15} /><span>Memory<small>MB � 0 = unlimited</small></span><input type="number" min={0} value={editForm.memoryMb} onChange={(event) => setEditForm({ ...editForm, memoryMb: Number(event.target.value) })} /></label>
-                  <label><Cpu size={15} /><span>CPU limit<small>% � 0 = unlimited</small></span><input type="number" min={0} value={editForm.cpuPercent} onChange={(event) => setEditForm({ ...editForm, cpuPercent: Number(event.target.value) })} /></label>
-                  <label><HardDrive size={15} /><span>Storage<small>MB � 0 = unlimited</small></span><input type="number" min={0} value={editForm.diskMb} onChange={(event) => setEditForm({ ...editForm, diskMb: Number(event.target.value) })} /></label>
-                  <label><Archive size={15} /><span>Backups<small>slots � 0 = disabled</small></span><input type="number" min={0} value={editForm.backupLimit} onChange={(event) => setEditForm({ ...editForm, backupLimit: Number(event.target.value) })} /></label>
-                  <label><Database size={15} /><span>Databases<small>slots � 0 = disabled</small></span><input type="number" min={0} value={editForm.databaseLimit} onChange={(event) => setEditForm({ ...editForm, databaseLimit: Number(event.target.value) })} /></label>
-                  <label><Layers3 size={15} /><span>Allocations<small>ports · 0 = disabled</small></span><input type="number" min={0} value={editForm.allocationLimit} onChange={(event) => setEditForm({ ...editForm, allocationLimit: Number(event.target.value) })} /></label>
-                </div>
-                <label className="service-create-check" style={{ marginTop: '0.85rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.subdomainAccess}
-                    onChange={(event) => setEditForm({ ...editForm, subdomainAccess: event.target.checked })}
-                  />
-                  <span>
-                    <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Globe2 size={14} /> Allow subdomain manager
-                    </strong>
-                    <small>
-                      {editForm.subdomainAccess
-                        ? 'Client can create a hostname for this server.'
-                        : 'Client cannot manage a subdomain for this server.'}
-                    </small>
-                  </span>
-                </label>
-                <label className="service-create-check" style={{ marginTop: '0.5rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.fivemMarketplaceAccess}
-                    onChange={(event) =>
-                      setEditForm({ ...editForm, fivemMarketplaceAccess: event.target.checked })
-                    }
-                  />
-                  <span>
-                    <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Package size={14} /> Allow FiveM marketplace
-                    </strong>
-                    <small>
-                      {editForm.fivemMarketplaceAccess
-                        ? 'Client can one-click install marketplace resources.'
-                        : 'FiveM marketplace is disabled for this server.'}
-                    </small>
-                  </span>
-                </label>
-                <label className="service-create-check" style={{ marginTop: '0.5rem' }}>
-                  <input
-                    type="checkbox"
-                    checked={editForm.minecraftPluginsAccess}
-                    onChange={(event) =>
-                      setEditForm({ ...editForm, minecraftPluginsAccess: event.target.checked })
-                    }
-                  />
-                  <span>
-                    <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '0.35rem' }}>
-                      <Puzzle size={14} /> Allow Minecraft plugins
-                    </strong>
-                    <small>
-                      {editForm.minecraftPluginsAccess
-                        ? 'Client can one-click install Minecraft plugins.'
-                        : 'Minecraft plugin install is disabled for this server.'}
-                    </small>
-                  </span>
-                </label>
-              </div>
-
-              <div className="service-edit-modal__section">
-                <div><span>Billing override</span><p>Change this client's recurring price and billing interval without altering the product. Imports start at �0 with no renewal until you set a price.</p></div>
-                <div className="service-edit-modal__billing">
-                  <label>
-                    <span><CircleDollarSign size={14} /> Recurring price</span>
-                    <input type="number" min={0} step="0.01" value={editForm.priceCents / 100} onChange={(event) => setEditForm({ ...editForm, priceCents: Math.round(Number(event.target.value) * 100) })} />
-                  </label>
-                  <label>
-                    <span>Currency</span>
-                    <ThemedSelect value={editForm.currency} options={currencyOptions} ariaLabel="Service currency" onChange={(value) => setEditForm({ ...editForm, currency: value })} />
-                  </label>
-                  <label>
-                    <span>Billing interval</span>
-                    <ThemedSelect value={editForm.cycle} options={cycleOptions} ariaLabel="Service billing interval" onChange={(value) => setEditForm({ ...editForm, cycle: value as ServiceEditForm['cycle'] })} />
-                  </label>
-                  <label>
-                    <span>Next renewal</span>
-                    <input
-                      type="date"
-                      value={editForm.nextDueAt}
-                      onChange={(event) => setEditForm({ ...editForm, nextDueAt: event.target.value })}
-                    />
-                    <small>Clear the date and set price to �0 to unschedule. Saving a price above �0 without a date schedules one cycle ahead.</small>
-                  </label>
-                </div>
-              </div>
-
-              <div className="service-edit-modal__sync">
-                <ShieldCheck size={16} />
-                <div>
-                  <strong>{service.panelServerId ? 'Panel synchronization enabled' : 'Applies during provisioning'}</strong>
-                  <p>
-                    {service.panelServerId
-                      ? 'Spirit-Panel and Wings must accept the new limits before billing saves them.'
-                      : 'This service is not provisioned yet. The limits will be used when its invoice is paid.'}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <footer>
-              <button
-                type="button"
-                disabled={busy}
-                onClick={() => {
-                  setEditOpen(false);
-                  setEditForm(null);
-                }}
-              >
-                Cancel
-              </button>
-              <button type="button" disabled={busy || !editForm.name.trim()} onClick={() => void saveService()}>
-                <Save size={14} /> {busy ? 'Synchronizing�' : 'Save server changes'}
-              </button>
-            </footer>
-          </section>
-        </div>
-      )}
     </div>
   );
 }

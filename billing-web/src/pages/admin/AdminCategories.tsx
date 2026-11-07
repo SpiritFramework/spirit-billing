@@ -2,21 +2,23 @@ import { type FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
-  ArrowRight,
   Check,
+  CheckCircle2,
+  ChevronRight,
   Eye,
   EyeOff,
-  Gamepad2,
   Image,
   Layers3,
   LayoutGrid,
+  Link2,
   Palette,
   Plus,
   RefreshCw,
   Save,
   Search,
-  Sparkles,
   Trash2,
+  Unlink,
+  X,
 } from 'lucide-react';
 import { api, ApiError } from '../../lib/api';
 import {
@@ -59,6 +61,10 @@ type CategoryForm = {
   panelEggId: string;
 };
 
+type VisibilityFilter = 'all' | 'active' | 'hidden';
+type EggFilter = 'all' | 'linked' | 'unlinked';
+type ArtFilter = 'all' | 'logo' | 'icon';
+
 const emptyForm: CategoryForm = {
   name: '',
   description: '',
@@ -71,14 +77,14 @@ const emptyForm: CategoryForm = {
 };
 
 export function AdminCategories() {
+  const navigate = useNavigate();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'hidden'>('all');
+  const [visibility, setVisibility] = useState<VisibilityFilter>('all');
+  const [eggFilter, setEggFilter] = useState<EggFilter>('all');
+  const [artFilter, setArtFilter] = useState<ArtFilter>('all');
   const [error, setError] = useState('');
-  const [message, setMessage] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<Category | null>(null);
-  const [deleting, setDeleting] = useState(false);
 
   async function load() {
     setError('');
@@ -95,136 +101,400 @@ export function AdminCategories() {
     void load();
   }, []);
 
-  async function remove(category: Category) {
-    setDeleting(true);
-    setError('');
-    setMessage('');
-    try {
-      await api(`/admin/categories/${category.id}`, { method: 'DELETE' });
-      setCategories((list) => list.filter((item) => item.id !== category.id));
-      setDeleteTarget(null);
-      setMessage(`${category.name} was deleted.`);
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not delete category');
-      setDeleteTarget(null);
-    } finally {
-      setDeleting(false);
-    }
-  }
+  const stats = useMemo(() => {
+    const active = categories.filter((c) => c.active).length;
+    const hidden = categories.length - active;
+    const linked = categories.filter((c) => Boolean(c.panelEggId)).length;
+    const logos = categories.filter((c) => Boolean(c.logoUrl)).length;
+    const products = categories.reduce((sum, c) => sum + (c._count?.products ?? 0), 0);
+    return {
+      total: categories.length,
+      active,
+      hidden,
+      linked,
+      unlinked: categories.length - linked,
+      logos,
+      icons: categories.length - logos,
+      products,
+    };
+  }, [categories]);
 
-  const visible = useMemo(() => {
+  const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return categories.filter((category) => {
-      const matchesFilter =
-        filter === 'all' || (filter === 'active' ? category.active : !category.active);
-      const matchesQuery = `${category.name} ${category.slug ?? ''} ${category.description}`
+      if (visibility === 'active' && !category.active) return false;
+      if (visibility === 'hidden' && category.active) return false;
+      if (eggFilter === 'linked' && !category.panelEggId) return false;
+      if (eggFilter === 'unlinked' && category.panelEggId) return false;
+      if (artFilter === 'logo' && !category.logoUrl) return false;
+      if (artFilter === 'icon' && category.logoUrl) return false;
+      if (!needle) return true;
+      return `${category.name} ${category.slug ?? ''} ${category.description} ${category.panelEggId ?? ''}`
         .toLowerCase()
         .includes(needle);
-      return matchesFilter && matchesQuery;
     });
-  }, [categories, filter, query]);
+  }, [categories, visibility, eggFilter, artFilter, query]);
 
-  const activeCount = categories.filter((category) => category.active).length;
-  const productCount = categories.reduce((sum, category) => sum + (category._count?.products ?? 0), 0);
-  const customLogoCount = categories.filter((category) => Boolean(category.logoUrl)).length;
+  const filtersActive =
+    visibility !== 'all' || eggFilter !== 'all' || artFilter !== 'all' || Boolean(query.trim());
+
+  const filterSummary = useMemo(() => {
+    const parts: string[] = [];
+    if (visibility === 'active') parts.push('Published');
+    if (visibility === 'hidden') parts.push('Hidden');
+    if (eggFilter === 'linked') parts.push('Egg linked');
+    if (eggFilter === 'unlinked') parts.push('No egg');
+    if (artFilter === 'logo') parts.push('Custom logo');
+    if (artFilter === 'icon') parts.push('Icon only');
+    if (query.trim()) parts.push(`“${query.trim()}”`);
+    return parts;
+  }, [visibility, eggFilter, artFilter, query]);
+
+  function clearFilters() {
+    setVisibility('all');
+    setEggFilter('all');
+    setArtFilter('all');
+    setQuery('');
+  }
+
+  function setChipFilter(next: {
+    visibility?: VisibilityFilter;
+    egg?: EggFilter;
+    art?: ArtFilter;
+  }) {
+    setVisibility(next.visibility ?? 'all');
+    setEggFilter(next.egg ?? 'all');
+    setArtFilter(next.art ?? 'all');
+    setQuery('');
+  }
 
   return (
-    <div className="category-admin-v2">
-      <header className="category-admin-v2__header">
-        <div>
-          <span>Storefront architecture</span>
+    <div className="ops-users ops-categories">
+      <header className="ops-users__mast">
+        <div className="ops-users__mast-copy">
+          <span>Catalog</span>
           <h1>Categories</h1>
-          <p>Shape how clients discover products with distinct collections, artwork, and positioning.</p>
+          <p>Storefront collections, panel eggs, and plan groupings for Game Hosting.</p>
         </div>
-        <Link to="/admin/categories/new"><Plus size={15} /> Create category</Link>
+        <div className="ops-users__mast-meta">
+          <button
+            type="button"
+            className={`ops-users__chip${!filtersActive ? ' is-active' : ''}`}
+            onClick={clearFilters}
+            title="Show all categories"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <LayoutGrid size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Catalog</small>
+              <strong>{stats.total}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip is-ok${
+              visibility === 'active' && eggFilter === 'all' && artFilter === 'all' && !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={() => setChipFilter({ visibility: 'active' })}
+            title="Show published categories"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <Eye size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Published</small>
+              <strong>{stats.active}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${stats.hidden ? ' is-warn' : ''}${
+              visibility === 'hidden' && eggFilter === 'all' && artFilter === 'all' && !query.trim()
+                ? ' is-active'
+                : ''
+            }`}
+            onClick={() => setChipFilter({ visibility: 'hidden' })}
+            title="Show hidden categories"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <EyeOff size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>Hidden</small>
+              <strong>{stats.hidden}</strong>
+            </span>
+          </button>
+          <button
+            type="button"
+            className={`ops-users__chip${
+              eggFilter === 'unlinked' && visibility === 'all' && artFilter === 'all' && !query.trim()
+                ? ' is-active'
+                : ''
+            }${stats.unlinked ? ' is-warn' : ''}`}
+            onClick={() => setChipFilter({ egg: 'unlinked' })}
+            title="Show categories without a panel egg"
+          >
+            <span className="ops-users__chip-icon" aria-hidden>
+              <Unlink size={14} />
+            </span>
+            <span className="ops-users__chip-copy">
+              <small>No egg</small>
+              <strong>{stats.unlinked}</strong>
+            </span>
+          </button>
+        </div>
       </header>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
-      {message && <div className="ds-alert ds-alert--success">{message}</div>}
+      {error ? <div className="ds-alert ds-alert--error">{error}</div> : null}
 
-      <section className="category-admin-metrics">
-        <article><span className="is-blue"><LayoutGrid size={17} /></span><div><small>Collections</small><strong>{categories.length}</strong><p>Total storefront categories</p></div></article>
-        <article><span className="is-green"><Eye size={17} /></span><div><small>Published</small><strong>{activeCount}</strong><p>Visible to clients</p></div></article>
-        <article><span className="is-purple"><Layers3 size={17} /></span><div><small>Products</small><strong>{productCount}</strong><p>Plans organised</p></div></article>
-        <article><span className="is-amber"><Image size={17} /></span><div><small>Custom artwork</small><strong>{customLogoCount}</strong><p>Categories using logos</p></div></article>
-      </section>
-
-      <section className="category-admin-toolbar">
-        <div><span>Category directory</span><h2>Store collections</h2></div>
-        <label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, slug, or description…" /></label>
-        <div>
-          {([
-            ['all', 'All'],
-            ['active', 'Published'],
-            ['hidden', 'Hidden'],
-          ] as const).map(([value, label]) => (
-            <button type="button" key={value} className={filter === value ? 'is-active' : ''} onClick={() => setFilter(value)}>{label}</button>
-          ))}
-        </div>
-      </section>
-
-      {loading ? (
-        <div className="category-admin-empty"><RefreshCw size={26} /><h3>Loading categories…</h3></div>
-      ) : (
-        <section className="category-admin-grid">
-          {visible.map((category) => (
-            <article
-              key={category.id}
-              className="category-admin-card"
-              style={{ ['--category-color' as string]: category.color || '#6366f1' }}
-            >
-              <div className="category-admin-card__visual">
-                <span className="category-admin-card__glow" />
-                <CategoryMark icon={category.icon} logoUrl={category.logoUrl} color={category.color} size={54} />
-                <span className={category.active ? 'is-live' : 'is-hidden'}>
-                  {category.active ? <><Eye size={11} /> Published</> : <><EyeOff size={11} /> Hidden</>}
-                </span>
-              </div>
-              <div className="category-admin-card__body">
-                <small>{category.slug || 'category'}</small>
-                <h2>{category.name}</h2>
-                <p>{category.description || 'Add a short description to introduce this collection to clients.'}</p>
-                <div>
-                  <span><Layers3 size={12} /> {category._count?.products ?? 0} product{category._count?.products === 1 ? '' : 's'}</span>
-                  <span>{category.panelEggId ? 'Egg linked' : 'No egg'}</span>
-                  <span>Position {category.sortOrder}</span>
-                </div>
-              </div>
-              <footer>
-                <Link to={`/admin/categories/${category.id}`}>Open builder <ArrowRight size={13} /></Link>
-                <button type="button" aria-label={`Delete ${category.name}`} onClick={() => setDeleteTarget(category)}><Trash2 size={13} /></button>
-              </footer>
-            </article>
-          ))}
-          {!visible.length && (
-            <div className="category-admin-empty">
-              <Gamepad2 size={28} />
-              <h3>{categories.length ? 'No matching categories' : 'Build your first category'}</h3>
-              <p>{categories.length ? 'Try another search or visibility filter.' : 'Create a collection to organise products in Game Hosting.'}</p>
-              {!categories.length && <Link to="/admin/categories/new"><Plus size={13} /> Create category</Link>}
+      <div className="ops-users__shell">
+        <aside className="ops-users__rail" aria-label="Category filters">
+          <div className="ops-users__rail-block">
+            <span>Visibility</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any visibility', stats.total],
+                  ['active', 'Published', stats.active],
+                  ['hidden', 'Hidden', stats.hidden],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={visibility === value ? 'is-on' : ''}
+                  onClick={() => setVisibility(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
             </div>
-          )}
-        </section>
-      )}
+          </div>
 
-      <ConfirmModal
-        open={Boolean(deleteTarget)}
-        title={`Delete ${deleteTarget?.name ?? 'category'}?`}
-        description="This permanently removes the category from your storefront."
-        confirmLabel="Delete category"
-        busyLabel="Deleting…"
-        busy={deleting}
-        requireText={deleteTarget?.name}
-        consequences={[
-          `${deleteTarget?._count?.products ?? 0} product(s) currently use this category.`,
-          'Categories with assigned products cannot be deleted.',
-          'This action cannot be undone.',
-        ]}
-        onCancel={() => setDeleteTarget(null)}
-        onConfirm={() => {
-          if (deleteTarget) void remove(deleteTarget);
-        }}
-      />
+          <div className="ops-users__rail-block">
+            <span>Panel egg</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any linkage', stats.total],
+                  ['linked', 'Egg linked', stats.linked],
+                  ['unlinked', 'No egg', stats.unlinked],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={eggFilter === value ? 'is-on' : ''}
+                  onClick={() => setEggFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="ops-users__rail-block">
+            <span>Artwork</span>
+            <div>
+              {(
+                [
+                  ['all', 'Any artwork', stats.total],
+                  ['logo', 'Custom logo', stats.logos],
+                  ['icon', 'Icon only', stats.icons],
+                ] as const
+              ).map(([value, label, count]) => (
+                <button
+                  key={value}
+                  type="button"
+                  className={artFilter === value ? 'is-on' : ''}
+                  onClick={() => setArtFilter(value)}
+                >
+                  {label}
+                  <em>{count}</em>
+                </button>
+              ))}
+            </div>
+          </div>
+        </aside>
+
+        <div className="ops-users__main">
+          <div className="ops-users__command ops-categories__command">
+            <label className="ops-users__search">
+              <Search size={16} aria-hidden />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    event.preventDefault();
+                    setQuery('');
+                  }
+                }}
+                placeholder="Filter by name, slug, description, or egg ID"
+                aria-label="Search categories"
+              />
+              {query ? (
+                <button
+                  type="button"
+                  className="ops-users__search-clear"
+                  onClick={() => setQuery('')}
+                  aria-label="Clear search"
+                >
+                  <X size={14} />
+                </button>
+              ) : null}
+            </label>
+
+            <div className="ops-services__jobs" role="group" aria-label="Catalog actions">
+              <Link className="ops-services__create" to="/admin/categories/new">
+                <Plus size={14} /> New
+              </Link>
+              <button
+                type="button"
+                disabled={loading}
+                onClick={() => {
+                  setLoading(true);
+                  void load();
+                }}
+              >
+                <RefreshCw size={14} /> Refresh
+              </button>
+            </div>
+
+            <div className="ops-users__command-meta">
+              <span>
+                Showing <strong>{filtered.length}</strong> / {stats.total}
+                {stats.products ? (
+                  <>
+                    {' '}
+                    · <strong>{stats.products}</strong> products
+                  </>
+                ) : null}
+              </span>
+              {filtersActive ? (
+                <>
+                  <span className="ops-users__filter-summary">{filterSummary.join(' · ')}</span>
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear
+                  </button>
+                </>
+              ) : null}
+            </div>
+          </div>
+
+          <section className="ops-users__table" aria-label="Categories">
+            <div className="ops-users__head ops-categories__head" aria-hidden>
+              <span>Category</span>
+              <span>Products</span>
+              <span>Egg</span>
+              <span>Position</span>
+              <span>Status</span>
+              <span />
+            </div>
+
+            {loading ? (
+              <div className="ops-users__empty">
+                <RefreshCw size={22} />
+                <h3>Loading catalog…</h3>
+              </div>
+            ) : (
+              filtered.map((category) => {
+                const products = category._count?.products ?? 0;
+                return (
+                  <button
+                    type="button"
+                    key={category.id}
+                    className={`ops-users__row ops-categories__row${!category.active ? ' is-hidden' : ''}`}
+                    onClick={() => navigate(`/admin/categories/${category.id}`)}
+                  >
+                    <span className="ops-categories__who">
+                      <CategoryMark
+                        icon={category.icon}
+                        logoUrl={category.logoUrl}
+                        color={category.color}
+                        size={34}
+                        className="ops-services__mark"
+                      />
+                      <span>
+                        <strong>{category.name}</strong>
+                        <small>{category.slug || '—'}</small>
+                        <em>
+                          {category.description?.trim()
+                            ? category.description.trim().slice(0, 72) +
+                              (category.description.trim().length > 72 ? '…' : '')
+                            : 'No description'}
+                        </em>
+                      </span>
+                    </span>
+
+                    <span className="ops-categories__products">
+                      <Layers3 size={13} aria-hidden />
+                      <strong>{products}</strong>
+                      <small>plan{products === 1 ? '' : 's'}</small>
+                    </span>
+
+                    <span className={`ops-categories__egg${category.panelEggId ? ' is-on' : ''}`}>
+                      {category.panelEggId ? (
+                        <>
+                          <Link2 size={12} aria-hidden /> Linked
+                        </>
+                      ) : (
+                        <>
+                          <Unlink size={12} aria-hidden /> None
+                        </>
+                      )}
+                    </span>
+
+                    <span className="ops-categories__pos">
+                      <strong>{category.sortOrder}</strong>
+                    </span>
+
+                    <span className={`ops-categories__status${category.active ? ' is-live' : ' is-off'}`}>
+                      {category.active ? (
+                        <>
+                          <Eye size={12} aria-hidden /> Live
+                        </>
+                      ) : (
+                        <>
+                          <EyeOff size={12} aria-hidden /> Hidden
+                        </>
+                      )}
+                    </span>
+
+                    <ChevronRight size={16} aria-hidden />
+                  </button>
+                );
+              })
+            )}
+
+            {!loading && !filtered.length ? (
+              <div className="ops-users__empty">
+                <LayoutGrid size={24} />
+                <h3>{categories.length ? 'No matching categories' : 'No categories yet'}</h3>
+                <p>
+                  {categories.length
+                    ? 'Try another search or clear the filters.'
+                    : 'Create a collection so products can group under Game Hosting.'}
+                </p>
+                {!categories.length ? (
+                  <Link to="/admin/categories/new" className="ops-services__create">
+                    <Plus size={14} /> New category
+                  </Link>
+                ) : (
+                  <button type="button" className="ops-users__clear" onClick={clearFilters}>
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            ) : null}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }
@@ -244,6 +514,7 @@ export function AdminCategoryEdit() {
   const [deleting, setDeleting] = useState(false);
   const [eggs, setEggs] = useState<PanelEgg[]>([]);
   const [eggsError, setEggsError] = useState('');
+  const [slug, setSlug] = useState('');
 
   useEffect(() => {
     void api<PanelEgg[]>('/admin/panel/eggs')
@@ -260,6 +531,8 @@ export function AdminCategoryEdit() {
   useEffect(() => {
     if (isNew) {
       setForm(emptyForm);
+      setSlug('');
+      setProductCount(0);
       setLoading(false);
       return;
     }
@@ -276,6 +549,7 @@ export function AdminCategoryEdit() {
           logoUrl: category.logoUrl || '',
           panelEggId: category.panelEggId || '',
         });
+        setSlug(category.slug || '');
         setProductCount(category._count?.products ?? 0);
         setLogoBroken(false);
       })
@@ -300,13 +574,14 @@ export function AdminCategoryEdit() {
           body: JSON.stringify(payload),
         });
         navigate(`/admin/categories/${created.id}`, { replace: true });
-        setMessage('Category created and ready for products.');
+        setMessage('Category created.');
       } else {
-        await api(`/admin/categories/${id}`, {
+        const updated = await api<Category>(`/admin/categories/${id}`, {
           method: 'PATCH',
           body: JSON.stringify(payload),
         });
-        setMessage('Category changes published.');
+        if (updated.slug) setSlug(updated.slug);
+        setMessage('Category saved.');
       }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not save category');
@@ -333,52 +608,197 @@ export function AdminCategoryEdit() {
   const liveLogo = form.logoUrl.trim();
   const showLogo = Boolean(liveLogo && /^https?:\/\//i.test(liveLogo) && !logoBroken);
   const selectedEgg = eggs.find((egg) => egg.id === form.panelEggId);
-  const completion = [
+  const readyBits = [
     form.name.trim(),
     form.description.trim(),
-    form.color,
-    form.icon,
     form.panelEggId.trim(),
+    form.color,
+    form.icon || form.logoUrl.trim(),
   ].filter(Boolean).length;
 
-  if (loading) return <div className="category-builder-loading"><RefreshCw size={26} /><span>Loading category builder…</span></div>;
+  if (loading) {
+    return (
+      <div className="ops-user ops-cat">
+        <Link to="/admin/categories" className="ops-user__back">
+          <ArrowLeft size={14} /> Categories
+        </Link>
+        <div className="ops-user__loading">
+          <RefreshCw size={22} />
+          <span>Loading category…</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="category-builder-v2">
-      <Link to="/admin/categories" className="category-builder-v2__back"><ArrowLeft size={14} /> Category directory</Link>
+    <div className="ops-user ops-cat">
+      <Link to="/admin/categories" className="ops-user__back">
+        <ArrowLeft size={14} /> Categories
+      </Link>
 
-      <header className="category-builder-v2__header">
-        <div>
-          <span>{isNew ? 'New collection' : 'Category builder'}</span>
-          <h1>{isNew ? 'Create category' : `Edit ${form.name || 'category'}`}</h1>
-          <p>{isNew ? 'Design a clear storefront destination for a group of hosting products.' : `${productCount} product${productCount === 1 ? '' : 's'} currently belong to this collection.`}</p>
+      {error ? <div className="ops-user__alert is-error">{error}</div> : null}
+      {message ? <div className="ops-user__alert is-info">{message}</div> : null}
+
+      <header className="ops-user__mast">
+        <div className="ops-user__identity">
+          <CategoryMark
+            icon={form.icon}
+            logoUrl={liveLogo || null}
+            color={form.color}
+            size={44}
+            className="ops-svc__mark"
+          />
+          <div className="ops-user__identity-copy">
+            <span>{isNew ? 'New category' : 'Category'}</span>
+            <h1>{form.name.trim() || (isNew ? 'Untitled collection' : 'Category')}</h1>
+            <p>
+              {isNew
+                ? 'Define identity, panel egg, and storefront visibility.'
+                : slug
+                  ? `/${slug} · ${productCount} product${productCount === 1 ? '' : 's'}`
+                  : `${productCount} product${productCount === 1 ? '' : 's'}`}
+            </p>
+            <div className="ops-user__badges">
+              <span className={`ops-user__state${form.active ? ' is-on' : ' is-off'}`}>
+                <i />
+                {form.active ? 'Published' : 'Hidden'}
+              </span>
+              {form.panelEggId ? (
+                <span className="ops-cat__pill is-egg">
+                  <Link2 size={11} /> Egg linked
+                </span>
+              ) : (
+                <span className="ops-cat__pill">
+                  <Unlink size={11} /> No egg
+                </span>
+              )}
+              {liveLogo ? (
+                <span className="ops-cat__pill">
+                  <Image size={11} /> Custom logo
+                </span>
+              ) : null}
+            </div>
+          </div>
         </div>
-        <div>
-          <Link to="/admin/categories">Cancel</Link>
-          <button type="submit" form="category-builder-form" disabled={saving || !form.name.trim()}><Save size={14} /> {saving ? 'Saving…' : isNew ? 'Create category' : 'Save changes'}</button>
+        <div className="ops-user__actions">
+          <Link to="/admin/categories" className="ops-user__btn is-ghost">
+            Cancel
+          </Link>
+          <button
+            type="submit"
+            form="ops-cat-form"
+            className="ops-user__btn is-primary"
+            disabled={saving || !form.name.trim()}
+          >
+            <Save size={14} />
+            {saving ? 'Saving…' : isNew ? 'Create' : 'Save'}
+          </button>
         </div>
       </header>
 
-      {error && <div className="ds-alert ds-alert--error">{error}</div>}
-      {message && <div className="ds-alert ds-alert--success">{message}</div>}
+      <section className="ops-user__metrics" aria-label="Category metrics">
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <Layers3 size={14} />
+          </span>
+          <span className="ops-users__chip-copy">
+            <small>Products</small>
+            <strong>{productCount}</strong>
+          </span>
+        </div>
+        <div className="ops-users__chip ops-user__metric">
+          <span className="ops-user__metric-icon" aria-hidden>
+            <LayoutGrid size={14} />
+          </span>
+          <span className="ops-users__chip-copy">
+            <small>Position</small>
+            <strong>{form.sortOrder}</strong>
+          </span>
+        </div>
+        <div className={`ops-users__chip ops-user__metric${!form.panelEggId ? ' is-warn' : ''}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            {form.panelEggId ? <Link2 size={14} /> : <Unlink size={14} />}
+          </span>
+          <span className="ops-users__chip-copy">
+            <small>Panel egg</small>
+            <strong>{form.panelEggId ? 'Linked' : 'None'}</strong>
+          </span>
+        </div>
+        <div className={`ops-users__chip ops-user__metric${!form.active ? ' is-warn' : ' is-ok'}`}>
+          <span className="ops-user__metric-icon" aria-hidden>
+            {form.active ? <CheckCircle2 size={14} /> : <EyeOff size={14} />}
+          </span>
+          <span className="ops-users__chip-copy">
+            <small>Storefront</small>
+            <strong>{form.active ? 'Live' : 'Hidden'}</strong>
+          </span>
+        </div>
+      </section>
 
-      <div className="category-builder-layout">
-        <form id="category-builder-form" className="category-builder-form" onSubmit={onSubmit}>
-          <section>
-            <header><span>01</span><div><h2>Collection identity</h2><p>Name and describe the category clients will browse.</p></div></header>
-            <div className="category-builder-fields">
-              <label className="is-wide"><span>Category name <small>Required</small></span><input value={form.name} maxLength={64} required placeholder="e.g. Minecraft Hosting" onChange={(event) => setForm({ ...form, name: event.target.value })} /></label>
-              <label><span>Store position</span><input type="number" value={form.sortOrder} onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })} /></label>
-              <label className="is-full"><span>Description <small>{form.description.length}/500</small></span><textarea rows={4} maxLength={500} value={form.description} placeholder="Explain what makes this collection useful…" onChange={(event) => setForm({ ...form, description: event.target.value })} /></label>
+      <div className="ops-cat__desk">
+        <form id="ops-cat-form" className="ops-cat__main" onSubmit={onSubmit}>
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <LayoutGrid size={14} />
+              </span>
+              <div>
+                <h2>Identity</h2>
+                <p>Name and describe the collection clients browse.</p>
+              </div>
+            </header>
+            <div className="ops-cat__fields">
+              <label className="ops-user__field">
+                <span>
+                  Name <em>Required</em>
+                </span>
+                <input
+                  value={form.name}
+                  maxLength={64}
+                  required
+                  placeholder="e.g. Minecraft Hosting"
+                  onChange={(event) => setForm({ ...form, name: event.target.value })}
+                />
+              </label>
+              <label className="ops-user__field">
+                <span>Sort position</span>
+                <input
+                  type="number"
+                  value={form.sortOrder}
+                  onChange={(event) => setForm({ ...form, sortOrder: Number(event.target.value) })}
+                />
+              </label>
+              <label className="ops-user__field ops-cat__full">
+                <span>
+                  Description <em>{form.description.length}/500</em>
+                </span>
+                <textarea
+                  rows={4}
+                  maxLength={500}
+                  value={form.description}
+                  placeholder="What belongs in this collection…"
+                  onChange={(event) => setForm({ ...form, description: event.target.value })}
+                />
+              </label>
             </div>
           </section>
 
-          <section>
-            <header><span>02</span><div><h2>Spirit-Panel egg</h2><p>Pick the panel egg this game category uses for products and imports.</p></div></header>
-            {eggsError && <div className="ds-alert ds-alert--info">{eggsError} You can paste an egg ID manually.</div>}
-            <div className="category-builder-fields">
-              <label className="is-full">
-                <span>Panel egg <small>Recommended</small></span>
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Link2 size={14} />
+              </span>
+              <div>
+                <h2>Panel egg</h2>
+                <p>Egg used for products and imports in this category.</p>
+              </div>
+            </header>
+            {eggsError ? (
+              <div className="ops-user__alert is-info">{eggsError} You can paste an egg ID manually.</div>
+            ) : null}
+            <div className="ops-cat__fields">
+              <label className="ops-user__field ops-cat__full">
+                <span>Spirit-Panel egg</span>
                 {eggs.length > 0 ? (
                   <ThemedSelect
                     ariaLabel="Panel egg"
@@ -401,91 +821,206 @@ export function AdminCategoryEdit() {
                     placeholder="Paste Spirit-Panel egg ID"
                   />
                 )}
-                <small>
+                <p className="ops-user__hint">
                   {selectedEgg
-                    ? `${selectedEgg.nest?.name || 'Panel'} / ${selectedEgg.name} · products and panel sync use this egg`
+                    ? `${selectedEgg.nest?.name || 'Panel'} / ${selectedEgg.name} · products sync to this egg`
                     : form.panelEggId
                       ? 'Egg ID saved — sync panel eggs to see its name'
                       : 'Without an egg, imports match this category by name only'}
-                </small>
+                </p>
               </label>
             </div>
           </section>
 
-          <section>
-            <header><span>03</span><div><h2>Visual language</h2><p>Choose the accent and mark used throughout the storefront.</p></div></header>
-            <div className="category-builder-appearance">
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Palette size={14} />
+              </span>
               <div>
-                <label>Accent colour</label>
-                <div className="category-builder-swatches">
+                <h2>Appearance</h2>
+                <p>Accent, fallback icon, and optional custom logo.</p>
+              </div>
+            </header>
+            <div className="ops-cat__appearance">
+              <div>
+                <span className="ops-cat__label">Accent</span>
+                <div className="ops-cat__swatches">
                   {CATEGORY_COLOR_OPTIONS.map((color) => (
-                    <button key={color} type="button" className={form.color === color ? 'is-active' : ''} style={{ ['--swatch' as string]: color }} onClick={() => setForm({ ...form, color })} aria-label={`Use ${color}`}>
-                      {form.color === color && <Check size={12} />}
+                    <button
+                      key={color}
+                      type="button"
+                      className={form.color === color ? 'is-active' : ''}
+                      style={{ ['--swatch' as string]: color }}
+                      onClick={() => setForm({ ...form, color })}
+                      aria-label={`Use ${color}`}
+                    >
+                      {form.color === color ? <Check size={12} /> : null}
                     </button>
                   ))}
-                  <label className="category-builder-color-custom" title="Custom colour"><Palette size={13} /><input type="color" value={form.color} onChange={(event) => setForm({ ...form, color: event.target.value })} /></label>
+                  <label className="ops-cat__color-custom" title="Custom colour">
+                    <Palette size={13} />
+                    <input
+                      type="color"
+                      value={form.color}
+                      onChange={(event) => setForm({ ...form, color: event.target.value })}
+                    />
+                  </label>
                 </div>
               </div>
               <div>
-                <label>Fallback icon</label>
-                <div className="category-builder-icons">
+                <span className="ops-cat__label">Fallback icon</span>
+                <div className="ops-cat__icons">
                   {CATEGORY_ICON_OPTIONS.map((icon) => (
-                    <button key={icon} type="button" title={icon} className={form.icon === icon ? 'is-active' : ''} style={{ ['--category-color' as string]: form.color }} onClick={() => setForm({ ...form, icon })}>
+                    <button
+                      key={icon}
+                      type="button"
+                      title={icon}
+                      className={form.icon === icon ? 'is-active' : ''}
+                      style={{ ['--category-color' as string]: form.color }}
+                      onClick={() => setForm({ ...form, icon })}
+                    >
                       <CategoryIcon name={icon} size={18} />
                     </button>
                   ))}
                 </div>
               </div>
-              <label className="category-builder-logo">
-                <span>Custom logo URL <small>Optional · overrides the icon</small></span>
-                <div><Image size={14} /><input type="url" value={form.logoUrl} placeholder="https://cdn.example.com/game-logo.png" onChange={(event) => { setLogoBroken(false); setForm({ ...form, logoUrl: event.target.value }); }} /></div>
+              <label className="ops-user__field ops-cat__full">
+                <span>
+                  Logo URL <em>Optional · overrides icon</em>
+                </span>
+                <div className="ops-cat__logo-input">
+                  <Image size={14} aria-hidden />
+                  <input
+                    type="url"
+                    value={form.logoUrl}
+                    placeholder="https://cdn.example.com/game-logo.png"
+                    onChange={(event) => {
+                      setLogoBroken(false);
+                      setForm({ ...form, logoUrl: event.target.value });
+                    }}
+                  />
+                </div>
               </label>
             </div>
           </section>
 
-          <section>
-            <header><span>04</span><div><h2>Storefront visibility</h2><p>Control whether clients can discover this collection.</p></div></header>
-            <button type="button" className={`category-builder-publish ${form.active ? 'is-active' : ''}`} onClick={() => setForm({ ...form, active: !form.active })}>
-              <span>{form.active ? <Eye size={17} /> : <EyeOff size={17} />}</span>
-              <div><strong>{form.active ? 'Published on Game Hosting' : 'Hidden from clients'}</strong><p>{form.active ? 'Clients can browse this category and its active products.' : 'The category remains available to admins but is removed from the storefront.'}</p></div>
-              <i><span /></i>
+          <section className="ops-user__panel">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                {form.active ? <Eye size={14} /> : <EyeOff size={14} />}
+              </span>
+              <div>
+                <h2>Visibility</h2>
+                <p>Control whether clients can discover this collection.</p>
+              </div>
+            </header>
+            <button
+              type="button"
+              className={`ops-cat__toggle${form.active ? ' is-on' : ''}`}
+              onClick={() => setForm({ ...form, active: !form.active })}
+            >
+              <span aria-hidden>{form.active ? <Eye size={16} /> : <EyeOff size={16} />}</span>
+              <div>
+                <strong>{form.active ? 'Published on Game Hosting' : 'Hidden from clients'}</strong>
+                <p>
+                  {form.active
+                    ? 'Clients can browse this category and its active products.'
+                    : 'Admins keep access; the storefront hides it.'}
+                </p>
+              </div>
+              <i>
+                <span />
+              </i>
             </button>
           </section>
 
-          {!isNew && (
-            <section className="category-builder-danger">
-              <header><span><Trash2 size={14} /></span><div><h2>Delete category</h2><p>Only empty categories can be permanently removed.</p></div></header>
-              <button type="button" disabled={productCount > 0} onClick={() => setDeleteModalOpen(true)}>Delete category</button>
+          {!isNew ? (
+            <section className="ops-user__panel ops-user__panel--danger">
+              <header>
+                <span className="ops-user__panel-icon is-danger" aria-hidden>
+                  <Trash2 size={14} />
+                </span>
+                <div>
+                  <h2>Delete</h2>
+                  <p>Only empty categories can be permanently removed.</p>
+                </div>
+              </header>
+              <div className="ops-user__danger">
+                <p>
+                  {productCount > 0
+                    ? `Reassign ${productCount} product${productCount === 1 ? '' : 's'} before deleting.`
+                    : 'This cannot be undone.'}
+                </p>
+                <button
+                  type="button"
+                  className="ops-user__btn is-danger"
+                  disabled={productCount > 0}
+                  onClick={() => setDeleteModalOpen(true)}
+                >
+                  <Trash2 size={14} /> Delete category
+                </button>
+              </div>
             </section>
-          )}
+          ) : null}
         </form>
 
-        <aside className="category-builder-preview">
-          <header><div><span>Live storefront preview</span><h2>Client experience</h2></div><Sparkles size={17} /></header>
-          <div className="category-builder-preview__stage" style={{ ['--category-color' as string]: form.color }}>
-            <div className="category-builder-preview__card">
-              <span className="category-builder-preview__glow" />
-              {showLogo ? (
-                <img src={liveLogo} alt="" onError={() => setLogoBroken(true)} />
-              ) : (
-                <CategoryMark icon={form.icon} color={form.color} size={54} />
-              )}
-              <small>{form.active ? 'Available now' : 'Hidden preview'}</small>
-              <h3>{form.name || 'Category name'}</h3>
-              <p>{form.description || 'Your category description will appear here for clients.'}</p>
-              <div><span>{productCount} plan{productCount === 1 ? '' : 's'}</span><strong>Browse collection <ArrowRight size={12} /></strong></div>
+        <aside className="ops-cat__aside">
+          <section className="ops-user__panel ops-cat__preview">
+            <header>
+              <span className="ops-user__panel-icon" aria-hidden>
+                <Image size={14} />
+              </span>
+              <div>
+                <h2>Preview</h2>
+                <p>How the mark reads in the catalog.</p>
+              </div>
+            </header>
+            <div className="ops-cat__preview-stage" style={{ ['--category-color' as string]: form.color }}>
+              <div className="ops-cat__preview-card">
+                {showLogo ? (
+                  <img src={liveLogo} alt="" onError={() => setLogoBroken(true)} />
+                ) : (
+                  <CategoryMark icon={form.icon} color={form.color} size={52} />
+                )}
+                <small>{form.active ? 'Available now' : 'Hidden preview'}</small>
+                <h3>{form.name.trim() || 'Category name'}</h3>
+                <p>{form.description.trim() || 'Description appears here for clients.'}</p>
+                <div className="ops-cat__preview-meta">
+                  <span>
+                    {productCount} plan{productCount === 1 ? '' : 's'}
+                  </span>
+                  <strong>{form.panelEggId ? 'Egg linked' : 'No egg'}</strong>
+                </div>
+              </div>
             </div>
-          </div>
-          <section>
-            <div><span>Builder completion</span><strong>{completion}/5</strong></div>
-            <i><span style={{ width: `${(completion / 5) * 100}%` }} /></i>
-            <ul>
-              <li className={form.name.trim() ? 'is-done' : ''}><Check size={11} /> Category name</li>
-              <li className={form.description.trim() ? 'is-done' : ''}><Check size={11} /> Store description</li>
-              <li className={form.panelEggId.trim() ? 'is-done' : ''}><Check size={11} /> Panel egg</li>
-              <li className={form.color ? 'is-done' : ''}><Check size={11} /> Accent selected</li>
-              <li className={form.icon ? 'is-done' : ''}><Check size={11} /> Visual mark</li>
-            </ul>
+            <div className="ops-cat__ready">
+              <div>
+                <span>Setup</span>
+                <strong>
+                  {readyBits}/5
+                </strong>
+              </div>
+              <i>
+                <span style={{ width: `${(readyBits / 5) * 100}%` }} />
+              </i>
+              <ul>
+                {(
+                  [
+                    ['Name', Boolean(form.name.trim())],
+                    ['Description', Boolean(form.description.trim())],
+                    ['Panel egg', Boolean(form.panelEggId.trim())],
+                    ['Accent', Boolean(form.color)],
+                    ['Mark', Boolean(form.icon || form.logoUrl.trim())],
+                  ] as const
+                ).map(([label, done]) => (
+                  <li key={label} className={done ? 'is-done' : ''}>
+                    {done ? <Check size={11} /> : <i />}
+                    {label}
+                  </li>
+                ))}
+              </ul>
+            </div>
           </section>
         </aside>
       </div>

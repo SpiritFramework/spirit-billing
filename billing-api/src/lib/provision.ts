@@ -275,7 +275,7 @@ export async function markInvoicePaidAndProvision(input: {
 
     recordLogFireAndForget({
       level: 'error',
-      category: 'billing',
+      category: 'provision',
       action: 'invoice.provision_failed',
       message: `Provision failed for invoice ${invoice.number}: ${err instanceof Error ? err.message : 'Unknown error'}`,
       actorUserId: input.paidById,
