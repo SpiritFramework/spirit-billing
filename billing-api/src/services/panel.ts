@@ -13,6 +13,20 @@ export class PanelApiError extends Error {
   }
 }
 
+/** Panel Application API refuses password resets for admin/root (elevated) accounts. */
+export function isProtectedPanelPasswordError(err: unknown): boolean {
+  if (!(err instanceof PanelApiError)) return false;
+  const m = err.message.toLowerCase();
+  return (
+    m.includes('elevated') ||
+    m.includes('cannot disable or reset passwords') ||
+    (m.includes('password') && (m.includes('admin') || m.includes('root') || m.includes('privileged')))
+  );
+}
+
+export const PANEL_PASSWORD_PROTECTED_HINT =
+  'Billing password was updated. Spirit-Panel password was not changed — this Panel account is elevated (admin). Change the Panel password inside Spirit-Panel instead.';
+
 function panelPathLabel(path: string) {
   return path.split('?')[0] || path;
 }

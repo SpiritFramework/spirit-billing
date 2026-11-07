@@ -194,7 +194,7 @@ export function ProfilePage() {
     }
     setSavingSecurity(true);
     try {
-      const data = await api<{ user: User }>('/auth/profile', {
+      const data = await api<{ user: User; warning?: string; panelPasswordSkipped?: boolean }>('/auth/profile', {
         method: 'PATCH',
         body: JSON.stringify({
           password: securityForm.password,
@@ -203,7 +203,12 @@ export function ProfilePage() {
       });
       setUser(data.user);
       setSecurityForm({ currentPassword: '', password: '', confirmPassword: '' });
-      setSecurityMsg('Password updated on billing and Spirit-Panel.');
+      setSecurityMsg(
+        data.warning ||
+          (data.panelPasswordSkipped
+            ? 'Billing password updated. Spirit-Panel password was not changed (elevated Panel account).'
+            : 'Password updated on billing and Spirit-Panel.'),
+      );
     } catch (err) {
       setSecurityErr(err instanceof ApiError ? err.message : 'Could not update password');
     } finally {
@@ -442,7 +447,7 @@ export function ProfilePage() {
               <span className="profile-card__icon"><LockKeyhole size={18} /></span>
               <div>
                 <h2>Change your password</h2>
-                <p>One password secures both billing and Spirit-Panel.</p>
+                <p>Updates billing; Panel is synced when the Application API allows it (not for elevated Panel admins).</p>
               </div>
             </header>
             {securityErr && <div className="ds-alert ds-alert--error">{securityErr}</div>}
@@ -491,7 +496,7 @@ export function ProfilePage() {
               </div>
             )}
             <footer className="profile-card__footer">
-              <span>Updating your password keeps your panel login in sync.</span>
+              <span>Normal client Panel accounts stay in sync; Panel admins must change Panel password in the panel.</span>
               <button className="ds-btn ds-btn--primary" disabled={savingSecurity} type="submit">
                 <KeyRound size={15} /> {savingSecurity ? 'Updating…' : 'Update password'}
               </button>

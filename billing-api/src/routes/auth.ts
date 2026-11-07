@@ -16,7 +16,15 @@ import { prisma } from '../lib/prisma.js';
 import { getPanelConnectionConfig } from '../lib/panel-config.js';
 import { getPublicSecurityConfig, isMaintenanceMode } from '../lib/security-settings.js';
 import { isTurnstileEnabled, verifyTurnstileToken } from '../lib/turnstile.js';
-import { createPanelUser, deletePanelUser, findPanelUserByEmail, PanelApiError, updatePanelUser } from '../services/panel.js';
+import {
+  createPanelUser,
+  deletePanelUser,
+  findPanelUserByEmail,
+  isProtectedPanelPasswordError,
+  PanelApiError,
+  PANEL_PASSWORD_PROTECTED_HINT,
+  updatePanelUser,
+} from '../services/panel.js';
 import { resolvePanelUserLink } from '../lib/panel-link.js';
 import { assertSafeOutboundUrl, isSafeHttpUrl, sanitizeHexColor } from '../lib/url-safety.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';
@@ -531,16 +539,18 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.status(409).send({ error: 'Email or username already in use' });
     }
 
+    let panelPasswordSkipped = false;
     if (current.panelUserId) {
+      const panelPatch = {
+        ...(body.email ? { email: body.email.toLowerCase() } : {}),
+        ...(body.username ? { username: body.username } : {}),
+        ...(body.firstName !== undefined ? { firstName: body.firstName } : {}),
+        ...(body.lastName !== undefined ? { lastName: body.lastName } : {}),
+        ...(nextAvatar !== undefined ? { avatarUrl: nextAvatar } : {}),
+        ...(body.password ? { password: body.password } : {}),
+      };
       try {
-        await updatePanelUser(current.panelUserId, {
-          ...(body.email ? { email: body.email.toLowerCase() } : {}),
-          ...(body.username ? { username: body.username } : {}),
-          ...(body.firstName !== undefined ? { firstName: body.firstName } : {}),
-          ...(body.lastName !== undefined ? { lastName: body.lastName } : {}),
-          ...(nextAvatar !== undefined ? { avatarUrl: nextAvatar } : {}),
-          ...(body.password ? { password: body.password } : {}),
-        });
+        await updatePanelUser(current.panelUserId, panelPatch);
       } catch (err) {
         if (err instanceof PanelApiError && err.status === 404) {
           await prisma.user.update({
@@ -548,6 +558,28 @@ export async function authRoutes(app: FastifyInstance) {
             data: { panelUserId: null },
           });
           user = { ...user, panelUserId: null };
+        } else if (body.password && isProtectedPanelPasswordError(err)) {
+          // Keep billing password; retry profile fields without touching Panel password.
+          panelPasswordSkipped = true;
+          request.log.warn({ err: (err as Error).message }, 'panel password sync skipped (elevated account)');
+          const { password: _pw, ...withoutPassword } = panelPatch;
+          if (Object.keys(withoutPassword).length > 0) {
+            try {
+              await updatePanelUser(current.panelUserId, withoutPassword);
+            } catch (retryErr) {
+              if (retryErr instanceof PanelApiError && retryErr.status === 404) {
+                await prisma.user.update({
+                  where: { id: current.id },
+                  data: { panelUserId: null },
+                });
+                user = { ...user, panelUserId: null };
+              } else if (retryErr instanceof PanelApiError) {
+                request.log.warn({ err: retryErr.message }, 'panel profile sync failed after password skip');
+              } else {
+                throw retryErr;
+              }
+            }
+          }
         } else {
           await prisma.user.update({
             where: { id: current.id },
@@ -563,7 +595,9 @@ export async function authRoutes(app: FastifyInstance) {
           });
           if (err instanceof PanelApiError) {
             request.log.warn({ err: err.message }, 'panel profile sync failed');
-            return reply.status(502).send({ error: 'Could not sync changes to the game panel' });
+            return reply.status(502).send({
+              error: `Could not sync changes to the game panel: ${err.message}`,
+            });
           }
           throw err;
         }
@@ -582,6 +616,13 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     const { tokenVersion: _tv, ...publicUser } = user;
+    if (panelPasswordSkipped) {
+      return {
+        user: publicUser,
+        warning: PANEL_PASSWORD_PROTECTED_HINT,
+        panelPasswordSkipped: true,
+      };
+    }
     return { user: publicUser };
   });
 }

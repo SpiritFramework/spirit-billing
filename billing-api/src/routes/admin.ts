@@ -46,6 +46,8 @@ import {
   suspendPanelServer,
   unsuspendPanelServer,
   updatePanelServer,
+  isProtectedPanelPasswordError,
+  PANEL_PASSWORD_PROTECTED_HINT,
   updatePanelUser,
 } from '../services/panel.js';
 import { isSafeHttpUrl } from '../lib/url-safety.js';
@@ -1485,8 +1487,19 @@ export async function adminRoutes(app: FastifyInstance) {
 
     try {
       let panelUser = await findPanelUserByEmail(existing.email);
+      let panelPasswordSkipped = false;
       if (panelUser) {
-        await updatePanelUser(panelUser.id, { password: body.password });
+        try {
+          await updatePanelUser(panelUser.id, { password: body.password });
+        } catch (err) {
+          if (isProtectedPanelPasswordError(err)) {
+            // Elevated Panel accounts cannot have passwords reset via Application API —
+            // still link the accounts; billing password is set below.
+            panelPasswordSkipped = true;
+          } else {
+            throw err;
+          }
+        }
       } else {
         panelUser = await createPanelUser({
           email: existing.email,
@@ -1510,6 +1523,8 @@ export async function adminRoutes(app: FastifyInstance) {
         panelUserId: panelUser.id,
         panelLinked: true,
         alreadyLinked: false,
+        panelPasswordSkipped,
+        ...(panelPasswordSkipped ? { warning: PANEL_PASSWORD_PROTECTED_HINT } : {}),
       };
     } catch (err) {
       if (err instanceof PanelApiError) {
@@ -1519,7 +1534,7 @@ export async function adminRoutes(app: FastifyInstance) {
             error: 'That email or username is already used on Spirit-Panel. Resolve the conflict, then try again.',
           });
         }
-        if (err.status === 422 || lower.includes('password')) {
+        if (err.status === 422 || (lower.includes('password') && !isProtectedPanelPasswordError(err))) {
           return reply.status(422).send({
             error: 'Password does not meet Spirit-Panel requirements (min 16 characters, not a common password).',
           });
@@ -1631,6 +1646,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const passwordHash = await hashPassword(password);
     let panelUserId = existing.panelUserId;
+    let panelPasswordSkipped = false;
     if (panelUserId) {
       try {
         await updatePanelUser(panelUserId, { password });
@@ -1639,12 +1655,25 @@ export async function adminRoutes(app: FastifyInstance) {
           const byEmail = await findPanelUserByEmail(existing.email).catch(() => null);
           if (byEmail) {
             panelUserId = byEmail.id;
-            await updatePanelUser(byEmail.id, { password });
+            try {
+              await updatePanelUser(byEmail.id, { password });
+            } catch (inner) {
+              if (isProtectedPanelPasswordError(inner)) {
+                panelPasswordSkipped = true;
+              } else {
+                throw inner;
+              }
+            }
             await prisma.user.update({
               where: { id },
               data: { panelUserId: byEmail.id, passwordHash, tokenVersion: { increment: 1 } },
             });
-            return { updated: true, panelLinkRepaired: true };
+            return {
+              updated: true,
+              panelLinkRepaired: true,
+              panelPasswordSkipped,
+              ...(panelPasswordSkipped ? { warning: PANEL_PASSWORD_PROTECTED_HINT } : {}),
+            };
           }
           await prisma.user.update({
             where: { id },
@@ -1652,12 +1681,15 @@ export async function adminRoutes(app: FastifyInstance) {
           });
           return { updated: true, panelLinkCleared: true };
         }
-        if (err instanceof PanelApiError) {
+        if (isProtectedPanelPasswordError(err)) {
+          panelPasswordSkipped = true;
+        } else if (err instanceof PanelApiError) {
           return reply.status(err.status >= 400 && err.status < 500 ? err.status : 502).send({
             error: `Panel password update failed: ${err.message}`,
           });
+        } else {
+          throw err;
         }
-        throw err;
       }
     }
 
@@ -1665,7 +1697,11 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { passwordHash, tokenVersion: { increment: 1 } },
     });
-    return { updated: true };
+    return {
+      updated: true,
+      panelPasswordSkipped,
+      ...(panelPasswordSkipped ? { warning: PANEL_PASSWORD_PROTECTED_HINT } : {}),
+    };
   });
 
   app.delete('/users/:id', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {

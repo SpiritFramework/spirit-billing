@@ -344,15 +344,24 @@ export function AdminUserDetail() {
     setError('');
     setMessage('');
     try {
-      const result = await api<{ updated: true; panelLinkCleared?: boolean }>(`/admin/users/${id}/password`, {
+      const result = await api<{
+        updated: true;
+        panelLinkCleared?: boolean;
+        panelPasswordSkipped?: boolean;
+        warning?: string;
+      }>(`/admin/users/${id}/password`, {
         method: 'POST',
         body: JSON.stringify({ password }),
       });
       setPassword('');
       setPasswordConfirm('');
       await load();
-      if (result.panelLinkCleared) {
+      if (result.warning) {
+        setMessage(result.warning);
+      } else if (result.panelLinkCleared) {
         setMessage('Billing password updated. The Spirit-Panel link was cleared because that panel account no longer exists.');
+      } else if (result.panelPasswordSkipped) {
+        setMessage('Billing password updated. Spirit-Panel password was not changed (elevated Panel account).');
       } else {
         setMessage(user.panelLinked ? 'Password updated in billing and Spirit-Panel.' : 'Billing password updated.');
       }
@@ -382,14 +391,23 @@ export function AdminUserDetail() {
     setError('');
     setMessage('');
     try {
-      await api(`/admin/users/${id}/relink-panel`, {
+      const result = await api<{
+        panelLinked?: boolean;
+        panelPasswordSkipped?: boolean;
+        warning?: string;
+      }>(`/admin/users/${id}/relink-panel`, {
         method: 'POST',
         body: JSON.stringify({ password: relinkPassword }),
       });
       setRelinkPassword('');
       setRelinkConfirm('');
       await load();
-      setMessage('Spirit-Panel account linked. Password was synced to billing and the panel.');
+      setMessage(
+        result.warning ||
+          (result.panelPasswordSkipped
+            ? 'Spirit-Panel linked. Billing password updated; Panel password unchanged (elevated account).'
+            : 'Spirit-Panel account linked. Password was synced to billing and the panel.'),
+      );
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not relink Spirit-Panel');
     } finally {
