@@ -15,9 +15,23 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Added
 
+- Branding theme/layout settings: `theme_mode`, `theme_preset`, `ui_radius`, `ui_density`, `sidebar_style` (admin settings + public `/auth/branding`)
+- Layout Atmosphere presets: `auth_atmosphere` (login), `client_atmosphere`, and `admin_atmosphere` (separate shells)
+- Layout Navigation: `client_nav_layout` / `admin_nav_layout` — choose sidebar or top navbar per shell
+- Navigation chrome themes: expanded `sidebar_style` (solid / glass / frosted / transparent / rail) and new `navbar_style` (solid / glass / frosted / float / line)
+- Login atmospheres redesigned around the auth stage look: Stage, Blueprint, Beacon, Ember, Halo, Night, Skyline, Plain
+- Brand Theme look uses Spirit-Panel surface presets; Colors uses Panel accent pairs (primary → secondary)
+- Surface presets apply panel chrome tokens; accents stay independently editable
+
 ### Changed
 
 - Login / register rebuilt as a full-bleed auth stage: hero brand, server-rack horizon, and a single interaction panel (replaces the old split-card shell)
+- Admin Settings rebuilt: section rail + flat form workspace (replaces metric cards / boxed tabs / nested card chrome)
+- Settings → Brand studio rebuilt around Theme look / Colors / Identity / Layout & polish / Assets, with Atmosphere / Navigation / Server cards canvas previews
+- Layout tab splits into Navigation (radius / density / sidebar) and Atmosphere (login + panel animated presets)
+- Theme look inspector: visual mode cards (light / dark / system) and preset gallery with live swatches
+- Settings → Brand redesigned as a brand deck: masthead, section rail, editor panel, and compact sticky live preview
+- Admin Settings uses the full main column; section tabs tightened into a single control bar
 - Install / update is **menu-only** by default:  
   `curl … -o /tmp/spirit-billing.sh` then `sudo bash /tmp/spirit-billing.sh`  
   (installer **v1.3.0**). Docs no longer push flag-heavy one-liners as the primary path.

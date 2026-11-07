@@ -52,6 +52,19 @@ import {
 } from '../services/panel.js';
 import { isSafeHttpUrl } from '../lib/url-safety.js';
 import { normalizeProductFeatures, serializeProductFeatures, repairInvalidProductFeatures } from '../lib/product-features.js';
+import { saveBrandingAsset, type BrandingAssetKind } from '../lib/uploads.js';
+import {
+  AUTH_ATMOSPHERE_ENUM,
+  NAV_LAYOUT_ENUM,
+  NAVBAR_STYLE_ENUM,
+  SHELL_ATMOSPHERE_ENUM,
+  SIDEBAR_STYLE_ENUM,
+  normalizeAuthAtmosphereSetting,
+  normalizeNavLayoutSetting,
+  normalizeNavbarStyleSetting,
+  normalizeSidebarStyleSetting,
+  resolveShellAtmosphereSetting,
+} from '../lib/atmosphere.js';
 
 const adminMutationRateLimit = {
   config: {
@@ -1766,6 +1779,17 @@ export async function adminRoutes(app: FastifyInstance) {
       privacyUrl: await getSetting('privacy_url', ''),
       invoiceFooter: await getSetting('invoice_footer', ''),
       announcementBanner: await getSetting('announcement_banner', ''),
+      themeMode: await getSetting('theme_mode', 'dark'),
+      themePreset: await getSetting('theme_preset', 'custom'),
+      uiRadius: await getSetting('ui_radius', 'soft'),
+      uiDensity: await getSetting('ui_density', 'comfortable'),
+      sidebarStyle: normalizeSidebarStyleSetting(await getSetting('sidebar_style', 'solid')),
+      navbarStyle: normalizeNavbarStyleSetting(await getSetting('navbar_style', 'glass')),
+      authAtmosphere: normalizeAuthAtmosphereSetting(await getSetting('auth_atmosphere', 'stage')),
+      clientAtmosphere: await resolveShellAtmosphereSetting(getSetting, 'client_atmosphere'),
+      adminAtmosphere: await resolveShellAtmosphereSetting(getSetting, 'admin_atmosphere'),
+      clientNavLayout: normalizeNavLayoutSetting(await getSetting('client_nav_layout', 'sidebar')),
+      adminNavLayout: normalizeNavLayoutSetting(await getSetting('admin_nav_layout', 'sidebar')),
       invoicePrefix: await getInvoicePrefix(),
       defaultCurrency: await getDefaultCurrency(),
       invoiceDueDays: await getInvoiceDueDays(),
@@ -1799,6 +1823,25 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   }
 
+  /** External http(s) URL or local branding upload path. */
+  function assertOptionalBrandAssetUrl(value: string, label: string) {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+    if (/^\/uploads\/branding\/[\w.\-]+$/.test(trimmed)) return trimmed;
+    return assertOptionalHttpUrl(trimmed, label);
+  }
+
+  function guessImageMime(filename: string, mimetype: string) {
+    const mime = (mimetype || '').toLowerCase().trim();
+    if (mime && mime !== 'application/octet-stream') return mime;
+    const ext = filename.split('.').pop()?.toLowerCase();
+    if (ext === 'png') return 'image/png';
+    if (ext === 'webp') return 'image/webp';
+    if (ext === 'gif') return 'image/gif';
+    if (ext === 'jpg' || ext === 'jpeg') return 'image/jpeg';
+    return mime || 'application/octet-stream';
+  }
+
   function assertOptionalEmail(value: string) {
     const trimmed = value.trim();
     if (!trimmed) return '';
@@ -1819,6 +1862,32 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.get('/settings', async () => settingsPayload());
 
+  app.post('/settings/branding-upload', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
+    try {
+      const query = z.object({ kind: z.enum(['logo', 'favicon']).default('logo') }).parse(request.query ?? {});
+      const file = await (request as { file: () => Promise<any> }).file();
+      if (!file) {
+        return reply.status(422).send({ error: 'No image uploaded' });
+      }
+      const fields = file.fields as Record<string, { value?: string } | undefined> | undefined;
+      const fieldKind = String(fields?.kind?.value || '').toLowerCase();
+      const kind: BrandingAssetKind =
+        fieldKind === 'favicon' || query.kind === 'favicon' ? 'favicon' : 'logo';
+      const buffer = await file.toBuffer();
+      const filename = file.filename || `${kind}.png`;
+      const uploaded = await saveBrandingAsset({
+        kind,
+        buffer,
+        filename,
+        mimetype: guessImageMime(filename, file.mimetype || ''),
+      });
+      return uploaded;
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode ?? 422;
+      return reply.status(status).send({ error: err instanceof Error ? err.message : 'Upload failed' });
+    }
+  });
+
   app.patch('/settings', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
     const body = z
       .object({
@@ -1835,6 +1904,38 @@ export async function adminRoutes(app: FastifyInstance) {
         privacyUrl: z.string().max(2048).optional(),
         invoiceFooter: z.string().max(500).optional(),
         announcementBanner: z.string().max(280).optional(),
+        themeMode: z.enum(['light', 'dark', 'system']).optional(),
+        themePreset: z
+          .enum([
+            'midnight',
+            'ocean',
+            'forest',
+            'sunset',
+            'rose',
+            'mono',
+            'lavender',
+            'crimson',
+            'arctic',
+            'neon',
+            'copper',
+            'slate',
+            'grape',
+            'mint',
+            'sand',
+            'void',
+            'cherry',
+            'custom',
+          ])
+          .optional(),
+        uiRadius: z.enum(['sharp', 'soft', 'rounded']).optional(),
+        uiDensity: z.enum(['comfortable', 'compact']).optional(),
+        sidebarStyle: z.enum(SIDEBAR_STYLE_ENUM).optional(),
+        navbarStyle: z.enum(NAVBAR_STYLE_ENUM).optional(),
+        authAtmosphere: z.enum(AUTH_ATMOSPHERE_ENUM).optional(),
+        clientAtmosphere: z.enum(SHELL_ATMOSPHERE_ENUM).optional(),
+        adminAtmosphere: z.enum(SHELL_ATMOSPHERE_ENUM).optional(),
+        clientNavLayout: z.enum(NAV_LAYOUT_ENUM).optional(),
+        adminNavLayout: z.enum(NAV_LAYOUT_ENUM).optional(),
         invoicePrefix: z.string().min(1).max(12).optional(),
         defaultCurrency: z.string().length(3).optional(),
         invoiceDueDays: z.number().int().min(1).max(90).optional(),
@@ -1861,10 +1962,10 @@ export async function adminRoutes(app: FastifyInstance) {
 
     try {
       if (body.logoUrl !== undefined) {
-        await setSetting('logo_url', assertOptionalHttpUrl(body.logoUrl, 'Logo URL'));
+        await setSetting('logo_url', assertOptionalBrandAssetUrl(body.logoUrl, 'Logo URL'));
       }
       if (body.faviconUrl !== undefined) {
-        await setSetting('favicon_url', assertOptionalHttpUrl(body.faviconUrl, 'Favicon URL'));
+        await setSetting('favicon_url', assertOptionalBrandAssetUrl(body.faviconUrl, 'Favicon URL'));
       }
       if (body.accentColor !== undefined) {
         await setSetting('accent_color', assertHexColor(body.accentColor, 'Accent color'));
@@ -1890,6 +1991,17 @@ export async function adminRoutes(app: FastifyInstance) {
       if (body.announcementBanner !== undefined) {
         await setSetting('announcement_banner', body.announcementBanner.trim().slice(0, 280));
       }
+      if (body.themeMode !== undefined) await setSetting('theme_mode', body.themeMode);
+      if (body.themePreset !== undefined) await setSetting('theme_preset', body.themePreset);
+      if (body.uiRadius !== undefined) await setSetting('ui_radius', body.uiRadius);
+      if (body.uiDensity !== undefined) await setSetting('ui_density', body.uiDensity);
+      if (body.sidebarStyle !== undefined) await setSetting('sidebar_style', body.sidebarStyle);
+      if (body.navbarStyle !== undefined) await setSetting('navbar_style', body.navbarStyle);
+      if (body.authAtmosphere !== undefined) await setSetting('auth_atmosphere', body.authAtmosphere);
+      if (body.clientAtmosphere !== undefined) await setSetting('client_atmosphere', body.clientAtmosphere);
+      if (body.adminAtmosphere !== undefined) await setSetting('admin_atmosphere', body.adminAtmosphere);
+      if (body.clientNavLayout !== undefined) await setSetting('client_nav_layout', body.clientNavLayout);
+      if (body.adminNavLayout !== undefined) await setSetting('admin_nav_layout', body.adminNavLayout);
       if (body.invoicePrefix !== undefined) {
         const prefix = body.invoicePrefix.trim().toUpperCase();
         if (!/^[A-Z0-9]{1,12}$/.test(prefix)) {

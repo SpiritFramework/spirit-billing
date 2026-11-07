@@ -48,13 +48,15 @@ await app.register(multipart, {
   },
 });
 
-/** Serve ticket images from disk (works even when the uploads tree is created after boot). */
-app.get('/uploads/tickets/:name', async (request, reply) => {
-  const { name } = request.params as { name: string };
+async function serveUploadFile(
+  folder: 'tickets' | 'branding',
+  name: string,
+  reply: import('fastify').FastifyReply,
+) {
   if (!/^[\w.\-]+$/.test(name)) {
     return reply.status(404).send({ error: 'Not found' });
   }
-  const absolute = join(getUploadsRoot(), 'tickets', name);
+  const absolute = join(getUploadsRoot(), folder, name);
   if (!existsSync(absolute)) {
     return reply.status(404).send({ error: 'Not found' });
   }
@@ -67,6 +69,17 @@ app.get('/uploads/tickets/:name', async (request, reply) => {
   reply.header('Cache-Control', 'public, max-age=86400');
   reply.header('Cross-Origin-Resource-Policy', 'cross-origin');
   return reply.type(type).send(createReadStream(absolute));
+}
+
+/** Serve ticket / branding images from disk (works even when the uploads tree is created after boot). */
+app.get('/uploads/tickets/:name', async (request, reply) => {
+  const { name } = request.params as { name: string };
+  return serveUploadFile('tickets', name, reply);
+});
+
+app.get('/uploads/branding/:name', async (request, reply) => {
+  const { name } = request.params as { name: string };
+  return serveUploadFile('branding', name, reply);
 });
 
 app.addContentTypeParser('application/json', { parseAs: 'string' }, (_request, body, done) => {

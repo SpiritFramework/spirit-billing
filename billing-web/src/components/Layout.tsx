@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Bell,
   CheckCheck,
+  ChevronRight,
   CreditCard,
   ExternalLink,
   FolderTree,
@@ -11,6 +12,7 @@ import {
   LogOut,
   Menu,
   Package,
+  PanelsTopLeft,
   Receipt,
   Settings,
   Server,
@@ -31,9 +33,9 @@ import {
 import { useAuth, useLogout } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
 import { useCart } from '../context/CartContext';
-import { money } from '../lib/api';
-import { api } from '../lib/api';
+import { api, isBrandAssetUrl, money } from '../lib/api';
 import { isFullAdmin, isStaffOrAdmin } from '../lib/roles';
+import type { NavLayout } from '../lib/layout-atmosphere';
 
 type Notification = {
   id: string;
@@ -50,7 +52,7 @@ function Brand() {
   const logo = branding.logoUrl?.trim();
   return (
     <div className="ds-brand">
-      {logo && /^https?:\/\//i.test(logo) ? (
+      {isBrandAssetUrl(logo) ? (
         <img src={logo} alt="" className="ds-brand-logo" />
       ) : (
         <div className="ds-brand-mark" />
@@ -74,9 +76,9 @@ function NavSection({ label, children }: { label: string; children: ReactNode })
 
 function UserChip({ name, email, avatarUrl }: { name: string; email: string; avatarUrl?: string | null }) {
   return (
-    <div className="ds-user-chip">
+    <Link to="/profile" className="ds-user-chip" title="Open profile" aria-label={`Open profile for ${name}`}>
       {avatarUrl && /^https?:\/\//i.test(avatarUrl) ? (
-        <img src={avatarUrl} alt="" className="ds-user-chip__avatar" style={{ objectFit: 'cover' }} />
+        <img src={avatarUrl} alt="" className="ds-user-chip__avatar" />
       ) : (
         <div className="ds-user-chip__avatar">{name.slice(0, 1).toUpperCase()}</div>
       )}
@@ -84,7 +86,10 @@ function UserChip({ name, email, avatarUrl }: { name: string; email: string; ava
         <div className="ds-user-chip__name">{name}</div>
         <div className="ds-user-chip__email">{email}</div>
       </div>
-    </div>
+      <span className="ds-user-chip__go" aria-hidden>
+        <ChevronRight size={14} />
+      </span>
+    </Link>
   );
 }
 
@@ -115,9 +120,19 @@ function useMobileNav() {
 function TopNavbar({
   menuOpen,
   onMenuToggle,
+  navLayout = 'sidebar',
+  brand,
+  nav,
+  account,
+  showCart = true,
 }: {
   menuOpen: boolean;
   onMenuToggle: () => void;
+  navLayout?: NavLayout;
+  brand?: ReactNode;
+  nav?: ReactNode;
+  account?: ReactNode;
+  showCart?: boolean;
 }) {
   const { user } = useAuth();
   const { count } = useCart();
@@ -127,6 +142,7 @@ function TopNavbar({
     unreadCount: 0,
   });
   const containerRef = useRef<HTMLDivElement>(null);
+  const isNavbar = navLayout === 'navbar';
 
   async function loadNotifications() {
     try {
@@ -180,7 +196,7 @@ function TopNavbar({
   }
 
   return (
-    <header className="ds-topbar">
+    <header className={`ds-topbar${isNavbar ? ' is-navbar' : ''}`}>
       <div className="ds-topbar__lead">
         <button
           type="button"
@@ -192,16 +208,23 @@ function TopNavbar({
         >
           {menuOpen ? <X size={20} /> : <Menu size={20} />}
         </button>
-        <div className="ds-topbar__welcome">
-          <span className="ds-topbar__eyebrow">Spirit Billing</span>
-          <strong>{user?.firstName ? `Welcome back, ${user.firstName}` : 'Your hosting account'}</strong>
-        </div>
+        {isNavbar && brand ? (
+          <div className="ds-topbar__brand">{brand}</div>
+        ) : (
+          <div className="ds-topbar__welcome">
+            <span className="ds-topbar__eyebrow">Spirit Billing</span>
+            <strong>{user?.firstName ? `Welcome back, ${user.firstName}` : 'Your hosting account'}</strong>
+          </div>
+        )}
       </div>
+      {isNavbar && nav ? <div className="ds-navbar">{nav}</div> : null}
       <div className="ds-topbar__actions">
-        <Link className="ds-topbar__icon" to="/cart" aria-label={`Cart with ${count} items`}>
-          <ShoppingCart size={19} />
-          {count > 0 && <span className="ds-topbar__badge">{count > 99 ? '99+' : count}</span>}
-        </Link>
+        {showCart ? (
+          <Link className="ds-topbar__icon" to="/cart" aria-label={`Cart with ${count} items`}>
+            <ShoppingCart size={15} />
+            {count > 0 && <span className="ds-topbar__badge">{count > 99 ? '99+' : count}</span>}
+          </Link>
+        ) : null}
         <div className="ds-notifications" ref={containerRef}>
           <button
             className="ds-topbar__icon"
@@ -210,7 +233,7 @@ function TopNavbar({
             aria-expanded={open}
             onClick={() => setOpen((value) => !value)}
           >
-            <Bell size={19} />
+            <Bell size={15} />
             {data.unreadCount > 0 && (
               <span className="ds-topbar__badge">
                 {data.unreadCount > 99 ? '99+' : data.unreadCount}
@@ -292,6 +315,7 @@ function TopNavbar({
             </div>
           )}
         </div>
+        {isNavbar && account ? <div className="ds-topbar__account">{account}</div> : null}
       </div>
     </header>
   );
@@ -319,8 +343,8 @@ export function ClientLayout() {
       <div className="public-store-shell">
         <header className="public-store-nav">
           <Link to="/" className="public-store-brand">
-            {branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) ? (
-              <img src={branding.logoUrl} alt="" />
+            {isBrandAssetUrl(branding.logoUrl) ? (
+              <img src={branding.logoUrl!} alt="" />
             ) : (
               <span className="public-store-brand__mark"><Gamepad2 size={16} /></span>
             )}
@@ -359,9 +383,73 @@ export function ClientLayout() {
       ? `mailto:${branding.supportEmail}`
       : undefined;
   const banner = branding.announcementBanner?.trim();
+  const shellBg = branding.clientAtmosphere || 'gradient';
+  const navLayout = branding.clientNavLayout === 'navbar' ? 'navbar' : 'sidebar';
+  const isNavbar = navLayout === 'navbar';
+
+  const clientNavLinks = (
+    <>
+      <NavLink to="/dashboard" end><LayoutDashboard size={15} /> Dashboard</NavLink>
+      <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
+      <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
+      <NavLink to="/services"><Server size={15} /> Services</NavLink>
+      <NavLink to="/invoices"><Receipt size={15} /> Invoices</NavLink>
+      {(branding.ticketsEnabled !== false) && (
+        <NavLink to="/tickets"><MessageSquare size={15} /> Support</NavLink>
+      )}
+      {isStaffOrAdmin(user.role) && (
+        <NavLink to="/admin"><Settings size={15} /> Admin</NavLink>
+      )}
+    </>
+  );
+
+  const signOutButton = (
+    <button
+      className="ds-signout"
+      type="button"
+      aria-label="Sign out"
+      title="Sign out"
+      onClick={() => void signOut()}
+    >
+      <LogOut size={15} />
+    </button>
+  );
+
+  const accountActions = (
+    <>
+      {panelHref && (
+        <a
+          className="ds-panel-link"
+          href={panelHref}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Open Spirit-Panel"
+        >
+          <span className="ds-panel-link__icon" aria-hidden>
+            <PanelsTopLeft size={14} />
+          </span>
+          <span className="ds-panel-link__label">Panel</span>
+          <ExternalLink size={12} className="ds-panel-link__ext" aria-hidden />
+        </a>
+      )}
+      {supportHref && (
+        <a
+          className="ds-btn ds-btn--ghost ds-btn--sm"
+          href={supportHref}
+          {...(supportHref.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+        >
+          Support
+        </a>
+      )}
+    </>
+  );
 
   return (
-    <div className={`ds-shell${navOpen ? ' is-nav-open' : ''}`}>
+    <div
+      className={`ds-shell panel-bg-root panel-bg-${shellBg}${isNavbar ? ' is-navbar' : ''}${
+        navOpen ? ' is-nav-open' : ''
+      }`}
+    >
       <button
         type="button"
         className="ds-nav-scrim"
@@ -372,22 +460,28 @@ export function ClientLayout() {
       <aside id="ds-sidebar" className={`ds-sidebar${navOpen ? ' is-open' : ''}`}>
         <Brand />
         <div className="ds-sidebar-scroll">
-          <NavSection label="Account">
-            <NavLink to="/dashboard" end><LayoutDashboard size={15} /> Dashboard</NavLink>
-            <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
-          </NavSection>
-          <NavSection label="Hosting">
-            <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
-            <NavLink to="/services"><Server size={15} /> Services</NavLink>
-            <NavLink to="/invoices"><Receipt size={15} /> Invoices</NavLink>
-            {(branding.ticketsEnabled !== false) && (
-              <NavLink to="/tickets"><MessageSquare size={15} /> Support</NavLink>
-            )}
-          </NavSection>
-          {isStaffOrAdmin(user.role) && (
-            <NavSection label="Admin">
-              <NavLink to="/admin"><Settings size={15} /> Admin panel</NavLink>
-            </NavSection>
+          {isNavbar ? (
+            <nav className="ds-nav">{clientNavLinks}</nav>
+          ) : (
+            <>
+              <NavSection label="Account">
+                <NavLink to="/dashboard" end><LayoutDashboard size={15} /> Dashboard</NavLink>
+                <NavLink to="/profile"><UserIcon size={15} /> Profile</NavLink>
+              </NavSection>
+              <NavSection label="Hosting">
+                <NavLink to="/game-hosting"><Gamepad2 size={15} /> Game Hosting</NavLink>
+                <NavLink to="/services"><Server size={15} /> Services</NavLink>
+                <NavLink to="/invoices"><Receipt size={15} /> Invoices</NavLink>
+                {(branding.ticketsEnabled !== false) && (
+                  <NavLink to="/tickets"><MessageSquare size={15} /> Support</NavLink>
+                )}
+              </NavSection>
+              {isStaffOrAdmin(user.role) && (
+                <NavSection label="Admin">
+                  <NavLink to="/admin"><Settings size={15} /> Admin panel</NavLink>
+                </NavSection>
+              )}
+            </>
           )}
         </div>
         <div className="ds-sidebar-foot">
@@ -397,30 +491,36 @@ export function ClientLayout() {
             </span>
             <strong>{money(user.creditBalanceCents ?? 0, branding.currency || 'GBP')}</strong>
           </div>
-          <UserChip name={display} email={user.email} avatarUrl={user.avatarUrl} />
-          <div className="ds-sidebar-actions">
-            {panelHref && (
-              <a className="ds-btn ds-btn--ghost ds-btn--sm" href={panelHref} target="_blank" rel="noopener noreferrer">
-                <ExternalLink size={13} /> Panel
-              </a>
-            )}
-            {supportHref && (
-              <a
-                className="ds-btn ds-btn--ghost ds-btn--sm"
-                href={supportHref}
-                {...(supportHref.startsWith('http') ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-              >
-                Support
-              </a>
-            )}
-            <button className="ds-btn ds-btn--ghost ds-btn--sm" type="button" onClick={() => void signOut()}>
-              <LogOut size={13} /> Sign out
-            </button>
+          <div className="ds-sidebar-user">
+            <UserChip name={display} email={user.email} avatarUrl={user.avatarUrl} />
+            {signOutButton}
           </div>
+          {(panelHref || supportHref) && (
+            <div className="ds-sidebar-actions">{accountActions}</div>
+          )}
         </div>
       </aside>
       <main className="ds-main">
-        <TopNavbar menuOpen={navOpen} onMenuToggle={toggleNav} />
+        <TopNavbar
+          menuOpen={navOpen}
+          onMenuToggle={toggleNav}
+          navLayout={navLayout}
+          brand={<Brand />}
+          nav={<nav className="ds-nav">{clientNavLinks}</nav>}
+          account={
+            <>
+              <span className="ds-topbar__credits">
+                <Wallet size={13} />
+                {money(user.creditBalanceCents ?? 0, branding.currency || 'GBP')}
+              </span>
+              <UserChip name={display} email={user.email} avatarUrl={user.avatarUrl} />
+              <div className="ds-topbar__account-actions">
+                {accountActions}
+                {signOutButton}
+              </div>
+            </>
+          }
+        />
         {banner && (
           <div className="ds-announcement" role="status">
             <Bell size={14} />
@@ -437,9 +537,12 @@ export function ClientLayout() {
 
 export function AdminLayout() {
   const { user, loading } = useAuth();
+  const branding = useBranding();
+  const location = useLocation();
   const signOut = useLogout();
   const [openTickets, setOpenTickets] = useState(0);
   const { navOpen, setNavOpen, toggleNav } = useMobileNav();
+  const fluidPage = location.pathname.startsWith('/admin/settings');
 
   useEffect(() => {
     if (loading || !isStaffOrAdmin(user?.role)) return;
@@ -464,9 +567,39 @@ export function AdminLayout() {
   if (!user) return <Navigate to="/login" replace />;
   if (!isStaffOrAdmin(user.role)) return <Navigate to="/dashboard" replace />;
   const fullAdmin = isFullAdmin(user.role);
+  const shellBg = branding.adminAtmosphere || 'gradient';
+  const navLayout = branding.adminNavLayout === 'navbar' ? 'navbar' : 'sidebar';
+  const isNavbar = navLayout === 'navbar';
+  const display = user.firstName || user.username;
+
+  const adminNavLinks = (
+    <>
+      <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
+      <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
+      {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
+      {fullAdmin && <NavLink to="/admin/categories"><FolderTree size={15} /> Categories</NavLink>}
+      {fullAdmin && <NavLink to="/admin/products"><Package size={15} /> Products</NavLink>}
+      <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
+      <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
+      <NavLink to="/admin/tickets">
+        <MessageSquare size={15} /> Tickets
+        {openTickets > 0 && (
+          <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
+        )}
+      </NavLink>
+      {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Categories</NavLink>}
+      {fullAdmin && <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>}
+      <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+      <NavLink to="/game-hosting"><ShoppingBag size={15} /> Client</NavLink>
+    </>
+  );
 
   return (
-    <div className={`ds-shell${navOpen ? ' is-nav-open' : ''}`}>
+    <div
+      className={`ds-shell panel-bg-root panel-bg-${shellBg}${isNavbar ? ' is-navbar' : ''}${
+        navOpen ? ' is-nav-open' : ''
+      }`}
+    >
       <button
         type="button"
         className="ds-nav-scrim"
@@ -477,46 +610,79 @@ export function AdminLayout() {
       <aside id="ds-sidebar" className={`ds-sidebar${navOpen ? ' is-open' : ''}`}>
         <Brand />
         <div className="ds-sidebar-scroll">
-          <NavSection label="Overview">
-            <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
-            <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
-            {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
-          </NavSection>
-          {fullAdmin && (
-            <NavSection label="Catalog">
-              <NavLink to="/admin/categories"><FolderTree size={15} /> Categories</NavLink>
-              <NavLink to="/admin/products"><Package size={15} /> Products</NavLink>
-            </NavSection>
-          )}
-          <NavSection label="Billing">
-            <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
-            <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
-            <NavLink to="/admin/tickets">
-              <MessageSquare size={15} /> Tickets
-              {openTickets > 0 && (
-                <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
+          {isNavbar ? (
+            <nav className="ds-nav">{adminNavLinks}</nav>
+          ) : (
+            <>
+              <NavSection label="Overview">
+                <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
+                <NavLink to="/admin/logs"><ScrollText size={15} /> Logs</NavLink>
+                {fullAdmin && <NavLink to="/admin/settings"><Settings size={15} /> Settings</NavLink>}
+              </NavSection>
+              {fullAdmin && (
+                <NavSection label="Catalog">
+                  <NavLink to="/admin/categories"><FolderTree size={15} /> Categories</NavLink>
+                  <NavLink to="/admin/products"><Package size={15} /> Products</NavLink>
+                </NavSection>
               )}
-            </NavLink>
-            {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Ticket categories</NavLink>}
-            {fullAdmin && <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>}
-            <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
-          </NavSection>
-          <NavSection label="Shortcuts">
-            <NavLink to="/game-hosting"><ShoppingBag size={15} /> Client area</NavLink>
-          </NavSection>
+              <NavSection label="Billing">
+                <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
+                <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
+                <NavLink to="/admin/tickets">
+                  <MessageSquare size={15} /> Tickets
+                  {openTickets > 0 && (
+                    <span className="ds-nav-badge">{openTickets > 99 ? '99+' : openTickets}</span>
+                  )}
+                </NavLink>
+                {fullAdmin && <NavLink to="/admin/ticket-categories"><Tags size={15} /> Ticket categories</NavLink>}
+                {fullAdmin && <NavLink to="/admin/coupons"><TicketPercent size={15} /> Coupons</NavLink>}
+                <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
+              </NavSection>
+              <NavSection label="Shortcuts">
+                <NavLink to="/game-hosting"><ShoppingBag size={15} /> Client area</NavLink>
+              </NavSection>
+            </>
+          )}
         </div>
         <div className="ds-sidebar-foot">
-          <UserChip name={user.firstName || user.username} email={user.email} avatarUrl={user.avatarUrl} />
-          <div className="ds-sidebar-actions">
-            <button className="ds-btn ds-btn--ghost ds-btn--sm" type="button" onClick={() => void signOut()}>
-              <LogOut size={13} /> Sign out
+          <div className="ds-sidebar-user">
+            <UserChip name={display} email={user.email} avatarUrl={user.avatarUrl} />
+            <button
+              className="ds-signout"
+              type="button"
+              aria-label="Sign out"
+              title="Sign out"
+              onClick={() => void signOut()}
+            >
+              <LogOut size={15} />
             </button>
           </div>
         </div>
       </aside>
       <main className="ds-main">
-        <TopNavbar menuOpen={navOpen} onMenuToggle={toggleNav} />
-        <div className="ds-page">
+        <TopNavbar
+          menuOpen={navOpen}
+          onMenuToggle={toggleNav}
+          navLayout={navLayout}
+          brand={<Brand />}
+          nav={<nav className="ds-nav">{adminNavLinks}</nav>}
+          showCart={false}
+          account={
+            <>
+              <UserChip name={display} email={user.email} avatarUrl={user.avatarUrl} />
+              <button
+                className="ds-signout"
+                type="button"
+                aria-label="Sign out"
+                title="Sign out"
+                onClick={() => void signOut()}
+              >
+                <LogOut size={15} />
+              </button>
+            </>
+          }
+        />
+        <div className={`ds-page${fluidPage ? ' is-fluid' : ''}`}>
           <Outlet />
         </div>
       </main>

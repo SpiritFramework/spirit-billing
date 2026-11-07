@@ -35,6 +35,7 @@ export function ensureUploadsRoot() {
   const root = getUploadsRoot();
   try {
     mkdirSync(join(root, 'tickets'), { recursive: true });
+    mkdirSync(join(root, 'branding'), { recursive: true });
   } catch {
     // spirit-billing may lack write access until update.sh owns uploads/
   }
@@ -92,6 +93,51 @@ export async function assertUploadReadable(relativeUrl: string) {
   } catch {
     return false;
   }
+}
+
+export type BrandingAssetKind = 'logo' | 'favicon';
+
+export type UploadedBrandingAsset = UploadedTicketImage & {
+  kind: BrandingAssetKind;
+};
+
+export async function saveBrandingAsset(input: {
+  kind: BrandingAssetKind;
+  buffer: Buffer;
+  filename: string;
+  mimetype: string;
+}): Promise<UploadedBrandingAsset> {
+  const mime = input.mimetype.toLowerCase();
+  const ext = ALLOWED_MIME[mime];
+  if (!ext) {
+    throw Object.assign(new Error('Only JPEG, PNG, WebP, or GIF images are allowed'), { statusCode: 422 });
+  }
+  if (input.buffer.length > MAX_BYTES) {
+    throw Object.assign(new Error('Images must be 5 MB or smaller'), { statusCode: 422 });
+  }
+
+  const root = ensureUploadsRoot();
+  const dir = join(root, 'branding');
+  try {
+    await mkdir(dir, { recursive: true });
+  } catch {
+    throw Object.assign(
+      new Error('Uploads directory is not writable. Fix ownership of billing-api/uploads.'),
+      { statusCode: 503 },
+    );
+  }
+  const safeName = `${input.kind}-${Date.now()}-${randomBytes(8).toString('hex')}${ext}`;
+  const absolute = join(dir, safeName);
+  await writeFile(absolute, input.buffer);
+
+  const original = input.filename.replace(/[^\w.\- ()]+/g, '_').slice(0, 80) || `${input.kind}${ext}`;
+  return {
+    kind: input.kind,
+    url: `/uploads/branding/${safeName}`,
+    name: original,
+    mime,
+    size: input.buffer.length,
+  };
 }
 
 export function uploadsPublicBase() {

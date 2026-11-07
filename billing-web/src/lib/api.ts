@@ -27,6 +27,14 @@ export function safeExternalHref(url: string | null | undefined): string | undef
   return undefined;
 }
 
+/** External http(s) or local branding upload path suitable for <img src>. */
+export function isBrandAssetUrl(url: string | null | undefined): boolean {
+  const value = url?.trim();
+  if (!value) return false;
+  if (/^\/uploads\/branding\/[\w.\-]+$/.test(value)) return true;
+  return /^https?:\/\//i.test(value);
+}
+
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const needsBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);

@@ -26,9 +26,16 @@ import {
   updatePanelUser,
 } from '../services/panel.js';
 import { resolvePanelUserLink } from '../lib/panel-link.js';
-import { assertSafeOutboundUrl, isSafeHttpUrl, sanitizeHexColor } from '../lib/url-safety.js';
+import { assertSafeOutboundUrl, isBrandAssetUrl, isSafeHttpUrl, sanitizeHexColor } from '../lib/url-safety.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';
 import { isStaffOrAdmin } from '../lib/roles.js';
+import {
+  normalizeAuthAtmosphereSetting,
+  normalizeNavLayoutSetting,
+  normalizeNavbarStyleSetting,
+  normalizeSidebarStyleSetting,
+  resolveShellAtmosphereSetting,
+} from '../lib/atmosphere.js';
 
 const publicUserSelect = {
   id: true,
@@ -85,6 +92,17 @@ export async function authRoutes(app: FastifyInstance) {
     const billingFavicon = await getSetting('favicon_url', '');
     const billingAccent = await getSetting('accent_color', '');
     const billingSecondary = await getSetting('secondary_color', '');
+    const themeModeRaw = await getSetting('theme_mode', 'dark');
+    const themePresetRaw = await getSetting('theme_preset', 'custom');
+    const uiRadiusRaw = await getSetting('ui_radius', 'soft');
+    const uiDensityRaw = await getSetting('ui_density', 'comfortable');
+    const sidebarStyleRaw = await getSetting('sidebar_style', 'solid');
+    const navbarStyleRaw = await getSetting('navbar_style', 'glass');
+    const authAtmosphereRaw = await getSetting('auth_atmosphere', 'stage');
+    const clientAtmosphere = await resolveShellAtmosphereSetting(getSetting, 'client_atmosphere');
+    const adminAtmosphere = await resolveShellAtmosphereSetting(getSetting, 'admin_atmosphere');
+    const clientNavLayout = normalizeNavLayoutSetting(await getSetting('client_nav_layout', 'sidebar'));
+    const adminNavLayout = normalizeNavLayoutSetting(await getSetting('admin_nav_layout', 'sidebar'));
     const panelLogo =
       typeof panelBranding?.logoUrl === 'string' && isSafeHttpUrl(panelBranding.logoUrl)
         ? panelBranding.logoUrl
@@ -105,6 +123,38 @@ export async function authRoutes(app: FastifyInstance) {
       privacyUrl: await getSetting('privacy_url', ''),
       invoiceFooter: await getSetting('invoice_footer', ''),
       announcementBanner: await getSetting('announcement_banner', ''),
+      themeMode: ['light', 'dark', 'system'].includes(themeModeRaw) ? themeModeRaw : 'dark',
+      themePreset: [
+        'midnight',
+        'ocean',
+        'forest',
+        'sunset',
+        'rose',
+        'mono',
+        'lavender',
+        'crimson',
+        'arctic',
+        'neon',
+        'copper',
+        'slate',
+        'grape',
+        'mint',
+        'sand',
+        'void',
+        'cherry',
+        'custom',
+      ].includes(themePresetRaw)
+        ? themePresetRaw
+        : 'custom',
+      uiRadius: ['sharp', 'soft', 'rounded'].includes(uiRadiusRaw) ? uiRadiusRaw : 'soft',
+      uiDensity: ['comfortable', 'compact'].includes(uiDensityRaw) ? uiDensityRaw : 'comfortable',
+      sidebarStyle: normalizeSidebarStyleSetting(sidebarStyleRaw),
+      navbarStyle: normalizeNavbarStyleSetting(navbarStyleRaw),
+      authAtmosphere: normalizeAuthAtmosphereSetting(authAtmosphereRaw),
+      clientAtmosphere,
+      adminAtmosphere,
+      clientNavLayout,
+      adminNavLayout,
       panelWebUrl: panel.panelWebUrl,
       accentColor: sanitizeHexColor(
         billingAccent || panelBranding?.accentColor,
@@ -118,9 +168,9 @@ export async function authRoutes(app: FastifyInstance) {
         typeof panelBranding?.panelName === 'string' && panelBranding.panelName.trim()
           ? panelBranding.panelName.trim().slice(0, 80)
           : 'Spirit-Panel',
-      logoUrl: (billingLogo && isSafeHttpUrl(billingLogo) ? billingLogo : null) || panelLogo,
+      logoUrl: (billingLogo && isBrandAssetUrl(billingLogo) ? billingLogo : null) || panelLogo,
       faviconUrl:
-        (billingFavicon && isSafeHttpUrl(billingFavicon) ? billingFavicon : null) || panelFavicon,
+        (billingFavicon && isBrandAssetUrl(billingFavicon) ? billingFavicon : null) || panelFavicon,
       maintenanceMode: security.maintenanceMode,
       maintenanceMessage: security.maintenanceMessage,
       registrationEnabled: security.registrationEnabled,

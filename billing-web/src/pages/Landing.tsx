@@ -19,7 +19,7 @@ import {
   Sparkles,
   Zap,
 } from 'lucide-react';
-import { api, money, safeExternalHref } from '../lib/api';
+import { api, isBrandAssetUrl, money, safeExternalHref } from '../lib/api';
 import { useBranding } from '../context/BrandingContext';
 import { useAuth } from '../context/AuthContext';
 import { CategoryMark } from '../lib/icons';
@@ -68,8 +68,8 @@ export function LandingPage() {
       <header className="landing-v3-nav">
         <div className="landing-v3-shell landing-v3-nav__inner">
           <Link to="/" className="landing-v3-brand">
-            {branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) ? (
-              <img src={branding.logoUrl} alt="" />
+            {isBrandAssetUrl(branding.logoUrl) ? (
+              <img src={branding.logoUrl!} alt="" />
             ) : (
               <span className="landing-v3-brand__mark"><Gamepad2 size={18} /></span>
             )}
@@ -357,8 +357,8 @@ export function LandingPage() {
       <footer className="landing-v3-footer">
         <div className="landing-v3-shell landing-v3-footer__inner">
           <div className="landing-v3-brand">
-            {branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) ? (
-              <img src={branding.logoUrl} alt="" />
+            {isBrandAssetUrl(branding.logoUrl) ? (
+              <img src={branding.logoUrl!} alt="" />
             ) : (
               <span className="landing-v3-brand__mark"><Gamepad2 size={18} /></span>
             )}

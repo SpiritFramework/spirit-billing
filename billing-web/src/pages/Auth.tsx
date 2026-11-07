@@ -14,7 +14,7 @@ import {
   UserPlus,
   Wrench,
 } from 'lucide-react';
-import { api, ApiError } from '../lib/api';
+import { api, ApiError, isBrandAssetUrl } from '../lib/api';
 import { useAuth, type User } from '../context/AuthContext';
 import { useBranding } from '../context/BrandingContext';
 import { TurnstileWidget } from '../components/TurnstileWidget';
@@ -57,11 +57,15 @@ function AuthShell({
         ? 'One account for billing and Spirit-Panel access.'
         : branding.tagline || 'Game server hosting';
 
+  const authBg = branding.authAtmosphere || 'stage';
+
   return (
-    <main className={`auth-stage is-${mode}`}>
+    <main className={`auth-stage is-${mode}`} data-auth-bg={authBg}>
       <div className="auth-stage__sky" aria-hidden>
+        <div className="auth-stage__canvas" />
         <div className="auth-stage__wash" />
         <div className="auth-stage__grid" />
+        <div className="auth-stage__haze" />
         <div className="auth-stage__horizon">
           <span />
           <span />
@@ -72,6 +76,7 @@ function AuthShell({
           <span />
         </div>
         <div className="auth-stage__beam" />
+        <div className="auth-stage__overlay" />
       </div>
 
       <header className="auth-stage__nav">
@@ -106,8 +111,8 @@ function AuthShell({
       <div className="auth-stage__frame">
         <section className="auth-stage__hero">
           <div className="auth-stage__mark">
-            {branding.logoUrl && /^https?:\/\//i.test(branding.logoUrl) ? (
-              <img src={branding.logoUrl} alt="" />
+            {isBrandAssetUrl(branding.logoUrl) ? (
+              <img src={branding.logoUrl!} alt="" />
             ) : (
               <span aria-hidden>
                 <Gamepad2 size={28} strokeWidth={1.6} />

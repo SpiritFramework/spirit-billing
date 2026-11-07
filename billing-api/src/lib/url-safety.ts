@@ -104,6 +104,14 @@ export function isSafeHttpUrl(value: string): boolean {
   }
 }
 
+/** External http(s) or local branding upload path. */
+export function isBrandAssetUrl(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (/^\/uploads\/branding\/[\w.\-]+$/.test(trimmed)) return true;
+  return isSafeHttpUrl(trimmed);
+}
+
 export function sanitizeHexColor(value: unknown, fallback: string): string {
   if (typeof value !== 'string') return fallback;
   return /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : fallback;
