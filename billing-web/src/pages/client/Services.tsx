@@ -13,12 +13,12 @@ import {
   Cpu,
   ExternalLink,
   FileText,
+  Gamepad2,
   HardDrive,
   MemoryStick,
   Search,
   Server,
   ShieldCheck,
-  Sparkles,
   Trash2,
   TrendingUp,
 } from 'lucide-react';
@@ -123,12 +123,14 @@ function serviceBilling(service: Service) {
   };
 }
 
+type ServiceFilter = 'all' | 'active' | 'pending_payment' | 'suspended' | 'cancelled';
+
 export function ServicesPage() {
   const [services, setServices] = useState<Service[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [filter, setFilter] = useState<'all' | 'active' | 'pending_payment' | 'suspended'>('all');
+  const [filter, setFilter] = useState<ServiceFilter>('all');
 
   useEffect(() => {
     void api<Service[]>('/client/services')
@@ -139,7 +141,7 @@ export function ServicesPage() {
 
   const visibleServices = services.filter((service) => {
     const matchesFilter = filter === 'all' || service.status === filter;
-  const matchesQuery = `${service.name} ${service.product.name} ${service.product.category?.name ?? ''}`
+    const matchesQuery = `${service.name} ${service.product.name} ${service.product.category?.name ?? ''}`
       .toLowerCase()
       .includes(query.trim().toLowerCase());
     return matchesFilter && matchesQuery;
@@ -147,93 +149,271 @@ export function ServicesPage() {
   const activeCount = services.filter((service) => service.status === 'active').length;
   const pendingCount = services.filter((service) => service.status === 'pending_payment').length;
   const attentionCount = services.filter((service) => service.status === 'suspended').length;
+  const cancelledCount = services.filter((service) => service.status === 'cancelled').length;
+  const filterCounts: Record<ServiceFilter, number> = {
+    all: services.length,
+    active: activeCount,
+    pending_payment: pendingCount,
+    suspended: attentionCount,
+    cancelled: cancelledCount,
+  };
 
   return (
-    <div className="client-services-v2">
-      <header className="client-services-v2__header">
-        <div>
-          <span>Hosting infrastructure</span>
+    <div className="client-services">
+      <header className="client-services__intro">
+        <div className="client-services__intro-copy">
+          <p>Hosting</p>
           <h1>Your services</h1>
-          <p>Monitor every server, review renewals, and jump directly into your game panel.</p>
+          <span>Manage servers, renewals, and plan resources on your account.</span>
         </div>
-        <Link to="/game-hosting"><Sparkles size={14} /> Deploy another server</Link>
+        <div className="client-services__intro-actions">
+          <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to="/game-hosting">
+            <span className="client-home__btn-icon" aria-hidden>
+              <Gamepad2 size={15} />
+            </span>
+            <span>Browse hosting</span>
+            <ArrowRight size={14} className="client-home__btn-arrow" />
+          </Link>
+        </div>
       </header>
 
       {error && <div className="ds-alert ds-alert--error">{error}</div>}
 
-      <section className="client-services-metrics">
-        <article><span className="is-blue"><Server size={17} /></span><div><small>Total services</small><strong>{services.length}</strong><p>Across your account</p></div></article>
-        <article><span className="is-green"><Activity size={17} /></span><div><small>Active now</small><strong>{activeCount}</strong><p>Ready to manage</p></div></article>
-        <article><span className="is-amber"><Clock3 size={17} /></span><div><small>Awaiting payment</small><strong>{pendingCount}</strong><p>Provisioning pending</p></div></article>
-        <article><span className="is-red"><AlertCircle size={17} /></span><div><small>Needs attention</small><strong>{attentionCount}</strong><p>Suspended services</p></div></article>
-      </section>
+      <div className="client-services__pulse" aria-label="Service snapshot">
+        <button
+          type="button"
+          className={`client-services__pulse-item${filter === 'all' ? ' is-active' : ''}`}
+          onClick={() => setFilter('all')}
+        >
+          <span className="client-services__pulse-copy">
+            <small>Total</small>
+            <strong>{loading ? '—' : services.length}</strong>
+            <span>On your account</span>
+          </span>
+          <span className="client-services__pulse-icon is-total" aria-hidden>
+            <Server size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-services__pulse-item${filter === 'active' ? ' is-active' : ''}`}
+          onClick={() => setFilter('active')}
+        >
+          <span className="client-services__pulse-copy">
+            <small>Active</small>
+            <strong className="is-ok">{loading ? '—' : activeCount}</strong>
+            <span>Ready to manage</span>
+          </span>
+          <span className="client-services__pulse-icon is-active" aria-hidden>
+            <Activity size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-services__pulse-item${filter === 'pending_payment' ? ' is-active' : ''}`}
+          onClick={() => setFilter('pending_payment')}
+        >
+          <span className="client-services__pulse-copy">
+            <small>Pending</small>
+            <strong className={pendingCount > 0 ? 'is-warn' : undefined}>{loading ? '—' : pendingCount}</strong>
+            <span>Awaiting payment</span>
+          </span>
+          <span className="client-services__pulse-icon is-pending" aria-hidden>
+            <Clock3 size={17} />
+          </span>
+        </button>
+        <button
+          type="button"
+          className={`client-services__pulse-item${filter === 'suspended' ? ' is-active' : ''}`}
+          onClick={() => setFilter('suspended')}
+        >
+          <span className="client-services__pulse-copy">
+            <small>Attention</small>
+            <strong className={attentionCount > 0 ? 'is-danger' : undefined}>{loading ? '—' : attentionCount}</strong>
+            <span>Suspended</span>
+          </span>
+          <span className="client-services__pulse-icon is-attention" aria-hidden>
+            <AlertCircle size={17} />
+          </span>
+        </button>
+      </div>
 
-      <section className="client-services-catalogue">
-        <header>
-          <div><span>Service library</span><h2>Your infrastructure</h2></div>
-          <label><Search size={14} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search services or plans…" /></label>
-          <div>
+      <section className="client-services__block">
+        <div className="client-services__panel">
+          <div className="client-services__panel-head">
+            <div className="client-services__panel-copy">
+              <h2>Servers</h2>
+              <p>
+                {loading
+                  ? 'Loading your servers…'
+                  : query.trim() || filter !== 'all'
+                    ? `${visibleServices.length} match${visibleServices.length === 1 ? '' : 'es'}`
+                    : `${services.length} service${services.length === 1 ? '' : 's'}`}
+              </p>
+            </div>
+            <label className="client-services__search">
+              <Search size={15} aria-hidden />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search name, game, or plan…"
+                aria-label="Search services"
+              />
+            </label>
+          </div>
+
+          <div className="client-services__filters" role="group" aria-label="Filter by status">
             {([
               ['all', 'All'],
               ['active', 'Active'],
               ['pending_payment', 'Pending'],
               ['suspended', 'Suspended'],
+              ['cancelled', 'Cancelled'],
             ] as const).map(([value, label]) => (
-              <button type="button" key={value} className={filter === value ? 'is-active' : ''} onClick={() => setFilter(value)}>{label}</button>
+              <button
+                type="button"
+                key={value}
+                className={filter === value ? 'is-active' : undefined}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+                <em>{loading ? '—' : filterCounts[value]}</em>
+              </button>
             ))}
           </div>
-        </header>
 
-        <div className="client-service-grid">
-          {visibleServices.map((service) => {
-            const category = service.product.category;
-            const limits = serviceLimits(service);
-            const billing = serviceBilling(service);
-            return (
-            <Link
-              to={`/services/${service.id}`}
-              className={`client-service-card is-${service.status}`}
-              key={service.id}
-              style={category?.color ? { ['--service-color' as string]: category.color } : undefined}
-            >
-              <header>
-                <CategoryMark
-                  icon={category?.icon}
-                  logoUrl={category?.logoUrl}
-                  color={category?.color}
-                  size={42}
-                  className="client-service-card__mark"
-                />
-                <div>
-                  <small>{category?.name || service.product.name}</small>
-                  <h3>{service.name}</h3>
-                </div>
-                <span className={statusBadge(service.status)}>{serviceStatus(service.status)}</span>
-              </header>
-              <p>{service.product.description || 'Managed game server hosted on SpiritHost infrastructure.'}</p>
-              <div className="client-service-card__resources">
-                <span><MemoryStick size={13} /><small>Memory</small><strong>{formatMemoryMb(limits.memoryMb)}</strong></span>
-                <span><Cpu size={13} /><small>CPU</small><strong>{formatCpuPercent(limits.cpuPercent)}</strong></span>
-                <span><HardDrive size={13} /><small>Storage</small><strong>{formatDiskMb(limits.diskMb)}</strong></span>
+          <div className="client-services__list">
+            {visibleServices.map((service) => {
+              const category = service.product.category;
+              const limits = serviceLimits(service);
+              const billing = serviceBilling(service);
+              const memory = limits.memoryMb ?? 0;
+              const disk = limits.diskMb ?? 0;
+              const cpu = limits.cpuPercent ?? 0;
+              return (
+                <Link
+                  key={service.id}
+                  to={`/services/${service.id}`}
+                  className={`client-home__service is-${service.status}`}
+                  style={{ ['--service-color' as string]: category?.color || 'var(--accent)' }}
+                >
+                  <CategoryMark
+                    icon={category?.icon}
+                    logoUrl={category?.logoUrl}
+                    color={category?.color}
+                    size={42}
+                    className="client-home__service-mark"
+                  />
+                  <span className="client-home__service-body">
+                    <span className="client-home__service-main">
+                      <span className="client-home__service-title">
+                        <strong>{service.name}</strong>
+                      </span>
+                      <span className="client-home__service-meta">
+                        <span className={`client-home__service-meta-item is-status ${statusBadge(service.status)}`}>
+                          <span className="client-home__service-status-dot" aria-hidden />
+                          {serviceStatus(service.status)}
+                        </span>
+                        <span className="client-home__service-meta-item">
+                          {category?.name || 'Hosting'}
+                        </span>
+                        <span className="client-home__service-meta-item">
+                          {service.product.name}
+                        </span>
+                        {service.nextDueAt ? (
+                          <span className="client-home__service-meta-item is-renew">
+                            Renews{' '}
+                            {new Date(service.nextDueAt).toLocaleDateString(undefined, {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </span>
+                        ) : null}
+                      </span>
+                    </span>
+
+                    <span className="client-home__service-rail">
+                      <span className="client-home__service-specs" aria-label="Resources">
+                        <span>
+                          <MemoryStick size={13} strokeWidth={1.75} aria-hidden />
+                          <span>
+                            <em>{formatMemoryMb(memory)}</em>
+                            <small>RAM</small>
+                          </span>
+                        </span>
+                        <span>
+                          <Cpu size={13} strokeWidth={1.75} aria-hidden />
+                          <span>
+                            <em>{formatCpuPercent(cpu)}</em>
+                            <small>CPU</small>
+                          </span>
+                        </span>
+                        <span>
+                          <HardDrive size={13} strokeWidth={1.75} aria-hidden />
+                          <span>
+                            <em>{formatDiskMb(disk)}</em>
+                            <small>Disk</small>
+                          </span>
+                        </span>
+                      </span>
+                      <span className="client-home__service-aside">
+                        <strong>
+                          {billing.priceCents > 0 ? money(billing.priceCents, billing.currency) : 'Included'}
+                        </strong>
+                        <small>{billing.cycle}</small>
+                      </span>
+                      <span className="client-home__service-go" aria-hidden>
+                        <ArrowRight size={14} strokeWidth={2} />
+                      </span>
+                    </span>
+                  </span>
+                </Link>
+              );
+            })}
+
+            {!loading && !visibleServices.length && (
+              <div className="client-services__empty">
+                <span aria-hidden>
+                  <Server size={20} />
+                </span>
+                <strong>{services.length ? 'No matching services' : 'No services yet'}</strong>
+                <p>
+                  {services.length
+                    ? 'Try another search or status filter.'
+                    : 'Pick a game and launch your first managed server.'}
+                </p>
+                {services.length ? (
+                  <button
+                    type="button"
+                    className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                    onClick={() => {
+                      setQuery('');
+                      setFilter('all');
+                    }}
+                  >
+                    Clear filters
+                  </button>
+                ) : (
+                  <Link className="client-home__btn client-home__btn--primary client-home__btn--cta client-home__btn--sm" to="/game-hosting">
+                    <span className="client-home__btn-icon" aria-hidden>
+                      <Gamepad2 size={14} />
+                    </span>
+                    <span>Browse plans</span>
+                    <ArrowRight size={13} className="client-home__btn-arrow" />
+                  </Link>
+                )}
               </div>
-              <footer>
-                <span><small>Renewal</small><strong>{service.nextDueAt ? new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : 'Not scheduled'}</strong></span>
-                <span><small>Plan cost</small><strong>{money(billing.priceCents, billing.currency)} <em>/ {cycleLabel(billing.cycle).toLowerCase()}</em></strong></span>
-                <i>View service <ChevronRight size={13} /></i>
-              </footer>
-            </Link>
-            );
-          })}
+            )}
 
-          {!loading && !visibleServices.length && (
-            <div className="client-services-empty">
-              <span><Server size={30} /></span>
-              <h3>{services.length ? 'No matching services' : 'Your next server starts here'}</h3>
-              <p>{services.length ? 'Try another search or status filter.' : 'Choose a game and deploy a managed server in just a few steps.'}</p>
-              {!services.length && <Link to="/game-hosting">Explore game hosting <ArrowRight size={14} /></Link>}
-            </div>
-          )}
-          {loading && <div className="client-services-empty"><span><Server size={30} /></span><h3>Loading your services…</h3></div>}
+            {loading && (
+              <div className="client-services__empty">
+                <span aria-hidden>
+                  <Server size={20} />
+                </span>
+                <strong>Loading services…</strong>
+              </div>
+            )}
+          </div>
         </div>
       </section>
     </div>
