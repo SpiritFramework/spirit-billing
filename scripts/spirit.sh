@@ -11,6 +11,7 @@
 # Interactive menu by default. Non-interactive:
 #   sudo bash /tmp/spirit-billing.sh install --domain billing.example.com -y
 #   sudo bash /tmp/spirit-billing.sh update -y
+#   sudo bash /tmp/spirit-billing.sh update --channel release -y
 #   sudo bash /tmp/spirit-billing.sh status
 #
 # Channel (saved in ${CHECKOUT}/.spirit-channel):
@@ -20,7 +21,7 @@
 #
 set -uo pipefail
 
-SCRIPT_VERSION="1.0.0"
+SCRIPT_VERSION="1.1.0"
 export GIT_TERMINAL_PROMPT=0
 
 REPO_URL="${SPIRIT_BILLING_REPO_URL:-https://github.com/SpiritFramework/spirit-billing.git}"
@@ -29,7 +30,7 @@ CHECKOUT="${SPIRIT_BILLING_CHECKOUT:-/home/Spirit-Billing}"
 APP_ROOT="${SPIRIT_BILLING_APP_ROOT:-/opt/spirit-billing}"
 SERVICE_NAME="spirit-billing"
 BACKUP_DIR="${SPIRIT_BILLING_BACKUP_DIR:-/var/backups/spirit-billing}"
-NODE_MAJOR=20
+WEB_ROOT="/var/www/spirit-billing"
 
 LINK_GITHUB="github.com/${REPO_SLUG}"
 LINK_DISCORD="discord.gg/tyR6FF8u2a"
@@ -40,7 +41,9 @@ CHANNEL=""
 REF_OVERRIDE=""
 DOMAIN=""
 WITH_SSL=0
+FORCE_BUILD=0
 CMD=""
+LATEST_TAG_RESOLVED=""
 
 # ---------------------------------------------------------------------------
 # Output
@@ -59,6 +62,34 @@ ok()   { printf '    %s+%s %s\n' "$C_GREEN" "$C_RESET" "$*"; }
 info() { printf '    %s-%s %s\n' "$C_DIM" "$C_RESET" "$*"; }
 warn() { printf '    %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 die()  { printf '\n%sError:%s %s\n\n' "$C_RED" "$C_RESET" "$*" >&2; exit 1; }
+
+PHASE_INDEX=0
+PHASE_TOTAL=0
+PHASE_ALMOST_DONE=0
+PHASE_ALMOST_MSG="finishing up"
+
+phase_begin() {
+  PHASE_TOTAL="${1:-0}"
+  PHASE_INDEX=0
+  PHASE_ALMOST_DONE=0
+  PHASE_ALMOST_MSG="${2:-finishing up}"
+  STEP=0
+}
+
+phase() {
+  PHASE_INDEX=$((PHASE_INDEX + 1))
+  local pct=0
+  if [[ "$PHASE_TOTAL" -gt 0 ]]; then
+    pct=$((PHASE_INDEX * 100 / PHASE_TOTAL))
+    [[ "$pct" -gt 100 ]] && pct=100
+  fi
+  printf '%s==>%s %s[%s/%s · %s%%] %s%s\n' \
+    "$C_CYAN" "$C_RESET" "$C_BOLD" "$PHASE_INDEX" "$PHASE_TOTAL" "$pct" "$*" "$C_RESET"
+  if [[ "$PHASE_ALMOST_DONE" -eq 0 && "$pct" -ge 80 ]]; then
+    PHASE_ALMOST_DONE=1
+    printf '    %sAlmost done — %s%s\n' "$C_DIM" "$PHASE_ALMOST_MSG" "$C_RESET"
+  fi
+}
 
 banner() {
   clear 2>/dev/null || true
@@ -170,6 +201,54 @@ validate_ref() {
   [[ "$ref" != *".."* ]] || die "Invalid git ref: ${ref}"
 }
 
+# Strip CR and surrounding quotes from .env values (Windows / WinSCP safe).
+env_get() {
+  local key="$1" file="${2:-${APP_ROOT}/.env}" val
+  [[ -f "$file" ]] || return 1
+  val="$(grep -E "^${key}=" "$file" | head -n1 | cut -d= -f2- | tr -d '\r')"
+  val="${val#"${val%%[![:space:]]*}"}"
+  val="${val%"${val##*[![:space:]]}"}"
+  if [[ "${val}" == \"*\" ]]; then val="${val:1:${#val}-2}"
+  elif [[ "${val}" == \'*\' ]]; then val="${val:1:${#val}-2}"
+  fi
+  printf '%s' "$val"
+}
+
+urldecode() {
+  local s="${1//+/ }"
+  printf '%b' "${s//%/\\x}"
+}
+
+cnf_escape() {
+  local s="${1//\\/\\\\}"
+  printf '%s' "${s//\"/\\\"}"
+}
+
+# Parse mysql://user:pass@host:port/db — password may be percent-encoded and may contain @.
+parse_database_url() {
+  local url="$1" rest user pass hostport db host port
+  [[ "$url" == mysql://* ]] || return 1
+  rest="${url#mysql://}"
+  # Split credentials on the LAST @
+  if [[ "$rest" != *@* ]]; then return 1; fi
+  userpass="${rest%@*}"
+  hostdb="${rest##*@}"
+  user="${userpass%%:*}"
+  pass="${userpass#*:}"
+  [[ "$userpass" == *:* ]] || pass=""
+  db="${hostdb#*/}"
+  db="${db%%\?*}"
+  hostport="${hostdb%%/*}"
+  host="${hostport%%:*}"
+  port=""
+  if [[ "$hostport" == *:* ]]; then
+    port="${hostport#*:}"
+  fi
+  user="$(urldecode "$user")"
+  pass="$(urldecode "$pass")"
+  printf '%s\n' "$user" "$pass" "$host" "${port:-3306}" "$db"
+}
+
 github_curl() {
   curl -fsSL --max-time 20 \
     -H "Accept: application/vnd.github+json" \
@@ -192,10 +271,10 @@ latest_release_tag() {
       tag="$(printf '%s' "$body" | grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')"
     fi
   fi
-  if [[ -z "$tag" ]]; then
+  if [[ -z "${tag:-}" ]]; then
     tag="$(git ls-remote --tags "$REPO_URL" 2>/dev/null | awk '{print $2}' | sed 's#refs/tags/##' | sed 's/\^{}$//' | grep -E '^[Vv]?[0-9]+(\.[0-9]+){1,3}$' | sort -V | tail -n1 || true)"
   fi
-  if [[ -z "$tag" ]]; then
+  if [[ -z "${tag:-}" ]]; then
     LATEST_TAG_RESOLVED="-"
     return 1
   fi
@@ -227,6 +306,10 @@ ensure_packages_minimal() {
   command -v rsync >/dev/null 2>&1 || apt-get install -y rsync
 }
 
+repo_git() {
+  git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" "$@"
+}
+
 ensure_checkout() {
   step "Source checkout → ${CHECKOUT}"
   ensure_packages_minimal
@@ -238,25 +321,25 @@ ensure_checkout() {
 
   if [[ -d "${CHECKOUT}/.git" ]]; then
     ok "Existing git checkout"
-    git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" remote set-url origin "$REPO_URL" 2>/dev/null || true
-    if ! git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" fetch --tags --prune origin; then
+    repo_git remote set-url origin "$REPO_URL" 2>/dev/null || true
+    if ! repo_git fetch --tags --prune origin; then
       die "git fetch failed for ${REPO_URL}"
     fi
-    if [[ -n "$(git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" status --porcelain 2>/dev/null)" ]]; then
+    if [[ -n "$(repo_git status --porcelain 2>/dev/null)" ]]; then
       warn "Local changes in ${CHECKOUT}"
       if confirm "Stash local changes and continue?" "y"; then
-        git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" stash push -u -m "spirit-billing-installer $(date -u +%Y%m%dT%H%M%SZ)" || true
+        repo_git stash push -u -m "spirit-billing-installer $(date -u +%Y%m%dT%H%M%SZ)" || true
       else
         die "Update cancelled — clean or stash ${CHECKOUT} first."
       fi
     fi
-    if git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" rev-parse --verify "refs/tags/${target}" >/dev/null 2>&1; then
-      git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" checkout -f "refs/tags/${target}"
-    elif git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" rev-parse --verify "origin/${target}" >/dev/null 2>&1; then
-      git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" checkout -B "$target" "origin/${target}"
+    # Prefer exact tag, then origin/<branch>. Never fall through to upstream tracking.
+    if repo_git rev-parse --verify "refs/tags/${target}" >/dev/null 2>&1; then
+      repo_git checkout -f "refs/tags/${target}"
+    elif repo_git rev-parse --verify "origin/${target}" >/dev/null 2>&1; then
+      repo_git checkout -B "$target" "origin/${target}"
     else
-      git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" checkout -f "$target" \
-        || die "Could not check out ref: ${target}"
+      repo_git checkout -f "$target" || die "Could not check out ref: ${target}"
     fi
   else
     if [[ -e "$CHECKOUT" && ! -d "${CHECKOUT}/.git" ]]; then
@@ -273,11 +356,10 @@ ensure_checkout() {
         || die "git clone failed"
     else
       git clone "$REPO_URL" "$CHECKOUT" || die "git clone failed"
-      if git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" rev-parse --verify "refs/tags/${target}" >/dev/null 2>&1; then
-        git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" checkout -f "refs/tags/${target}"
+      if repo_git rev-parse --verify "refs/tags/${target}" >/dev/null 2>&1; then
+        repo_git checkout -f "refs/tags/${target}"
       else
-        git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" checkout -f "$target" \
-          || die "Could not check out ref: ${target}"
+        repo_git checkout -f "$target" || die "Could not check out ref: ${target}"
       fi
     fi
   fi
@@ -297,7 +379,51 @@ run_deploy() {
   local action="$1"
   shift
   strip_crlf_tree
-  bash "${CHECKOUT}/deploy/spirit-billing.sh" "$action" --repo-dir "$CHECKOUT" "$@"
+  local extra=()
+  if [[ "$action" == "update" && "$FORCE_BUILD" == "1" ]]; then
+    extra+=(--force-build)
+  fi
+  bash "${CHECKOUT}/deploy/spirit-billing.sh" "$action" --repo-dir "$CHECKOUT" "${extra[@]}" "$@"
+}
+
+dump_database() {
+  local dest="$1"
+  local dburl user pass host port db cnf
+  dburl="$(env_get DATABASE_URL)" || return 1
+  mapfile -t parts < <(parse_database_url "$dburl") || return 1
+  user="${parts[0]}"; pass="${parts[1]}"; host="${parts[2]}"; port="${parts[3]}"; db="${parts[4]}"
+  [[ -n "$user" && -n "$db" ]] || return 1
+  command -v mysqldump >/dev/null 2>&1 || { warn "mysqldump not installed"; return 1; }
+
+  cnf="${dest}/mysqldump.cnf"
+  umask 077
+  cat > "$cnf" <<EOF
+[client]
+user="$(cnf_escape "$user")"
+password="$(cnf_escape "$pass")"
+host="${host}"
+port="${port}"
+EOF
+
+  if mysqldump --defaults-extra-file="$cnf" --single-transaction --routines --triggers "$db" \
+      > "${dest}/spirit_billing.sql" 2>"${dest}/mysqldump.err"; then
+    rm -f "$cnf"
+    ok "Database dump → ${dest}/spirit_billing.sql"
+    return 0
+  fi
+
+  # MariaDB root often authenticates over the unix socket as root
+  warn "App-user dump failed — retrying as root over socket"
+  if mysqldump --protocol=socket -u root --single-transaction --routines --triggers "$db" \
+      > "${dest}/spirit_billing.sql" 2>>"${dest}/mysqldump.err"; then
+    rm -f "$cnf"
+    ok "Database dump (root socket) → ${dest}/spirit_billing.sql"
+    return 0
+  fi
+
+  rm -f "$cnf"
+  warn "mysqldump failed — see ${dest}/mysqldump.err"
+  return 1
 }
 
 backup_before_update() {
@@ -307,50 +433,43 @@ backup_before_update() {
   stamp="$(date -u +%Y%m%dT%H%M%SZ)"
   dest="${BACKUP_DIR}/${stamp}"
   mkdir -p "$dest"
+  LAST_BACKUP="$dest"
+
   if [[ -f "${APP_ROOT}/.env" ]]; then
     cp -a "${APP_ROOT}/.env" "${dest}/.env"
     ok "Saved .env → ${dest}/.env"
   fi
-  if [[ -f "${APP_ROOT}/.env" ]]; then
-    local dburl user pass host db
-    # shellcheck disable=SC1091
-    dburl="$(grep -E '^DATABASE_URL=' "${APP_ROOT}/.env" | head -n1 | cut -d= -f2- | tr -d '\r' | sed -e 's/^"//' -e 's/"$//' -e "s/^'//" -e "s/'$//")"
-    if [[ "$dburl" =~ mysql://([^:]+):([^@]+)@([^:/]+)(:[0-9]+)?/([^?]+) ]]; then
-      user="${BASH_REMATCH[1]}"
-      pass="${BASH_REMATCH[2]}"
-      host="${BASH_REMATCH[3]}"
-      db="${BASH_REMATCH[5]}"
-      if command -v mysqldump >/dev/null 2>&1; then
-        local cnf="${dest}/mysqldump.cnf"
-        umask 077
-        cat > "$cnf" <<EOF
-[client]
-user=${user}
-password=${pass}
-host=${host}
-EOF
-        if mysqldump --defaults-extra-file="$cnf" --single-transaction --routines --triggers "$db" > "${dest}/spirit_billing.sql" 2>"${dest}/mysqldump.err"; then
-          ok "Database dump → ${dest}/spirit_billing.sql"
-          rm -f "$cnf"
-        else
-          warn "mysqldump failed — see ${dest}/mysqldump.err"
-          rm -f "$cnf"
-          confirm "Continue update without a database backup?" "n" || die "Update cancelled."
-        fi
-      else
-        warn "mysqldump not installed — skipping DB backup"
-      fi
-    else
-      warn "Could not parse DATABASE_URL for backup"
-    fi
+
+  if [[ -d "${APP_ROOT}/billing-api/uploads" ]]; then
+    tar -C "${APP_ROOT}/billing-api" -czf "${dest}/uploads.tgz" uploads 2>/dev/null \
+      && ok "Saved uploads → ${dest}/uploads.tgz" \
+      || warn "Could not archive uploads"
+  fi
+
+  if ! dump_database "$dest"; then
+    confirm "Continue update without a database backup?" "n" || die "Update cancelled. Backup folder: ${dest}"
   fi
   info "Backup folder: ${dest}"
+}
+
+poll_health() {
+  local i
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    if curl -fsS --max-time 3 http://127.0.0.1:3001/health >/dev/null 2>&1; then
+      ok "API health OK"
+      return 0
+    fi
+    sleep 1
+  done
+  warn "API health check did not pass — journalctl -u ${SERVICE_NAME} -n 50"
+  return 1
 }
 
 cmd_install() {
   require_root
   detect_os
   acquire_lock
+  phase_begin 4 "starting services"
 
   if [[ -z "$DOMAIN" ]]; then
     DOMAIN="$(ask "Public billing domain (e.g. billing.example.com)" "")"
@@ -375,14 +494,18 @@ cmd_install() {
     confirm "Re-run install sync (keeps .env)?" "y" || die "Cancelled."
   fi
 
+  phase "Fetch source"
   ensure_checkout
-  step "Running production install"
+  phase "Install packages + build"
   local extra=()
   [[ "$WITH_SSL" == "1" ]] && extra+=(--with-ssl)
   run_deploy install --domain "$DOMAIN" "${extra[@]}"
+  phase "Verify"
+  poll_health || true
+  phase "Done"
   ok "Install finished"
   info "Admin password (first install): ${APP_ROOT}/.adminpass — delete after login"
-  info "Edit Panel link: ${APP_ROOT}/.env  then: sudo bash $0 restart"
+  info "Edit Panel link: ${APP_ROOT}/.env  then: sudo bash ${CHECKOUT}/scripts/spirit.sh restart"
   info "Docs: https://${LINK_DOCS}"
 }
 
@@ -391,6 +514,7 @@ cmd_update() {
   detect_os
   acquire_lock
   is_installed || die "No install at ${APP_ROOT}. Run: sudo bash $0 install --domain your.domain"
+  phase_begin 5 "restarting API"
 
   if [[ -z "$CHANNEL" ]]; then
     CHANNEL="$(read_saved_channel || true)"
@@ -405,18 +529,23 @@ cmd_update() {
   case "$CHANNEL" in release|dev) ;; *) CHANNEL="dev" ;; esac
 
   local from to
-  from="$(git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
+  from="$(repo_git rev-parse --short HEAD 2>/dev/null || echo unknown)"
   to="$(resolve_target_ref)"
   info "Update ${from} → ${to} (channel=${CHANNEL})"
   confirm "Continue update?" "y" || die "Cancelled."
 
+  phase "Backup"
   backup_before_update
+  phase "Fetch source"
   ensure_checkout
-  step "Redeploying API + web"
+  phase "Redeploy"
   run_deploy update
+  phase "Verify"
+  poll_health || true
+  phase "Done"
   ok "Update finished"
+  [[ -n "${LAST_BACKUP:-}" ]] && info "Backup kept at ${LAST_BACKUP}"
   systemctl --no-pager --full status "$SERVICE_NAME" || true
-  curl -sS --max-time 5 http://127.0.0.1:3001/health || warn "API health check failed"
   echo
 }
 
@@ -432,9 +561,12 @@ cmd_status() {
     local ver ch commit
     ver="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "${CHECKOUT}/billing-api/package.json" 2>/dev/null | head -n1)"
     ch="$(read_saved_channel 2>/dev/null || echo unset)"
-    commit="$(git -c safe.directory="$CHECKOUT" -C "$CHECKOUT" rev-parse --short HEAD 2>/dev/null || echo n/a)"
+    commit="$(repo_git rev-parse --short HEAD 2>/dev/null || echo n/a)"
     info "Checkout: ${CHECKOUT}"
     info "Version:  ${ver:-unknown}  channel=${ch}  commit=${commit}"
+    if tag="$(latest_release_tag 2>/dev/null)"; then
+      info "Latest release: ${tag}"
+    fi
   else
     warn "No source checkout at ${CHECKOUT}"
   fi
@@ -448,6 +580,7 @@ cmd_status() {
 cmd_restart() {
   require_root
   systemctl restart "$SERVICE_NAME"
+  poll_health || true
   systemctl --no-pager --full status "$SERVICE_NAME" || true
 }
 
@@ -458,7 +591,7 @@ cmd_logs() {
 
 cmd_uninstall() {
   require_root
-  warn "This stops the service and removes nginx site + /opt/spirit-billing."
+  warn "This stops the service and removes nginx site + ${APP_ROOT}."
   warn "Database and ${CHECKOUT} are left in place unless you confirm."
   confirm "Uninstall Spirit-Billing application files?" "n" || die "Cancelled."
   systemctl disable --now "$SERVICE_NAME" 2>/dev/null || true
@@ -466,7 +599,7 @@ cmd_uninstall() {
   systemctl daemon-reload || true
   rm -f /etc/nginx/sites-enabled/spirit-billing /etc/nginx/sites-available/spirit-billing
   nginx -t 2>/dev/null && systemctl reload nginx || true
-  rm -rf "$APP_ROOT" /var/www/spirit-billing
+  rm -rf "$APP_ROOT" "$WEB_ROOT"
   if confirm "Also delete source checkout ${CHECKOUT}?" "n"; then
     rm -rf "$CHECKOUT"
   fi
@@ -479,14 +612,19 @@ Spirit-Billing installer v${SCRIPT_VERSION}
 
 Usage:
   sudo bash $0                          Interactive menu
-  sudo bash $0 install --domain HOST [-y] [--with-ssl] [--channel dev|release] [--ref REF]
-  sudo bash $0 update [-y] [--channel dev|release] [--ref REF]
+  sudo bash $0 install --domain HOST [-y] [--with-ssl] [--channel release|dev] [--ref REF]
+  sudo bash $0 update [-y] [--channel release|dev] [--ref REF] [--force-build]
   sudo bash $0 status | restart | logs | uninstall
+  sudo bash $0 --version
+
+--ref REF     Overrides --channel for this run only (exact tag or branch).
+--force-build Rebuild npm packages even when the source stamp is unchanged.
 
 Environment:
   SPIRIT_BILLING_REPO_URL     Git remote (default: ${REPO_URL})
   SPIRIT_BILLING_CHECKOUT     Clone path (default: ${CHECKOUT})
   SPIRIT_BILLING_APP_ROOT     Live app (default: ${APP_ROOT})
+  SPIRIT_BILLING_BACKUP_DIR   Update backups (default: ${BACKUP_DIR})
 
 Download (safe):
   curl -fsSL https://raw.githubusercontent.com/${REPO_SLUG}/main/scripts/spirit.sh -o /tmp/spirit-billing.sh
@@ -537,11 +675,16 @@ parse_args() {
         shift
         [[ "$CMD" == "help" || "$CMD" == "-h" || "$CMD" == "--help" ]] && { usage; exit 0; }
         ;;
+      --version|-V)
+        printf '%s\n' "$SCRIPT_VERSION"
+        exit 0
+        ;;
       -y|--yes) ASSUME_YES=1; shift ;;
       --domain) DOMAIN="${2:-}"; shift 2 ;;
       --channel) CHANNEL="${2:-}"; shift 2 ;;
       --ref) REF_OVERRIDE="${2:-}"; shift 2 ;;
       --with-ssl) WITH_SSL=1; shift ;;
+      --force-build) FORCE_BUILD=1; shift ;;
       --checkout) CHECKOUT="${2:-}"; shift 2 ;;
       *)
         die "Unknown argument: $1 (try --help)"
@@ -567,4 +710,7 @@ main() {
   esac
 }
 
-main "$@"
+# Allow tests to source helpers without running main
+if [[ "${SPIRIT_BILLING_SOURCE_ONLY:-0}" != "1" ]]; then
+  main "$@"
+fi

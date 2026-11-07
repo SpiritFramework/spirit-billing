@@ -237,6 +237,12 @@ sudo bash /tmp/spirit-billing.sh update -y
 
 The script clones into `/home/Spirit-Billing`, installs the live app under `/opt/spirit-billing`, and keeps `.env` + the database across updates. Prefer `--channel release` once you publish GitHub Releases.
 
+Installer self-tests:
+
+```bash
+bash scripts/spirit.test.sh
+```
+
 Full guide — paths, nginx, systemd, troubleshooting:
 
 → **[deploy/INSTALL.md](deploy/INSTALL.md)**

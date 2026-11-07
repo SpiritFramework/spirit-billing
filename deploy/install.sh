@@ -141,18 +141,23 @@ create_user_and_dirs() {
 
 sync_application() {
   log "Syncing application to $APP_ROOT"
+  # Preserve ticket uploads across reinstalls; never sync .env from the repo
   rsync -a --delete \
     --exclude '.git' \
     --exclude 'node_modules' \
-    --exclude 'billing-api/dist' \
-    --exclude 'billing-web/dist' \
-    --exclude 'billing-api/.env' \
-    --exclude '**/Spirit-PanelV4' \
-    --exclude '**/.env' \
+    --exclude 'dist' \
+    --exclude 'uploads' \
+    --exclude '.env' \
+    --exclude '.env.*' \
+    --exclude 'Spirit-PanelV4' \
     "$REPO_DIR/billing-api" "$REPO_DIR/billing-web" "$REPO_DIR/deploy" \
     "$APP_ROOT/"
 
-  # Keep a copy of deploy helpers
+  if [[ -d "$REPO_DIR/scripts" ]]; then
+    mkdir -p "$APP_ROOT/scripts"
+    rsync -a "$REPO_DIR/scripts/" "$APP_ROOT/scripts/"
+  fi
+
   mkdir -p "$APP_ROOT/deploy"
   rsync -a "$REPO_DIR/deploy/" "$APP_ROOT/deploy/"
 
@@ -160,13 +165,16 @@ sync_application() {
   find "$APP_ROOT" -type d -exec chmod 755 {} \;
   find "$APP_ROOT" -type f -exec chmod 644 {} \;
   chmod 755 "$APP_ROOT/deploy/"*.sh 2>/dev/null || true
+  chmod 755 "$APP_ROOT/scripts/"*.sh 2>/dev/null || true
   strip_crlf \
     "$APP_ROOT/deploy/install.sh" \
     "$APP_ROOT/deploy/update.sh" \
+    "$APP_ROOT/deploy/spirit-billing.sh" \
     "$APP_ROOT/deploy/env.production.example" \
     "$APP_ROOT/deploy/nginx/spirit-billing.conf" \
     "$APP_ROOT/deploy/nginx/spirit-billing.http-only.conf" \
-    "$APP_ROOT/deploy/systemd/spirit-billing.service"
+    "$APP_ROOT/deploy/systemd/spirit-billing.service" \
+    "$APP_ROOT/scripts/spirit.sh"
 }
 
 ensure_env() {
@@ -394,4 +402,21 @@ install_systemd
 install_nginx
 configure_firewall
 maybe_ssl
+
+# Smoke-check the API before declaring success
+log "Checking API health"
+ok_health=0
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  if curl -fsS --max-time 3 http://127.0.0.1:3001/health >/dev/null 2>&1; then
+    ok_health=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$ok_health" -eq 1 ]]; then
+  log "API health OK"
+else
+  warn "API health check failed — run: journalctl -u spirit-billing -n 80 --no-pager"
+fi
+
 print_summary

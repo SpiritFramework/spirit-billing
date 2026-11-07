@@ -47,8 +47,18 @@ sudo bash /tmp/spirit-billing.sh update --ref V1.0.0.0 -y
 
 1. Clones or updates **`/home/Spirit-Billing`** from GitHub  
 2. **Install** → runs `deploy/install.sh` into `/opt/spirit-billing` + `/var/www/spirit-billing`  
-3. **Update** → backs up `.env` + DB dump, pulls the selected ref, runs `deploy/update.sh`  
-4. Menu also covers **status**, **restart**, **logs**, **uninstall**
+3. **Update** → backs up `.env`, ticket uploads, and a DB dump (percent-decoded `DATABASE_URL`, root-socket fallback), pulls the selected ref, runs `deploy/update.sh`  
+4. Skips npm rebuild when commit + lockfiles + Prisma schema are unchanged (override with `--force-build`)  
+5. Preserves `billing-api/uploads/` across syncs; polls `/health` after restart  
+6. Menu also covers **status**, **restart**, **logs**, **uninstall**
+
+### Installer tests
+
+From a checkout (Git Bash / Linux):
+
+```bash
+bash scripts/spirit.test.sh
+```
 
 After install:
 
