@@ -98,6 +98,10 @@ needs_build() {
   [[ ! -f "$STAMP_FILE" ]] && return 0
   [[ ! -f "$APP_ROOT/billing-api/dist/index.js" ]] && return 0
   [[ ! -f "$WEB_ROOT/index.html" ]] && return 0
+  # Stamp can be fresh while node_modules was deleted/corrupt — never skip then.
+  [[ ! -d "$APP_ROOT/billing-api/node_modules/fastify" ]] && return 0
+  [[ ! -d "$APP_ROOT/billing-api/node_modules/@prisma/client" ]] && return 0
+  [[ ! -d "$APP_ROOT/billing-web/node_modules" && ! -f "$WEB_ROOT/index.html" ]] && return 0
   local now prev
   now="$(compute_stamp)"
   prev="$(tr -d '\r\n' < "$STAMP_FILE" 2>/dev/null || true)"
