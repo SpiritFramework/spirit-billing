@@ -174,16 +174,36 @@
 }
 
 .client-home__btn--ghost {
-  border-color: color-mix(in srgb, var(--border) 90%, transparent);
-  background: color-mix(in srgb, var(--surface) 70%, transparent);
+  border-color: color-mix(in srgb, var(--border) 88%, transparent);
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--surface) 88%, transparent), color-mix(in srgb, var(--surface-muted) 80%, transparent));
   color: var(--text);
-  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 8px 18px color-mix(in srgb, #000 12%, transparent);
 }
 
 .client-home__btn--ghost:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
-  background: color-mix(in srgb, var(--accent-muted) 55%, var(--surface));
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--border));
+  background:
+    linear-gradient(165deg, color-mix(in srgb, var(--accent-muted) 50%, var(--surface)), color-mix(in srgb, var(--surface) 88%, transparent));
   color: var(--text);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent),
+    0 10px 22px color-mix(in srgb, #000 16%, transparent);
+}
+
+.client-home__btn--ghost.client-home__btn--cta .client-home__btn-icon {
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent-hover);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.client-home__btn--ghost.client-home__btn--cta:hover .client-home__btn-icon {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
 }
 
 .client-home__btn--text {
@@ -448,18 +468,17 @@ a.client-home__pulse-item:hover {
 }
 
 .client-home__service {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1.35fr) minmax(0, 0.95fr) auto auto;
+  display: flex;
   align-items: center;
-  gap: 0.9rem;
-  padding: 0.95rem 1rem;
+  gap: 0.85rem;
+  padding: 0.78rem 0.95rem 0.78rem 0.9rem;
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-  border-left: 3px solid color-mix(in srgb, var(--service-color, var(--accent)) 72%, transparent);
+  border-left: 3px solid color-mix(in srgb, var(--service-color, var(--accent)) 78%, transparent);
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 8%, transparent), transparent 46%);
-  transition: background 0.15s ease;
+    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 9%, transparent), transparent 34%);
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
 .client-home__service:last-child {
@@ -468,16 +487,31 @@ a.client-home__pulse-item:hover {
 
 .client-home__service:hover {
   background:
-    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 13%, transparent), color-mix(in srgb, var(--accent) 5%, transparent));
+    linear-gradient(90deg, color-mix(in srgb, var(--service-color, var(--accent)) 14%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
+}
+
+.client-home__service:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 70%, transparent);
+  outline-offset: -2px;
 }
 
 .client-home__service-mark.cat-mark {
-  width: 2.65rem;
-  height: 2.65rem;
-  border-radius: 0.8rem;
+  flex-shrink: 0;
+  width: 2.55rem;
+  height: 2.55rem;
+  border-radius: 0.75rem;
   box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--service-color, var(--accent)) 22%, transparent),
-    0 8px 18px color-mix(in srgb, #000 18%, transparent);
+    0 0 0 1px color-mix(in srgb, var(--service-color, var(--accent)) 26%, transparent),
+    0 6px 14px color-mix(in srgb, #000 16%, transparent);
+}
+
+.client-home__service-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.1rem;
 }
 
 .client-home__service-main {
@@ -489,13 +523,12 @@ a.client-home__pulse-item:hover {
 .client-home__service-title {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
   min-width: 0;
 }
 
 .client-home__service-title strong {
   min-width: 0;
-  font-size: 0.92rem;
+  font-size: 0.96rem;
   font-weight: 650;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -503,64 +536,172 @@ a.client-home__pulse-item:hover {
   text-overflow: ellipsis;
 }
 
-.client-home__service-title .ds-badge {
-  flex-shrink: 0;
-  text-transform: capitalize;
-  font-size: 0.62rem;
-  padding: 0.18rem 0.45rem;
-}
-
-.client-home__service-main small {
-  display: inline-flex;
+.client-home__service-meta {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.35rem;
   min-width: 0;
-  color: var(--muted);
-  font-size: 0.68rem;
+}
+
+.client-home__service-meta-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background: color-mix(in srgb, var(--bg) 42%, transparent);
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.66rem;
+  font-weight: 550;
+  letter-spacing: 0.01em;
+  line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-transform: none;
 }
 
-.client-home__service-main small > span {
-  color: var(--faint);
+.client-home__service-meta-item.is-status {
+  text-transform: capitalize;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.client-home__service-meta-item.is-status.ds-badge {
+  margin: 0;
+  padding: 0.14rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.66rem;
+}
+
+.client-home__service-meta-item.is-status.ds-badge--success {
+  background: var(--success-bg);
+  color: var(--success-fg);
+  border-color: color-mix(in srgb, var(--success) 30%, transparent);
+}
+
+.client-home__service-meta-item.is-status.ds-badge--warning {
+  background: var(--warning-bg);
+  color: var(--warning-fg);
+  border-color: color-mix(in srgb, var(--warning) 30%, transparent);
+}
+
+.client-home__service-meta-item.is-status.ds-badge--danger {
+  background: var(--danger-bg);
+  color: var(--danger-fg);
+  border-color: color-mix(in srgb, var(--danger) 30%, transparent);
+}
+
+.client-home__service-status-dot {
+  width: 0.38rem;
+  height: 0.38rem;
+  border-radius: 999px;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.client-home__service-meta-item.is-renew {
+  border-color: color-mix(in srgb, var(--service-color, var(--accent)) 28%, var(--border));
+  background: color-mix(in srgb, var(--service-color, var(--accent)) 10%, transparent);
+  color: color-mix(in srgb, var(--text) 86%, var(--service-color, var(--accent)));
+}
+
+.client-home__service-rail {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.38rem 0.4rem 0.38rem 0.65rem;
+  border-radius: 0.8rem;
+  border: 1px solid color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface) 72%, transparent),
+      color-mix(in srgb, var(--bg) 58%, transparent)
+    );
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 4%, transparent);
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.client-home__service:hover .client-home__service-rail {
+  border-color: color-mix(in srgb, var(--service-color, var(--accent)) 28%, var(--border));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 5%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--service-color, var(--accent)) 8%, transparent);
 }
 
 .client-home__service-specs {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 0.35rem;
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
 }
 
 .client-home__service-specs > span {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  padding: 0.28rem 0.55rem;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--service-color, var(--accent)) 22%, var(--border));
-  background: color-mix(in srgb, var(--service-color, var(--accent)) 10%, var(--bg));
-  color: color-mix(in srgb, var(--text) 88%, var(--service-color, var(--accent)));
-  font-size: 0.68rem;
-  font-weight: 650;
+  gap: 0.38rem;
+  min-width: 4.35rem;
+  padding: 0 0.62rem;
+  border-right: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  color: var(--muted);
 }
 
-.client-home__service-specs > span svg {
-  color: color-mix(in srgb, var(--service-color, var(--accent)) 80%, var(--muted));
+.client-home__service-specs > span:first-child {
+  padding-left: 0;
+}
+
+.client-home__service-specs > span:last-child {
+  border-right: 0;
+  padding-right: 0.2rem;
+}
+
+.client-home__service-specs > span > svg {
+  flex-shrink: 0;
+  color: color-mix(in srgb, var(--service-color, var(--accent)) 55%, var(--muted));
+  opacity: 0.9;
+}
+
+.client-home__service-specs > span > span {
+  display: grid;
+  gap: 0.08rem;
+  line-height: 1.05;
+}
+
+.client-home__service-specs em {
+  font-style: normal;
+  font-size: 0.76rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.client-home__service-specs small {
+  font-size: 0.56rem;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--text) 40%, var(--muted));
 }
 
 .client-home__service-aside {
   display: grid;
-  gap: 0.18rem;
+  gap: 0.14rem;
   justify-items: end;
+  align-content: center;
   text-align: right;
-  min-width: 4.5rem;
+  min-width: 4.1rem;
+  padding: 0.05rem 0.15rem 0.05rem 0.7rem;
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
 }
 
 .client-home__service-aside strong {
   font-family: var(--font-display);
-  font-size: 0.98rem;
+  font-size: 0.96rem;
   font-weight: 650;
   letter-spacing: -0.03em;
   line-height: 1;
@@ -568,19 +709,27 @@ a.client-home__pulse-item:hover {
 }
 
 .client-home__service-aside small {
-  color: var(--faint);
-  font-size: 0.66rem;
+  color: color-mix(in srgb, var(--text) 52%, var(--muted));
+  font-size: 0.62rem;
+  letter-spacing: 0.01em;
   text-transform: capitalize;
 }
 
 .client-home__service-go {
-  color: var(--faint);
-  transition: color 0.15s ease, transform 0.15s ease;
+  display: grid;
+  place-items: center;
+  width: 1.55rem;
+  height: 1.55rem;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--text) 45%, var(--faint));
+  background: color-mix(in srgb, var(--bg) 40%, transparent);
+  transition: color 0.16s ease, background 0.16s ease, transform 0.16s ease;
 }
 
 .client-home__service:hover .client-home__service-go {
   color: var(--accent-hover);
-  transform: translateX(2px);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  transform: translateX(1px);
 }
 
 .client-home__split {
@@ -931,24 +1080,23 @@ a.client-home__pulse-item:hover {
   }
 
   .client-home__service {
-    grid-template-columns: auto minmax(0, 1fr) auto;
-    gap: 0.65rem 0.75rem;
+    align-items: flex-start;
   }
 
-  .client-home__service-specs {
-    display: none;
+  .client-home__service-body {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.7rem;
   }
 
-  .client-home__service-aside {
-    grid-column: 2;
-    grid-row: 2;
-    justify-items: start;
-    text-align: left;
+  .client-home__service-rail {
+    justify-content: space-between;
+    width: 100%;
+    box-sizing: border-box;
   }
 
   .client-home__service-go {
-    grid-column: 3;
-    grid-row: 1 / span 2;
+    display: none;
   }
 
   .client-home__invoice {

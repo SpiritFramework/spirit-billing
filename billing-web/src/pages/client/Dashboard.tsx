@@ -7,6 +7,7 @@ import {
   Gamepad2,
   HardDrive,
   MemoryStick,
+  PanelsTopLeft,
   Receipt,
   Server,
   ShieldCheck,
@@ -170,9 +171,17 @@ export function DashboardPage() {
             <ArrowRight size={14} className="client-home__btn-arrow" />
           </Link>
           {panelHref && (data?.activeServices ?? 0) > 0 && (
-            <a className="client-home__btn client-home__btn--ghost" href={panelHref} target="_blank" rel="noopener noreferrer">
+            <a
+              className="client-home__btn client-home__btn--ghost client-home__btn--cta"
+              href={panelHref}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="client-home__btn-icon" aria-hidden>
+                <PanelsTopLeft size={14} />
+              </span>
               <span>Open panel</span>
-              <ArrowUpRight size={14} />
+              <ArrowUpRight size={14} className="client-home__btn-arrow" />
             </a>
           )}
         </div>
@@ -289,39 +298,69 @@ export function DashboardPage() {
                   size={42}
                   className="client-home__service-mark"
                 />
-                <span className="client-home__service-main">
-                  <span className="client-home__service-title">
-                    <strong>{service.name}</strong>
-                    <span className={statusBadge(service.status)}>{service.status.replaceAll('_', ' ')}</span>
+                <span className="client-home__service-body">
+                  <span className="client-home__service-main">
+                    <span className="client-home__service-title">
+                      <strong>{service.name}</strong>
+                    </span>
+                    <span className="client-home__service-meta">
+                      <span className={`client-home__service-meta-item is-status ${statusBadge(service.status)}`}>
+                        <span className="client-home__service-status-dot" aria-hidden />
+                        {service.status.replaceAll('_', ' ')}
+                      </span>
+                      <span className="client-home__service-meta-item">
+                        {category?.name || service.panelEggName || 'Hosting'}
+                      </span>
+                      <span className="client-home__service-meta-item">
+                        {planLabel(service)}
+                      </span>
+                      {service.nextDueAt ? (
+                        <span className="client-home__service-meta-item is-renew">
+                          Renews{' '}
+                          {new Date(service.nextDueAt).toLocaleDateString(undefined, {
+                            day: 'numeric',
+                            month: 'short',
+                          })}
+                        </span>
+                      ) : null}
+                    </span>
                   </span>
-                  <small>
-                    {category?.name || service.panelEggName || 'Hosting'}
-                    <span aria-hidden>·</span>
-                    {planLabel(service)}
-                    {service.nextDueAt ? (
-                      <>
-                        <span aria-hidden>·</span>
-                        Renews{' '}
-                        {new Date(service.nextDueAt).toLocaleDateString(undefined, {
-                          day: 'numeric',
-                          month: 'short',
-                        })}
-                      </>
-                    ) : null}
-                  </small>
+
+                  <span className="client-home__service-rail">
+                    <span className="client-home__service-specs" aria-label="Resources">
+                      <span>
+                        <MemoryStick size={13} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{formatRam(memory)}</em>
+                          <small>RAM</small>
+                        </span>
+                      </span>
+                      <span>
+                        <Cpu size={13} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{cpu <= 0 ? '∞' : `${cpu}%`}</em>
+                          <small>CPU</small>
+                        </span>
+                      </span>
+                      <span>
+                        <HardDrive size={13} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{formatDisk(disk)}</em>
+                          <small>Disk</small>
+                        </span>
+                      </span>
+                    </span>
+                    <span className="client-home__service-aside">
+                      <strong>
+                        {price > 0 ? money(price, svcCurrency) : 'Included'}
+                      </strong>
+                      <small>{cycle}</small>
+                    </span>
+                    <span className="client-home__service-go" aria-hidden>
+                      <ArrowRight size={14} strokeWidth={2} />
+                    </span>
+                  </span>
                 </span>
-                <span className="client-home__service-specs" aria-label="Resources">
-                  <span><MemoryStick size={12} /> {formatRam(memory)}</span>
-                  <span><Cpu size={12} /> {cpu <= 0 ? 'Unlimited' : `${cpu}%`}</span>
-                  <span><HardDrive size={12} /> {formatDisk(disk)}</span>
-                </span>
-                <span className="client-home__service-aside">
-                  <strong>
-                    {price > 0 ? money(price, svcCurrency) : 'Included'}
-                  </strong>
-                  <small>{cycle}</small>
-                </span>
-                <ArrowRight size={15} className="client-home__service-go" />
               </Link>
             );
           })}
