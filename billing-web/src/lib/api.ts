@@ -8,10 +8,41 @@ export class ApiError extends Error {
 
 type UnauthorizedHandler = () => void;
 let onUnauthorized: UnauthorizedHandler | null = null;
+let refreshInFlight: Promise<boolean> | null = null;
 
 /** AuthProvider registers this so 401 responses clear the in-memory session. */
 export function setUnauthorizedHandler(handler: UnauthorizedHandler | null) {
   onUnauthorized = handler;
+}
+
+function readCsrfToken(): string {
+  if (typeof document === 'undefined') return '';
+  const match = document.cookie.match(/(?:^|; )spirit_billing_csrf=([^;]*)/);
+  return match ? decodeURIComponent(match[1]) : '';
+}
+
+async function tryRefreshSession(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const headers = new Headers({ 'Content-Type': 'application/json' });
+        const csrf = readCsrfToken();
+        if (csrf) headers.set('X-CSRF-Token', csrf);
+        const res = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+          headers,
+          body: '{}',
+        });
+        return res.ok;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
 }
 
 /** Only allow http(s) URLs for target=_blank / external links. */
@@ -35,7 +66,7 @@ export function isBrandAssetUrl(url: string | null | undefined): boolean {
   return /^https?:\/\//i.test(value);
 }
 
-export async function api<T>(path: string, init?: RequestInit): Promise<T> {
+export async function api<T>(path: string, init?: RequestInit, retried = false): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase();
   const needsBody = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
   const hasBody = init?.body !== undefined && init?.body !== null;
@@ -48,6 +79,11 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const isFormData = typeof FormData !== 'undefined' && requestBody instanceof FormData;
   if ((needsBody || hasBody) && !isFormData && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+
+  if (needsBody && !headers.has('X-CSRF-Token')) {
+    const csrf = readCsrfToken();
+    if (csrf) headers.set('X-CSRF-Token', csrf);
   }
 
   const res = await fetch(`/api${path}`, {
@@ -68,12 +104,24 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   if (!res.ok) {
-    // Session probe is expected to 401 when logged out — don't treat as forced logout noise.
     if (
-      res.status === 401 &&
-      path !== '/auth/me' &&
-      !path.startsWith('/auth/login') &&
-      !path.startsWith('/auth/register')
+      res.status === 401
+      && !retried
+      && path !== '/auth/me'
+      && !path.startsWith('/auth/login')
+      && !path.startsWith('/auth/register')
+      && path !== '/auth/refresh'
+    ) {
+      const refreshed = await tryRefreshSession();
+      if (refreshed) {
+        return api<T>(path, init, true);
+      }
+      onUnauthorized?.();
+    } else if (
+      res.status === 401
+      && path !== '/auth/me'
+      && !path.startsWith('/auth/login')
+      && !path.startsWith('/auth/register')
     ) {
       onUnauthorized?.();
     }
@@ -98,8 +146,6 @@ export function money(cents: number, currency = 'GBP'): string {
 export function statusBadge(status: string): string {
   if (status === 'paid' || status === 'active') return 'ds-badge ds-badge--success';
   if (status === 'unpaid' || status === 'pending_payment') return 'ds-badge ds-badge--warning';
-  if (status === 'cancelled' || status === 'suspended' || status === 'overdue') {
-    return 'ds-badge ds-badge--danger';
-  }
+  if (status === 'cancelled' || status === 'suspended') return 'ds-badge ds-badge--danger';
   return 'ds-badge';
 }

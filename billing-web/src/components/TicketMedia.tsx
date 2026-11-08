@@ -8,9 +8,22 @@ export type TicketAttachment = {
   size: number;
 };
 
+/** Only same-origin ticket uploads (signed query allowed). */
 function attachmentSrc(url: string) {
-  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) return url;
-  return `/${url.replace(/^\.?\/?/, '')}`;
+  const trimmed = url.trim();
+  try {
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      const parsed = new URL(trimmed);
+      if (typeof window !== 'undefined' && parsed.origin !== window.location.origin) return '';
+      if (!parsed.pathname.startsWith('/uploads/tickets/')) return '';
+      return `${parsed.pathname}${parsed.search}`;
+    }
+  } catch {
+    return '';
+  }
+  if (!trimmed.startsWith('/uploads/tickets/')) return '';
+  if (trimmed.includes('\\') || /\s/.test(trimmed)) return '';
+  return trimmed.split('#')[0];
 }
 
 export function TicketAvatar({
@@ -80,6 +93,7 @@ export function TicketAttachments({
       <div className="ticket-attach">
         {attachments.map((attachment) => {
           const src = attachmentSrc(attachment.url);
+          if (!src) return null;
           return (
             <button
               key={attachment.url}

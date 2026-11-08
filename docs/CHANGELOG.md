@@ -15,6 +15,21 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Added
 
+### Changed
+
+### Fixed
+
+### Security
+
+---
+
+## [1.0.0.0] — 2026-11-08
+
+First 1.0 product release (four-part tag scheme, aligned with Spirit-Panel). Includes the ops UI rebuild, Settings/About polish, and hard security hardening. Schema change: new `sessions` table (`prisma db push` on update).
+
+### Added
+
+- Admin Settings → **About** — polished product desk (status hero, capability sheet, product/runtime board, recommended update commands)
 - Admin **Analytics** page (`/admin/analytics`) — revenue hero, WoW/MoM pulses, 6m/12m trend desk, 14-day spark, health gauges, category/product leaders, overdue queue, fleet/support/invoice mixes, coupons + credits
 - Branding theme/layout settings: `theme_mode`, `theme_preset`, `ui_radius`, `ui_density`, `sidebar_style` (admin settings + public `/auth/branding`)
 - Layout Atmosphere presets: `auth_atmosphere` (login), `client_atmosphere`, and `admin_atmosphere` (separate shells)
@@ -62,12 +77,12 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Admin mast filter chips (Users / Services / Invoices) restyled with icons, accent rail, and clearer active / warn / ok states
 - Admin nav reordered ops-first (Overview → Users → Services → Invoices → Tickets, then catalog)
 - Login / register rebuilt as a full-bleed auth stage: hero brand, server-rack horizon, and a single interaction panel (replaces the old split-card shell)
-- Admin Settings rebuilt: section rail + flat form workspace (replaces metric cards / boxed tabs / nested card chrome)
-- Settings → Brand studio rebuilt around Theme look / Colors / Identity / Layout & polish / Assets, with Atmosphere / Navigation / Server cards canvas previews
+- Admin **Settings** rebuilt as an ops desk (mast chips, one section rail, billing/panel/security sheets with sticky health asides)
+- Settings → **Panel** rebuilt as a link desk (status hero with inline readiness, endpoints + key board, probe strip)
+- Settings → Brand embeds the brand editor (Theme look / Colors / Identity / Layout / Assets as rail sub-nav; no nested brand mast)
 - Layout tab splits into Navigation (radius / density / sidebar) and Atmosphere (login + panel animated presets)
 - Theme look inspector: visual mode cards (light / dark / system) and preset gallery with live swatches
-- Settings → Brand redesigned as a brand deck: masthead, section rail, editor panel, and compact sticky live preview
-- Admin Settings uses the full main column; section tabs tightened into a single control bar
+- Settings deep-links via `?tab=billing|panel|security|about`
 - Install / update is **menu-only** by default:  
   `curl … -o /tmp/spirit-billing.sh` then `sudo bash /tmp/spirit-billing.sh`  
   (installer **v1.3.0**). Docs no longer push flag-heavy one-liners as the primary path.
@@ -84,6 +99,13 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Installer menu **Repair deps** / `spirit.sh repair` force-reinstalls `node_modules` and rebuilds (installer **v1.3.2**)
 
 ### Security
+
+- Ticket `serviceId` links must belong to the ticket owner; client ticket detail no longer exposes panel server IDs
+- Ticket uploads use magic-byte sniffing, uploader binding, signed URLs, and auth-gated `/uploads/tickets/` serving
+- Short-lived access JWTs with rotating DB-backed refresh sessions, CSRF header checks, and Secure/`SameSite` cookie hardening (`__Host-` when HTTPS)
+- Staff capability checks + step-up password for role/password changes; unsuspend is full-admin only; full-admin UI route guards
+- Public `/health` trimmed; staff About payload reduced; SSRF denylist adds CGNAT/`198.18`; nginx CSP + nested security headers
+- Theme DOM cache allowlisted; tighter login rate limits + lockout; loud alerts when Panel/Turnstile secret decrypt fails
 
 ---
 
@@ -134,11 +156,13 @@ Initial public tree for [SpiritFramework/spirit-billing](https://github.com/Spir
 
 | Product tag | `billing-api` `package.json` | `scripts/spirit.sh` | Notes |
 |-------------|------------------------------|---------------------|--------|
+| `1.0.0.0` | `1.0.0.0` | `1.3.4` | First 1.0; four-part tags; security hardening + ops UI |
 | `0.1.1` | `0.1.1` | `1.2.2` | Installer / sync / uninstall |
 | `0.1.0` | `0.1.0` | — | First GitHub publish |
 
-When cutting a GitHub Release, create a matching git tag (`v0.1.1` or `V0.1.1.0` — pick one scheme and stick to it; see [releasing.md](./releasing.md)).
+Git tags use the four-part `vX.Y.Z.W` scheme from **v1.0.0.0** onward (see [releasing.md](./releasing.md)).
 
-[Unreleased]: https://github.com/SpiritFramework/spirit-billing/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/SpiritFramework/spirit-billing/compare/v1.0.0.0...HEAD
+[1.0.0.0]: https://github.com/SpiritFramework/spirit-billing/compare/v0.1.1...v1.0.0.0
 [0.1.1]: https://github.com/SpiritFramework/spirit-billing/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/SpiritFramework/spirit-billing/releases/tag/v0.1.0

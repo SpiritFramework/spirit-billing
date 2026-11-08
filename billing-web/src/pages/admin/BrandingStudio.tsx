@@ -75,7 +75,7 @@ export type BrandStudioForm = {
 };
 
 type PreviewMode = 'atmosphere' | 'navigation' | 'servers';
-type InspectorSection = 'theme' | 'colors' | 'identity' | 'layout' | 'assets';
+export type BrandInspectorSection = 'theme' | 'colors' | 'identity' | 'layout' | 'assets';
 type LayoutPane = 'navigation' | 'atmosphere';
 type ShellPreview = 'client' | 'admin';
 
@@ -88,10 +88,14 @@ type Props = {
   setLogoBroken: (broken: boolean) => void;
   onError: (message: string) => void;
   onMessage: (message: string) => void;
+  /** Hide mast + rail when Settings owns navigation. */
+  embedded?: boolean;
+  section?: BrandInspectorSection;
+  onSectionChange?: (section: BrandInspectorSection) => void;
 };
 
-const SECTIONS: {
-  id: InspectorSection;
+export const BRAND_SECTIONS: {
+  id: BrandInspectorSection;
   label: string;
   hint: string;
   lede: string;
@@ -104,6 +108,7 @@ const SECTIONS: {
     lede: 'Surface presets for the whole panel. Accents are optional.',
     icon: Moon,
   },
+
   {
     id: 'colors',
     label: 'Colors',
@@ -412,9 +417,14 @@ export function BrandingStudio({
   setLogoBroken,
   onError,
   onMessage,
+  embedded = false,
+  section: controlledSection,
+  onSectionChange,
 }: Props) {
   const [preview, setPreview] = useState<PreviewMode>('atmosphere');
-  const [section, setSection] = useState<InspectorSection>('theme');
+  const [internalSection, setInternalSection] = useState<BrandInspectorSection>('theme');
+  const section = controlledSection ?? internalSection;
+  const setSection = onSectionChange ?? setInternalSection;
   const [layoutPane, setLayoutPane] = useState<LayoutPane>('navigation');
   const [shellPreview, setShellPreview] = useState<ShellPreview>('client');
   const [uploading, setUploading] = useState<'logo' | 'favicon' | null>(null);
@@ -440,7 +450,7 @@ export function BrandingStudio({
       : previewTheme === 'light'
         ? 'Light'
         : 'Dark';
-  const activeSection = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0];
+  const activeSection = BRAND_SECTIONS.find((s) => s.id === section) ?? BRAND_SECTIONS[0];
 
   function patch(partial: Partial<BrandStudioForm>) {
     setForm({ ...form, ...partial });
@@ -495,7 +505,7 @@ export function BrandingStudio({
 
   return (
     <form
-      className="brand-deck"
+      className={`brand-deck${embedded ? ' is-embedded' : ''}`}
       onSubmit={onSave}
       style={{
         ['--preview-accent' as string]: previewAccent,
@@ -506,56 +516,60 @@ export function BrandingStudio({
       }}
       data-preview-theme={previewTheme}
     >
-      <header className="brand-deck__mast">
-        <div className="brand-deck__identity">
-          <div className="brand-deck__mark" aria-hidden>
-            {showLogo ? (
-              <img src={form.logoUrl} alt="" onError={() => setLogoBroken(true)} />
-            ) : (
-              <Gamepad2 size={18} />
-            )}
+      {!embedded ? (
+        <header className="brand-deck__mast">
+          <div className="brand-deck__identity">
+            <div className="brand-deck__mark" aria-hidden>
+              {showLogo ? (
+                <img src={form.logoUrl} alt="" onError={() => setLogoBroken(true)} />
+              ) : (
+                <Gamepad2 size={18} />
+              )}
+            </div>
+            <div>
+              <span>Brand studio</span>
+              <h2>{form.companyName || 'Your brand'}</h2>
+              <p>
+                {form.tagline || 'Billing'} · {modeLabel} · {presetLabel}
+              </p>
+            </div>
           </div>
-          <div>
-            <span>Brand studio</span>
-            <h2>{form.companyName || 'Your brand'}</h2>
-            <p>
-              {form.tagline || 'Billing'} · {modeLabel} · {presetLabel}
-            </p>
+          <div className="brand-deck__mast-actions">
+            <span
+              className="brand-deck__chip"
+              style={{ background: presetWash(previewAccent, previewSecondary) }}
+              title={`${previewAccent} / ${previewSecondary}`}
+            />
+            <button type="submit" className="brand-deck__save" disabled={saving || Boolean(uploading)}>
+              <Save size={15} /> {saving ? 'Saving…' : 'Save brand'}
+            </button>
           </div>
-        </div>
-        <div className="brand-deck__mast-actions">
-          <span
-            className="brand-deck__chip"
-            style={{ background: presetWash(previewAccent, previewSecondary) }}
-            title={`${previewAccent} / ${previewSecondary}`}
-          />
-          <button type="submit" className="brand-deck__save" disabled={saving || Boolean(uploading)}>
-            <Save size={15} /> {saving ? 'Saving…' : 'Save brand'}
-          </button>
-        </div>
-      </header>
+        </header>
+      ) : null}
 
       <div className="brand-deck__body">
-        <nav className="brand-deck__rail" aria-label="Brand sections">
-          {SECTIONS.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                className={section === item.id ? 'is-active' : ''}
-                aria-current={section === item.id ? 'page' : undefined}
-                onClick={() => setSection(item.id)}
-              >
-                <Icon size={15} />
-                <span>
-                  <strong>{item.label}</strong>
-                  <small>{item.hint}</small>
-                </span>
-              </button>
-            );
-          })}
-        </nav>
+        {!embedded ? (
+          <nav className="brand-deck__rail" aria-label="Brand sections">
+            {BRAND_SECTIONS.map((item) => {
+              const Icon = item.icon;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={section === item.id ? 'is-active' : ''}
+                  aria-current={section === item.id ? 'page' : undefined}
+                  onClick={() => setSection(item.id)}
+                >
+                  <Icon size={15} />
+                  <span>
+                    <strong>{item.label}</strong>
+                    <small>{item.hint}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </nav>
+        ) : null}
 
         <section className="brand-deck__editor" aria-labelledby="brand-deck-editor-title">
           <header className="brand-deck__editor-head">
@@ -563,6 +577,11 @@ export function BrandingStudio({
               <h3 id="brand-deck-editor-title">{activeSection.label}</h3>
               <p>{activeSection.lede}</p>
             </div>
+            {embedded ? (
+              <button type="submit" className="brand-deck__save" disabled={saving || Boolean(uploading)}>
+                <Save size={15} /> {saving ? 'Saving…' : 'Save brand'}
+              </button>
+            ) : null}
           </header>
 
           {section === 'theme' && (

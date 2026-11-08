@@ -42,10 +42,12 @@ function isPrivateOrLocalHost(hostname: string): boolean {
     const ranges: Array<[number, number]> = [
       [ipv4ToInt('0.0.0.0'), ipv4ToInt('0.255.255.255')],
       [ipv4ToInt('10.0.0.0'), ipv4ToInt('10.255.255.255')],
+      [ipv4ToInt('100.64.0.0'), ipv4ToInt('100.127.255.255')], // CGNAT
       [ipv4ToInt('127.0.0.0'), ipv4ToInt('127.255.255.255')],
       [ipv4ToInt('169.254.0.0'), ipv4ToInt('169.254.255.255')],
       [ipv4ToInt('172.16.0.0'), ipv4ToInt('172.31.255.255')],
       [ipv4ToInt('192.168.0.0'), ipv4ToInt('192.168.255.255')],
+      [ipv4ToInt('198.18.0.0'), ipv4ToInt('198.19.255.255')], // benchmarking / proxy test
     ];
     return ranges.some(([start, end]) => n >= start && n <= end);
   }
@@ -151,6 +153,10 @@ export async function assertSafeOutboundUrl(
     );
   }
 
+  if (isPrivateOrLocalHost(host) && allowPrivate) {
+    console.warn(`[url-safety] private panel URL allowed for ${label}: ${parsed.origin}`);
+  }
+
   // Resolve DNS and re-check the resolved address (DNS rebinding mitigation).
   if (isIP(host) === 0) {
     try {
@@ -163,6 +169,11 @@ export async function assertSafeOutboundUrl(
           throw Object.assign(
             new Error(`${label} resolves to a private network address`),
             { statusCode: 422 },
+          );
+        }
+        if (isPrivateOrLocalHost(entry.address) && allowPrivate) {
+          console.warn(
+            `[url-safety] private panel URL (DNS) allowed for ${label}: ${parsed.hostname} → ${entry.address}`,
           );
         }
       }

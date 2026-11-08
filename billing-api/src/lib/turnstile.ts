@@ -12,7 +12,11 @@ async function readTurnstileSecret(): Promise<string> {
   if (!stored) return '';
   try {
     return decryptSecret(stored);
-  } catch {
+  } catch (err) {
+    console.error(
+      '[security] Failed to decrypt Turnstile secret — captcha verification will fail until the key is re-saved.',
+      err instanceof Error ? err.message : err,
+    );
     return '';
   }
 }

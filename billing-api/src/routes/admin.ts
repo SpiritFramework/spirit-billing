@@ -1,6 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod/v3';
-import { assertPasswordOk, hashPassword, requireFullAdmin, requireStaffAccess } from '../lib/auth.js';
+import {
+  assertPasswordOk,
+  assertStepUpPassword,
+  hashPassword,
+  requireCapability,
+  requireFullAdmin,
+  requireStaffAccess,
+  revokeAllUserSessions,
+} from '../lib/auth.js';
 import {
   CATEGORY_COLORS,
   CATEGORY_ICONS,
@@ -28,6 +36,7 @@ import {
 } from '../lib/renewals.js';
 import { pruneSystemLogs, recordLogFireAndForget } from '../lib/system-log.js';
 import { getConfig } from '../lib/env.js';
+import { getAboutPayload } from '../lib/version.js';
 import {
   getPanelConnectionConfig,
   savePanelConnectionConfig,
@@ -908,8 +917,9 @@ export async function adminRoutes(app: FastifyInstance) {
           error: 'Database schema is out of date. Run prisma db push on the API host.',
         });
       }
+      request.log.error({ err }, 'category update failed');
       return reply.status(500).send({
-        error: err instanceof Error ? err.message : 'Could not update category',
+        error: 'Could not update category',
       });
     }
   });
@@ -1608,7 +1618,10 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
-  app.post('/invoices/:id/cancel', { ...adminMutationRateLimit }, async (request, reply) => {
+  app.post('/invoices/:id/cancel', {
+    preHandler: requireCapability('invoices.cancel_unpaid'),
+    ...adminMutationRateLimit,
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const invoice = await prisma.invoice.findUnique({ where: { id } });
     if (!invoice) return reply.status(404).send({ error: 'Not found' });
@@ -1769,7 +1782,10 @@ export async function adminRoutes(app: FastifyInstance) {
     return { invoice: updated, panelServerId: invoice.service?.panelServerId ?? null };
   });
 
-  app.post('/services/:id/suspend', async (request, reply) => {
+  app.post('/services/:id/suspend', {
+    preHandler: requireCapability('services.suspend'),
+    ...adminMutationRateLimit,
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const service = await prisma.service.findUnique({ where: { id } });
     if (!service) return reply.status(404).send({ error: 'Not found' });
@@ -1805,7 +1821,10 @@ export async function adminRoutes(app: FastifyInstance) {
     });
   });
 
-  app.post('/services/:id/unsuspend', async (request, reply) => {
+  app.post('/services/:id/unsuspend', {
+    preHandler: requireCapability('services.unsuspend'),
+    ...adminMutationRateLimit,
+  }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const service = await prisma.service.findUnique({ where: { id } });
     if (!service) return reply.status(404).send({ error: 'Not found' });
@@ -2169,18 +2188,32 @@ export async function adminRoutes(app: FastifyInstance) {
     }
   });
 
-  app.patch('/users/:id', { preHandler: requireFullAdmin }, async (request, reply) => {
+  app.patch('/users/:id', {
+    preHandler: [requireFullAdmin, requireCapability('users.role')],
+    ...adminMutationRateLimit,
+  }, async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const body = z
       .object({
         enabled: z.boolean().optional(),
         role: z.enum(['admin', 'staff', 'client']).optional(),
+        currentPassword: z.string().min(1).max(200).optional(),
       })
       .parse(request.body ?? {});
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) {
       return reply.status(404).send({ error: 'User not found' });
+    }
+
+    const roleChanging = body.role !== undefined && body.role !== existing.role;
+    if (roleChanging) {
+      try {
+        await assertStepUpPassword(request.user!.id, body.currentPassword);
+      } catch (err) {
+        const status = (err as { statusCode?: number }).statusCode ?? 403;
+        return reply.status(status).send({ error: err instanceof Error ? err.message : 'Forbidden' });
+      }
     }
 
     if (body.role === 'client' && existing.role === 'admin') {
@@ -2223,16 +2256,41 @@ export async function adminRoutes(app: FastifyInstance) {
       },
     });
 
+    if (bumpSession) {
+      await revokeAllUserSessions(id);
+    }
+
     return user;
   });
 
-  app.post('/users/:id/password', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
+  app.post('/users/:id/password', {
+    preHandler: [requireFullAdmin, requireCapability('users.password')],
+    ...adminMutationRateLimit,
+  }, async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
-    const { password } = z.object({ password: z.string().min(1).max(200) }).parse(request.body);
+    const { password, currentPassword } = z
+      .object({
+        password: z.string().min(1).max(200),
+        currentPassword: z.string().min(1).max(200),
+      })
+      .parse(request.body);
     assertPasswordOk(password);
+
+    try {
+      await assertStepUpPassword(request.user!.id, currentPassword);
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode ?? 403;
+      return reply.status(status).send({ error: err instanceof Error ? err.message : 'Forbidden' });
+    }
 
     const existing = await prisma.user.findUnique({ where: { id } });
     if (!existing) return reply.status(404).send({ error: 'User not found' });
+
+    if (existing.role === 'admin' && existing.id !== request.user!.id) {
+      return reply.status(403).send({
+        error: 'Cannot reset another administrator’s password',
+      });
+    }
 
     const passwordHash = await hashPassword(password);
     let panelUserId = existing.panelUserId;
@@ -2258,6 +2316,7 @@ export async function adminRoutes(app: FastifyInstance) {
               where: { id },
               data: { panelUserId: byEmail.id, passwordHash, tokenVersion: { increment: 1 } },
             });
+            await revokeAllUserSessions(id);
             return {
               updated: true,
               panelLinkRepaired: true,
@@ -2269,6 +2328,7 @@ export async function adminRoutes(app: FastifyInstance) {
             where: { id },
             data: { panelUserId: null, passwordHash, tokenVersion: { increment: 1 } },
           });
+          await revokeAllUserSessions(id);
           return { updated: true, panelLinkCleared: true };
         }
         if (isProtectedPanelPasswordError(err)) {
@@ -2287,6 +2347,7 @@ export async function adminRoutes(app: FastifyInstance) {
       where: { id },
       data: { passwordHash, tokenVersion: { increment: 1 } },
     });
+    await revokeAllUserSessions(id);
     return {
       updated: true,
       panelPasswordSkipped,
@@ -2437,6 +2498,29 @@ export async function adminRoutes(app: FastifyInstance) {
     }
     return trimmed.toLowerCase();
   }
+
+  app.get('/about', async (request) => {
+    const full = await getAboutPayload();
+    if (request.user?.role === 'admin') return full;
+    // Staff: version / product only — no update commands or deep runtime.
+    return {
+      product: full.product,
+      tagline: full.tagline,
+      version: full.version,
+      installerVersion: full.installerVersion,
+      updateAvailable: full.updateAvailable,
+      latestRelease: full.latestRelease
+        ? { tag: full.latestRelease.tag, name: full.latestRelease.name, url: full.latestRelease.url }
+        : null,
+      links: {
+        changelog: full.links.changelog,
+        releases: full.links.releases,
+        panel: full.links.panel,
+      },
+      license: full.license,
+      builtBy: full.builtBy,
+    };
+  });
 
   app.get('/settings', async () => settingsPayload());
 

@@ -68,7 +68,11 @@ export async function getPanelConnectionConfig(): Promise<PanelConnectionConfig>
   if (stored) {
     try {
       key = decryptSecret(stored);
-    } catch {
+    } catch (err) {
+      console.error(
+        '[security] Failed to decrypt Panel API key — panel calls may fail until the key is re-saved in Admin → Settings.',
+        err instanceof Error ? err.message : err,
+      );
       key = '';
     }
   }

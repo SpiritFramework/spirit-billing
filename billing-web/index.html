@@ -8,6 +8,26 @@
       /* Apply last-known theme before CSS/React to avoid default-theme flash */
       (function () {
         try {
+          var ATTR_KEYS = {
+            'data-theme': 1,
+            'data-density': 1,
+            'data-sidebar': 1,
+            'data-navbar': 1,
+            'data-radius': 1,
+            'data-auth-bg': 1,
+            'data-client-bg': 1,
+            'data-admin-bg': 1,
+            'data-client-nav': 1,
+            'data-admin-nav': 1
+          };
+          var CSS_VAR_RE = /^--[a-z0-9-]+$/i;
+          var UNSAFE = /url\s*\(|expression\s*\(|javascript:|<|>/i;
+          function safeAttr(v) {
+            return typeof v === 'string' && v && v.length <= 64 && !UNSAFE.test(v) && !/[\s"'`=]/.test(v);
+          }
+          function safeCss(v) {
+            return typeof v === 'string' && v && v.length <= 200 && !UNSAFE.test(v);
+          }
           var raw = localStorage.getItem('spirit-billing-theme-dom');
           if (!raw) return;
           var cache = JSON.parse(raw);
@@ -15,19 +35,19 @@
           var root = document.documentElement;
           if (cache.attrs) {
             for (var key in cache.attrs) {
-              if (Object.prototype.hasOwnProperty.call(cache.attrs, key) && cache.attrs[key]) {
+              if (ATTR_KEYS[key] && safeAttr(cache.attrs[key])) {
                 root.setAttribute(key, cache.attrs[key]);
               }
             }
           }
           if (cache.vars) {
             for (var prop in cache.vars) {
-              if (Object.prototype.hasOwnProperty.call(cache.vars, prop) && cache.vars[prop]) {
+              if (CSS_VAR_RE.test(prop) && safeCss(cache.vars[prop])) {
                 root.style.setProperty(prop, cache.vars[prop]);
               }
             }
           }
-          if (typeof cache.title === 'string' && cache.title.trim()) {
+          if (typeof cache.title === 'string' && cache.title.trim() && cache.title.length <= 120 && cache.title.indexOf('<') === -1) {
             document.title = cache.title;
           }
         } catch (e) {}

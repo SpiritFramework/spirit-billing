@@ -10701,6 +10701,58 @@ a.ds-user-chip:focus-visible {
   gap: .85rem;
 }
 
+.brand-deck.is-embedded {
+  gap: 0;
+}
+
+.brand-deck.is-embedded .brand-deck__body {
+  grid-template-columns: minmax(0, 1fr) clamp(16.5rem, 24vw, 24rem);
+  gap: .85rem;
+}
+
+.brand-deck.is-embedded .brand-deck__editor {
+  border-radius: .55rem;
+  background: color-mix(in srgb, var(--surface) 78%, transparent);
+}
+
+.brand-deck.is-embedded .brand-deck__editor-head {
+  align-items: center;
+}
+
+.brand-deck.is-embedded .brand-deck__preview {
+  border-radius: .55rem;
+}
+
+.brand-deck.is-embedded .brand-deck-modes {
+  gap: .4rem;
+}
+
+.brand-deck.is-embedded .brand-deck-mode {
+  border-radius: .55rem;
+  padding: .45rem .5rem .55rem;
+}
+
+.brand-deck.is-embedded .brand-deck-mode__preview {
+  height: 1.7rem;
+}
+
+.brand-deck.is-embedded .brand-deck-presets {
+  grid-template-columns: repeat(auto-fill, minmax(7.8rem, 1fr));
+  gap: .45rem;
+}
+
+.brand-deck.is-embedded .brand-deck-preset {
+  border-radius: .55rem;
+}
+
+.brand-deck.is-embedded .brand-deck-preset__stage {
+  min-height: 3.4rem;
+}
+
+.brand-deck.is-embedded .brand-deck-preset__meta small {
+  display: none;
+}
+
 .brand-deck__mast {
   display: flex;
   align-items: center;
@@ -11947,6 +11999,10 @@ a.ds-user-chip:focus-visible {
 @media (max-width: 1180px) {
   .brand-deck__body {
     grid-template-columns: 10.5rem minmax(0, 1fr);
+  }
+
+  .brand-deck.is-embedded .brand-deck__body {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .brand-deck__preview {

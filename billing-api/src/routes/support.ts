@@ -5,15 +5,17 @@ import { prisma } from '../lib/prisma.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';
 import {
   assertTicketsEnabled,
-  normalizeAttachments,
+  clientTicketDetailInclude,
+  normalizeAttachmentsForUser,
   nextTicketNumber,
   notifyAdmins,
+  signTicketDetail,
   ticketDetailInclude,
   ticketListInclude,
   TICKET_PRIORITIES,
   TICKET_PRIORITY_RANK,
 } from '../lib/tickets.js';
-import { saveTicketImage } from '../lib/uploads.js';
+import { saveTicketImage, signTicketUploadUrl } from '../lib/uploads.js';
 
 const mutationLimit = {
   config: {
@@ -45,18 +47,24 @@ function guessMime(filename: string, mimetype: string) {
   return mime || 'application/octet-stream';
 }
 
-async function parseUpload(request: { file: () => Promise<any> }) {
+async function parseUpload(request: { file: () => Promise<any>; user?: { id: string } }) {
+  const userId = request.user?.id;
+  if (!userId) {
+    throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+  }
   const file = await request.file();
   if (!file) {
     throw Object.assign(new Error('No image uploaded'), { statusCode: 422 });
   }
   const buffer = await file.toBuffer();
   const filename = file.filename || 'image.jpg';
-  return saveTicketImage({
+  const saved = await saveTicketImage({
     buffer,
     filename,
     mimetype: guessMime(filename, file.mimetype || ''),
+    userId,
   });
+  return { ...saved, url: signTicketUploadUrl(saved.url) };
 }
 
 export async function supportClientRoutes(app: FastifyInstance) {
@@ -83,10 +91,10 @@ export async function supportClientRoutes(app: FastifyInstance) {
     const { id } = request.params as { id: string };
     const ticket = await prisma.ticket.findFirst({
       where: { id, userId: request.user!.id },
-      include: ticketDetailInclude,
+      include: clientTicketDetailInclude,
     });
     if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
-    return ticket;
+    return signTicketDetail(ticket);
   });
 
   app.post('/tickets/upload', { preHandler: requireAuth, ...mutationLimit }, async (request, reply) => {
@@ -140,12 +148,13 @@ export async function supportClientRoutes(app: FastifyInstance) {
               status: 'open',
             },
           });
+          const attachments = await normalizeAttachmentsForUser(body.attachments, request.user!.id);
           await tx.ticketMessage.create({
             data: {
               ticketId: created.id,
               authorUserId: request.user!.id,
               body: body.body,
-              attachments: normalizeAttachments(body.attachments),
+              attachments,
             },
           });
           return created;
@@ -170,10 +179,12 @@ export async function supportClientRoutes(app: FastifyInstance) {
           href: `/admin/tickets/${ticket.id}`,
         });
 
-        return prisma.ticket.findUniqueOrThrow({
-          where: { id: ticket.id },
-          include: ticketDetailInclude,
-        });
+        return signTicketDetail(
+          await prisma.ticket.findUniqueOrThrow({
+            where: { id: ticket.id },
+            include: clientTicketDetailInclude,
+          }),
+        );
       } catch (err) {
         if ((err as { code?: string }).code !== 'P2002') throw err;
         number = await nextTicketNumber();
@@ -200,13 +211,14 @@ export async function supportClientRoutes(app: FastifyInstance) {
       return reply.status(422).send({ error: 'This ticket is closed' });
     }
 
+    const attachments = await normalizeAttachmentsForUser(body.attachments, request.user!.id);
     await prisma.$transaction(async (tx) => {
       await tx.ticketMessage.create({
         data: {
           ticketId: ticket.id,
           authorUserId: request.user!.id,
           body: body.body,
-          attachments: normalizeAttachments(body.attachments),
+          attachments,
         },
       });
       await tx.ticket.update({
@@ -222,10 +234,12 @@ export async function supportClientRoutes(app: FastifyInstance) {
       href: `/admin/tickets/${ticket.id}`,
     });
 
-    return prisma.ticket.findUniqueOrThrow({
-      where: { id: ticket.id },
-      include: ticketDetailInclude,
-    });
+    return signTicketDetail(
+      await prisma.ticket.findUniqueOrThrow({
+        where: { id: ticket.id },
+        include: clientTicketDetailInclude,
+      }),
+    );
   });
 
   app.patch('/tickets/:id', { preHandler: requireAuth, ...mutationLimit }, async (request, reply) => {
@@ -370,7 +384,7 @@ export async function supportAdminRoutes(app: FastifyInstance) {
       include: ticketDetailInclude,
     });
     if (!ticket) return reply.status(404).send({ error: 'Not found' });
-    return ticket;
+    return signTicketDetail(ticket);
   });
 
   app.post('/tickets/upload', { ...mutationLimit }, async (request, reply) => {
@@ -397,13 +411,14 @@ export async function supportAdminRoutes(app: FastifyInstance) {
 
     const nextStatus = body.status ?? (ticket.status === 'closed' ? 'closed' : 'answered');
 
+    const attachments = await normalizeAttachmentsForUser(body.attachments, request.user!.id);
     await prisma.$transaction(async (tx) => {
       await tx.ticketMessage.create({
         data: {
           ticketId: ticket.id,
           authorUserId: request.user!.id,
           body: body.body,
-          attachments: normalizeAttachments(body.attachments),
+          attachments,
         },
       });
       await tx.ticket.update({
@@ -437,10 +452,12 @@ export async function supportAdminRoutes(app: FastifyInstance) {
       meta: { ticketId: ticket.id, status: nextStatus },
     });
 
-    return prisma.ticket.findUniqueOrThrow({
-      where: { id: ticket.id },
-      include: ticketDetailInclude,
-    });
+    return signTicketDetail(
+      await prisma.ticket.findUniqueOrThrow({
+        where: { id: ticket.id },
+        include: ticketDetailInclude,
+      }),
+    );
   });
 
   app.patch('/tickets/:id', { ...mutationLimit }, async (request, reply) => {
@@ -456,6 +473,18 @@ export async function supportAdminRoutes(app: FastifyInstance) {
 
     const ticket = await prisma.ticket.findUnique({ where: { id } });
     if (!ticket) return reply.status(404).send({ error: 'Not found' });
+
+    if (body.serviceId) {
+      const service = await prisma.service.findFirst({
+        where: { id: body.serviceId, userId: ticket.userId },
+        select: { id: true },
+      });
+      if (!service) {
+        return reply.status(422).send({
+          error: 'Service must belong to the ticket owner',
+        });
+      }
+    }
 
     const updated = await prisma.ticket.update({
       where: { id },
@@ -497,7 +526,7 @@ export async function supportAdminRoutes(app: FastifyInstance) {
       });
     }
 
-    return updated;
+    return signTicketDetail(updated);
   });
 
   app.delete('/tickets/:id', { preHandler: requireFullAdmin, ...mutationLimit }, async (request, reply) => {

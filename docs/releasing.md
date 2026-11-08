@@ -61,6 +61,6 @@ sudo bash /tmp/spirit-billing.sh update --channel release -y
 
 ## Tag naming
 
-Prefer **`v0.1.1`** (semver with a `v` prefix) for Billing so GitHub Releases and `scripts/spirit.sh --channel release` resolve cleanly.
+From **v1.0.0.0** onward, Billing uses four-part tags like Panel: **`v1.0.0.0`** (`vMAJOR.MINOR.PATCH.BUILD`).
 
-If you later adopt four-part tags like Panel (`V1.2.0.0`), document the switch in the changelog and keep `latest_release_tag` compatible.
+`scripts/spirit.sh --channel release` resolves the latest non-draft GitHub Release tag via the API (`tag_name`), so four-part tags work as long as each ship creates a Release.

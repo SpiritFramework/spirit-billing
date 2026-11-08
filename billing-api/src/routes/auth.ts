@@ -1,13 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod/v3';
 import {
+  assertNotLockedOut,
   assertPasswordOk,
+  clearLoginFailures,
   clearSessionCookie,
+  createUserSession,
   getUserFromRequest,
   hashPassword,
+  recordLoginFailure,
   requireAuth,
-  setSessionCookie,
-  signToken,
+  revokeAllUserSessions,
+  revokeRefreshFromRequest,
+  revokeSessionById,
+  rotateRefreshSession,
   verifyPassword,
 } from '../lib/auth.js';
 import { getConfig } from '../lib/env.js';
@@ -53,7 +59,7 @@ const publicUserSelect = {
 const authRateLimit = {
   config: {
     rateLimit: {
-      max: 10,
+      max: 5,
       timeWindow: '1 minute',
     },
   },
@@ -301,14 +307,17 @@ export async function authRoutes(app: FastifyInstance) {
       throw err;
     }
 
-    const token = signToken({
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      tokenVersion: user.tokenVersion,
-    });
-    setSessionCookie(reply, token, user.role);
+    await createUserSession(
+      reply,
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        tokenVersion: user.tokenVersion,
+      },
+      { ip: request.ip, userAgent: request.headers['user-agent'] },
+    );
     const { tokenVersion: _tv, ...publicUser } = user;
     recordLogFireAndForget({
       level: 'info',
@@ -345,6 +354,16 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
+    try {
+      assertNotLockedOut(body.identifier, request.ip);
+    } catch (err) {
+      const statusCode = (err as { statusCode?: number }).statusCode ?? 429;
+      return reply.status(statusCode).send({
+        error: err instanceof Error ? err.message : 'Too many attempts',
+        code: (err as { code?: string }).code,
+      });
+    }
+
     const user = await prisma.user.findFirst({
       where: {
         OR: [{ email: body.identifier.toLowerCase() }, { username: body.identifier }],
@@ -355,6 +374,7 @@ export async function authRoutes(app: FastifyInstance) {
     const hash = user?.passwordHash ?? '$2b$12$t4I5APNA7d1OF/pse9PGqOqLVuxND0iZU7Ma.m9kQ3JfpR4MH2mFa';
     const passwordOk = await verifyPassword(body.password, hash);
     if (!user || !user.enabled || !passwordOk) {
+      recordLoginFailure(body.identifier, request.ip);
       recordLogFireAndForget({
         level: 'warn',
         category: 'auth',
@@ -377,14 +397,18 @@ export async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const token = signToken({
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      role: user.role,
-      tokenVersion: user.tokenVersion,
-    });
-    setSessionCookie(reply, token, user.role);
+    clearLoginFailures(body.identifier, request.ip);
+    await createUserSession(
+      reply,
+      {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        role: user.role,
+        tokenVersion: user.tokenVersion,
+      },
+      { ip: request.ip, userAgent: request.headers['user-agent'] },
+    );
     recordLogFireAndForget({
       level: 'info',
       category: 'auth',
@@ -414,13 +438,19 @@ export async function authRoutes(app: FastifyInstance) {
     };
   });
 
+  app.post('/refresh', authRateLimit, async (request, reply) => {
+    const session = await rotateRefreshSession(reply, request);
+    if (!session) {
+      clearSessionCookie(reply);
+      return reply.status(401).send({ error: 'Session expired' });
+    }
+    return { ok: true };
+  });
+
   app.post('/logout', async (request, reply) => {
     const session = await getUserFromRequest(request);
-    if (session) {
-      await prisma.user.update({
-        where: { id: session.id },
-        data: { tokenVersion: { increment: 1 } },
-      });
+    if (session?.sessionId) {
+      await revokeSessionById(session.sessionId);
       recordLogFireAndForget({
         level: 'info',
         category: 'auth',
@@ -431,6 +461,8 @@ export async function authRoutes(app: FastifyInstance) {
         method: 'POST',
         path: '/api/auth/logout',
       });
+    } else {
+      await revokeRefreshFromRequest(request);
     }
     clearSessionCookie(reply);
     return { ok: true };
@@ -655,14 +687,18 @@ export async function authRoutes(app: FastifyInstance) {
     }
 
     if (bumpSession) {
-      const token = signToken({
-        id: user.id,
-        email: user.email,
-        username: user.username,
-        role: user.role,
-        tokenVersion: user.tokenVersion,
-      });
-      setSessionCookie(reply, token, user.role);
+      await revokeAllUserSessions(user.id);
+      await createUserSession(
+        reply,
+        {
+          id: user.id,
+          email: user.email,
+          username: user.username,
+          role: user.role,
+          tokenVersion: user.tokenVersion,
+        },
+        { ip: request.ip, userAgent: request.headers['user-agent'] },
+      );
     }
 
     const { tokenVersion: _tv, ...publicUser } = user;

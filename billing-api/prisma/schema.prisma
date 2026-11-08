@@ -109,8 +109,27 @@ model User {
   systemLogsTarget  SystemLog[]        @relation("SystemLogTarget")
   tickets           Ticket[]
   ticketMessages    TicketMessage[]
+  sessions          Session[]
 
   @@map("users")
+}
+
+/** Opaque refresh sessions (access JWT stays short-lived). */
+model Session {
+  id        String    @id @default(cuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.VarChar(128)
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  userAgent String?   @map("user_agent") @db.VarChar(512)
+  ip        String?   @db.VarChar(64)
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
 }
 
 model Notification {

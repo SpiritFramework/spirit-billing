@@ -22,8 +22,17 @@ import { isStaffOrAdmin } from '../lib/roles';
 
 function safeNextPath(raw: string | null) {
   if (!raw) return null;
-  if (!raw.startsWith('/') || raw.startsWith('//')) return null;
-  return raw;
+  let value = raw.trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /\s/.test(value)) {
+    return null;
+  }
+  if (value.includes('://') || value.toLowerCase().includes('%2f%2f')) return null;
+  return value;
 }
 
 function AuthShell({

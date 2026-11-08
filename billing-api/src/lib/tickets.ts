@@ -1,5 +1,10 @@
 import { getSetting, setSetting } from './billing.js';
 import { prisma } from './prisma.js';
+import {
+  assertUploadReadable,
+  readTicketUploadMeta,
+  signTicketUploadUrl,
+} from './uploads.js';
 
 const TICKETS_ENABLED = 'tickets_enabled';
 
@@ -64,6 +69,7 @@ function normalizeAttachmentUrl(url: string): string {
   return '';
 }
 
+/** Sync shape check only — prefer normalizeAttachmentsForUser for writes. */
 export function normalizeAttachments(raw: unknown): TicketAttachment[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -76,6 +82,44 @@ export function normalizeAttachments(raw: unknown): TicketAttachment[] {
     }))
     .filter((item) => item.url.startsWith('/uploads/tickets/'))
     .slice(0, 5);
+}
+
+/** Bind attachments to files on disk and to the uploading user when meta exists. */
+export async function normalizeAttachmentsForUser(
+  raw: unknown,
+  userId: string,
+): Promise<TicketAttachment[]> {
+  const candidates = normalizeAttachments(raw);
+  const out: TicketAttachment[] = [];
+  for (const item of candidates) {
+    if (!(await assertUploadReadable(item.url))) continue;
+    const name = item.url.replace('/uploads/tickets/', '').split('?')[0];
+    const meta = await readTicketUploadMeta(name);
+    // Reject attaching another user's upload; allow legacy files without meta.
+    if (meta && meta.userId !== userId) continue;
+    out.push({ ...item, url: item.url.split('?')[0] });
+  }
+  return out.slice(0, 5);
+}
+
+export function signTicketAttachments<T extends { attachments?: unknown }>(message: T): T {
+  const raw = message.attachments;
+  if (!Array.isArray(raw)) return message;
+  const attachments = raw.map((item) => {
+    if (!item || typeof item !== 'object') return item;
+    const row = item as Record<string, unknown>;
+    if (typeof row.url !== 'string') return item;
+    return { ...row, url: signTicketUploadUrl(row.url) };
+  });
+  return { ...message, attachments };
+}
+
+export function signTicketDetail<T extends { messages?: Array<{ attachments?: unknown }> }>(ticket: T): T {
+  if (!ticket.messages?.length) return ticket;
+  return {
+    ...ticket,
+    messages: ticket.messages.map((m) => signTicketAttachments(m)),
+  };
 }
 
 /** Notify every enabled admin (used for new tickets / client replies). */
@@ -110,6 +154,24 @@ export const ticketListInclude = {
   _count: { select: { messages: true } },
 } as const;
 
+const ticketMessageInclude = {
+  orderBy: { createdAt: 'asc' as const },
+  include: {
+    author: {
+      select: {
+        id: true,
+        username: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+        role: true,
+        avatarUrl: true,
+      },
+    },
+  },
+} as const;
+
+/** Staff/admin ticket detail — may include panel server id for ops. */
 export const ticketDetailInclude = {
   category: { select: { id: true, name: true, color: true, description: true, icon: true } },
   service: {
@@ -132,22 +194,32 @@ export const ticketDetailInclude = {
       avatarUrl: true,
     },
   },
-  messages: {
-    orderBy: { createdAt: 'asc' as const },
-    include: {
-      author: {
-        select: {
-          id: true,
-          username: true,
-          email: true,
-          firstName: true,
-          lastName: true,
-          role: true,
-          avatarUrl: true,
-        },
-      },
+  messages: ticketMessageInclude,
+} as const;
+
+/** Client-facing ticket detail — no panel identifiers. */
+export const clientTicketDetailInclude = {
+  category: { select: { id: true, name: true, color: true, description: true, icon: true } },
+  service: {
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      product: { select: { id: true, name: true } },
     },
   },
+  user: {
+    select: {
+      id: true,
+      username: true,
+      email: true,
+      firstName: true,
+      lastName: true,
+      role: true,
+      avatarUrl: true,
+    },
+  },
+  messages: ticketMessageInclude,
 } as const;
 
 export const TICKET_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const;

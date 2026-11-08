@@ -18,6 +18,7 @@ import {
 } from '../lib/service-lifecycle.js';
 import { withEffectiveServiceCategory } from '../lib/service-display.js';
 import { normalizeProductFeatures, loadStorefrontProducts, repairInvalidProductFeatures } from '../lib/product-features.js';
+import { publicErrorMessage } from '../lib/public-errors.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';
 
 function withProductFeatures<T extends { features?: unknown }>(product: T) {
@@ -871,9 +872,10 @@ export async function clientRoutes(app: FastifyInstance) {
         });
         provisioned.push(row.invoice.id);
       } catch (err) {
+        request.log.warn({ err }, 'checkout provisioning failed');
         provisionErrors.push({
           invoiceId: row.invoice.id,
-          error: err instanceof Error ? err.message : 'Provisioning failed',
+          error: publicErrorMessage(err, 'Provisioning failed', request.log),
         });
       }
     }
@@ -973,7 +975,8 @@ export async function clientRoutes(app: FastifyInstance) {
           });
           provisioned = true;
         } catch (err) {
-          provisionError = err instanceof Error ? err.message : 'Provisioning failed';
+          request.log.warn({ err }, 'pay-with-credits provisioning failed');
+          provisionError = publicErrorMessage(err, 'Provisioning failed', request.log);
         }
       }
     }

@@ -14,6 +14,7 @@ export type BillingStaffCapability =
   | 'admin.access'
   | 'tickets.manage'
   | 'services.suspend'
+  | 'services.unsuspend'
   | 'invoices.cancel_unpaid'
   | 'logs.read'
   | 'settings.read'

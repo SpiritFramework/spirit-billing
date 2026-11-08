@@ -3,7 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import { BrandingProvider } from './context/BrandingContext';
 import { CartProvider } from './context/CartContext';
 import { AdminLayout, ClientLayout } from './components/Layout';
-import { isStaffOrAdmin } from './lib/roles';
+import { isFullAdmin, isStaffOrAdmin } from './lib/roles';
 import { LandingPage } from './pages/Landing';
 import { LoginPage, RegisterPage } from './pages/Auth';
 import { DashboardPage } from './pages/client/Dashboard';
@@ -33,8 +33,17 @@ import { TicketsPage, TicketDetailPage } from './pages/client/Tickets';
 
 function safeNextPath(raw: string | null) {
   if (!raw) return null;
-  if (!raw.startsWith('/') || raw.startsWith('//')) return null;
-  return raw;
+  let value = raw.trim();
+  try {
+    value = decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+  if (!value.startsWith('/') || value.startsWith('//') || value.includes('\\') || /\s/.test(value)) {
+    return null;
+  }
+  if (value.includes('://') || value.toLowerCase().includes('%2f%2f')) return null;
+  return value;
 }
 
 function PublicOnly({ children }: { children: React.ReactNode }) {
@@ -45,6 +54,15 @@ function PublicOnly({ children }: { children: React.ReactNode }) {
     const next = safeNextPath(searchParams.get('next'));
     return <Navigate to={next || (isStaffOrAdmin(user.role) ? '/admin' : '/dashboard')} replace />;
   }
+  return children;
+}
+
+/** Catalog / settings routes — full administrators only (API already enforces). */
+function FullAdminOnly({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user || !isStaffOrAdmin(user.role)) return <Navigate to="/login" replace />;
+  if (!isFullAdmin(user.role)) return <Navigate to="/admin" replace />;
   return children;
 }
 
@@ -76,26 +94,26 @@ export default function App() {
 
               <Route path="/admin" element={<AdminLayout />}>
                 <Route index element={<AdminOverview />} />
-                <Route path="categories" element={<AdminCategories />} />
-                <Route path="categories/new" element={<AdminCategoryEdit />} />
-                <Route path="categories/:id" element={<AdminCategoryEdit />} />
-                <Route path="products" element={<AdminProducts />} />
-                <Route path="products/new" element={<AdminProductEdit />} />
-                <Route path="products/:id" element={<AdminProductEdit />} />
+                <Route path="categories" element={<FullAdminOnly><AdminCategories /></FullAdminOnly>} />
+                <Route path="categories/new" element={<FullAdminOnly><AdminCategoryEdit /></FullAdminOnly>} />
+                <Route path="categories/:id" element={<FullAdminOnly><AdminCategoryEdit /></FullAdminOnly>} />
+                <Route path="products" element={<FullAdminOnly><AdminProducts /></FullAdminOnly>} />
+                <Route path="products/new" element={<FullAdminOnly><AdminProductEdit /></FullAdminOnly>} />
+                <Route path="products/:id" element={<FullAdminOnly><AdminProductEdit /></FullAdminOnly>} />
                 <Route path="invoices" element={<AdminInvoices />} />
                 <Route path="invoices/:id" element={<AdminInvoiceDetail />} />
                 <Route path="services" element={<AdminServices />} />
-                <Route path="services/new" element={<AdminServiceCreate />} />
+                <Route path="services/new" element={<FullAdminOnly><AdminServiceCreate /></FullAdminOnly>} />
                 <Route path="services/:id" element={<AdminServiceDetail />} />
-                <Route path="coupons" element={<AdminCoupons />} />
+                <Route path="coupons" element={<FullAdminOnly><AdminCoupons /></FullAdminOnly>} />
                 <Route path="users" element={<AdminUsers />} />
                 <Route path="users/:id" element={<AdminUserDetail />} />
                 <Route path="tickets" element={<AdminTickets />} />
                 <Route path="tickets/:id" element={<AdminTicketDetail />} />
-                <Route path="ticket-categories" element={<AdminTicketCategories />} />
+                <Route path="ticket-categories" element={<FullAdminOnly><AdminTicketCategories /></FullAdminOnly>} />
                 <Route path="logs" element={<AdminLogs />} />
                 <Route path="analytics" element={<AdminAnalytics />} />
-                <Route path="settings" element={<AdminSettings />} />
+                <Route path="settings" element={<FullAdminOnly><AdminSettings /></FullAdminOnly>} />
               </Route>
 
               <Route path="*" element={<Navigate to="/" replace />} />

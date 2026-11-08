@@ -10,7 +10,14 @@ import { ZodError } from 'zod/v3';
 import { getConfig } from './lib/env.js';
 import { recordLogFireAndForget, remapLegacyLogCategories } from './lib/system-log.js';
 import { ensureDefaultTicketCategories } from './lib/tickets.js';
-import { ensureUploadsRoot, getUploadsRoot } from './lib/uploads.js';
+import { getUserFromRequest, hasSessionCookie, verifyCsrf } from './lib/auth.js';
+import { isStaffOrAdmin } from './lib/roles.js';
+import {
+  ensureUploadsRoot,
+  getUploadsRoot,
+  readTicketUploadMeta,
+  verifyTicketUploadSignature,
+} from './lib/uploads.js';
 import { repairInvalidProductFeatures } from './lib/product-features.js';
 import { authRoutes } from './routes/auth.js';
 import { clientRoutes } from './routes/client.js';
@@ -71,10 +78,27 @@ async function serveUploadFile(
   return reply.type(type).send(createReadStream(absolute));
 }
 
-/** Serve ticket / branding images from disk (works even when the uploads tree is created after boot). */
+/** Ticket images require a valid signature or an authenticated staff/owner session. */
 app.get('/uploads/tickets/:name', async (request, reply) => {
   const { name } = request.params as { name: string };
-  return serveUploadFile('tickets', name, reply);
+  const query = request.query as { exp?: string; sig?: string };
+  if (verifyTicketUploadSignature(name, query.exp, query.sig)) {
+    reply.header('Cache-Control', 'private, max-age=300');
+    return serveUploadFile('tickets', name, reply);
+  }
+
+  const user = await getUserFromRequest(request);
+  if (!user) return reply.status(401).send({ error: 'Unauthorized' });
+  if (isStaffOrAdmin(user.role)) {
+    reply.header('Cache-Control', 'private, max-age=300');
+    return serveUploadFile('tickets', name, reply);
+  }
+  const meta = await readTicketUploadMeta(name);
+  if (meta?.userId === user.id) {
+    reply.header('Cache-Control', 'private, max-age=300');
+    return serveUploadFile('tickets', name, reply);
+  }
+  return reply.status(403).send({ error: 'Forbidden' });
 });
 
 app.get('/uploads/branding/:name', async (request, reply) => {
@@ -104,13 +128,17 @@ await app.register(rateLimit, {
 app.addHook('onRequest', async (request, reply) => {
   if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) return;
   const origin = request.headers.origin;
-  const hasSessionCookie = Boolean(
-    (request.cookies as Record<string, string | undefined> | undefined)?.spirit_billing_session,
-  );
+  const path = request.url.split('?')[0] || '';
+  const cookieAuth = hasSessionCookie(request);
   // Cookie-authenticated browser mutations must present an allowed Origin.
-  if (hasSessionCookie) {
+  if (cookieAuth) {
     if (!origin || !config.corsOrigins.includes(origin)) {
       return reply.status(403).send({ error: 'Origin not allowed' });
+    }
+    // CSRF double-submit for session cookie mutations (login/register bootstrap without CSRF).
+    const csrfExempt = path === '/api/auth/login' || path === '/api/auth/register';
+    if (!csrfExempt && !verifyCsrf(request)) {
+      return reply.status(403).send({ error: 'CSRF validation failed' });
     }
     return;
   }
@@ -161,8 +189,8 @@ function truncateLogMessage(value: string) {
   return value.length > 500 ? `${value.slice(0, 499)}…` : value;
 }
 
-app.get('/health', async () => ({ ok: true, service: 'spirit-billing' }));
-app.get('/api/health', async () => ({ ok: true, service: 'spirit-billing' }));
+app.get('/health', async () => ({ ok: true }));
+app.get('/api/health', async () => ({ ok: true }));
 
 await app.register(authRoutes, { prefix: '/api/auth' });
 await app.register(clientRoutes, { prefix: '/api/client' });

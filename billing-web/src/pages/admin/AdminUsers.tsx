@@ -558,6 +558,7 @@ export function AdminUserDetail() {
   const [creditBusy, setCreditBusy] = useState(false);
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [passwordStepUp, setPasswordStepUp] = useState('');
   const [passwordBusy, setPasswordBusy] = useState(false);
   const [relinkPassword, setRelinkPassword] = useState('');
   const [relinkConfirm, setRelinkConfirm] = useState('');
@@ -584,13 +585,19 @@ export function AdminUserDetail() {
     if (body.role && !window.confirm(`Change this user's role to ${body.role}?`)) return;
     if (body.enabled === false && !window.confirm('Disable this account? They will be signed out.')) return;
     if (body.enabled === true && !window.confirm('Re-enable this account?')) return;
+    let currentPassword: string | undefined;
+    if (body.role) {
+      const entered = window.prompt('Enter your admin password to confirm this role change:');
+      if (!entered) return;
+      currentPassword = entered;
+    }
     setSaving(true);
     setError('');
     setMessage('');
     try {
       await api(`/admin/users/${id}`, {
         method: 'PATCH',
-        body: JSON.stringify(body),
+        body: JSON.stringify({ ...body, ...(currentPassword ? { currentPassword } : {}) }),
       });
       await load();
       setMessage('User updated.');
@@ -650,6 +657,14 @@ export function AdminUserDetail() {
       setError('Password confirmation does not match.');
       return;
     }
+    if (!passwordStepUp.trim()) {
+      setError('Enter your current admin password to confirm.');
+      return;
+    }
+    if (user.role === 'admin' && user.id !== currentUser?.id) {
+      setError('Cannot reset another administrator’s password.');
+      return;
+    }
     if (!window.confirm(`Change ${user.username}'s password and sign them out everywhere?`)) return;
 
     setPasswordBusy(true);
@@ -663,10 +678,11 @@ export function AdminUserDetail() {
         warning?: string;
       }>(`/admin/users/${id}/password`, {
         method: 'POST',
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ password, currentPassword: passwordStepUp }),
       });
       setPassword('');
       setPasswordConfirm('');
+      setPasswordStepUp('');
       await load();
       if (result.warning) {
         setMessage(result.warning);
@@ -1029,6 +1045,18 @@ export function AdminUserDetail() {
               <p className="ops-user__hint">Updates billing and the linked panel, then signs the user out everywhere.</p>
               <form className="ops-user__form ops-user__form--split" onSubmit={(event) => void changePassword(event)}>
                 <label className="ops-user__field">
+                  <span>Your admin password</span>
+                  <input
+                    type="password"
+                    autoComplete="current-password"
+                    maxLength={200}
+                    value={passwordStepUp}
+                    onChange={(event) => setPasswordStepUp(event.target.value)}
+                    placeholder="Confirm with your password"
+                    required
+                  />
+                </label>
+                <label className="ops-user__field">
                   <span>New password</span>
                   <input
                     type="password"
@@ -1054,7 +1082,11 @@ export function AdminUserDetail() {
                     required
                   />
                 </label>
-                <button type="submit" className="ops-user__btn is-primary" disabled={passwordBusy}>
+                <button
+                  type="submit"
+                  className="ops-user__btn is-primary"
+                  disabled={passwordBusy || (user.role === 'admin' && user.id !== currentUser?.id)}
+                >
                   <KeyRound size={14} /> {passwordBusy ? 'Updating…' : 'Update password'}
                 </button>
               </form>
