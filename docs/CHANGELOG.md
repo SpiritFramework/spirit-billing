@@ -15,6 +15,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Added
 
+- Admin **Analytics** page (`/admin/analytics`) — revenue hero, WoW/MoM pulses, 6m/12m trend desk, 14-day spark, health gauges, category/product leaders, overdue queue, fleet/support/invoice mixes, coupons + credits
 - Branding theme/layout settings: `theme_mode`, `theme_preset`, `ui_radius`, `ui_density`, `sidebar_style` (admin settings + public `/auth/branding`)
 - Layout Atmosphere presets: `auth_atmosphere` (login), `client_atmosphere`, and `admin_atmosphere` (separate shells)
 - Layout Navigation: `client_nav_layout` / `admin_nav_layout` — choose sidebar or top navbar per shell
@@ -32,6 +33,8 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Admin Overview polish: actionable unpaid invoice queue, wider fluid columns, activity timeline rail, cleaner fleet composition bar
 - `/admin/stats` expands with month-over-month revenue, overdue + due-soon invoices, renewals due, new clients / 30d, overdue invoice rows, ticket queue, and recent system logs
 - Client dashboard rebuilt as **Client home**: quiet intro, attention notices, compact pulse strip, services-first list, invoices + credit redeem — replaces the marketing hero / metric-card stack
+- Client main page heading is **Dashboard** (matches the nav label)
+- Topbar **Notifications** panel redesigned as a denser inbox (unread chip, icon actions, relative time, tone rail, quieter empty state)
 - Client **Services**, **Profile**, **Invoices**, **Service detail**, **Tickets**, and **Game hosting** rebuilt in the Client home language (ops list / detail shells, richer invoice + ticket surfaces)
 - Client **Cart** rebuilt as a clearer checkout flow (plan summary, config, totals) instead of the prior stacked form
 - Admin **Users** and **User detail** rebuilt as an ops console (denser tables, filters, icons, invoice/service rows with category marks) — not the client-* look

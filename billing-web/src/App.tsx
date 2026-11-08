@@ -26,6 +26,7 @@ import { AdminCoupons } from './pages/admin/AdminCoupons';
 import { AdminProductEdit, AdminProducts } from './pages/admin/AdminProducts';
 import { AdminUserDetail, AdminUsers } from './pages/admin/AdminUsers';
 import { AdminLogs } from './pages/admin/AdminLogs';
+import { AdminAnalytics } from './pages/admin/AdminAnalytics';
 import { AdminTickets, AdminTicketDetail } from './pages/admin/AdminTickets';
 import { AdminTicketCategories } from './pages/admin/AdminTicketCategories';
 import { TicketsPage, TicketDetailPage } from './pages/client/Tickets';
@@ -93,6 +94,7 @@ export default function App() {
                 <Route path="tickets/:id" element={<AdminTicketDetail />} />
                 <Route path="ticket-categories" element={<AdminTicketCategories />} />
                 <Route path="logs" element={<AdminLogs />} />
+                <Route path="analytics" element={<AdminAnalytics />} />
                 <Route path="settings" element={<AdminSettings />} />
               </Route>
 

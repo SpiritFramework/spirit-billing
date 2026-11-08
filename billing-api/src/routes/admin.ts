@@ -411,6 +411,404 @@ export async function adminRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get('/analytics', async () => {
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const chartStart = new Date(now.getFullYear(), now.getMonth() - 11, 1);
+    const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 13);
+    dayStart.setHours(0, 0, 0, 0);
+    const weekStart = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const priorWeekStart = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+    const clientsSince = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const dueSoonEnd = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const paySampleSince = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+
+    const settled = (row: { _sum: { totalCents: number | null; creditAppliedCents: number | null } }) =>
+      (row._sum.totalCents ?? 0) + (row._sum.creditAppliedCents ?? 0);
+
+    const monthBuckets = Array.from({ length: 12 }, (_, index) => {
+      const date = new Date(now.getFullYear(), now.getMonth() - 11 + index, 1);
+      return {
+        key: `${date.getFullYear()}-${date.getMonth()}`,
+        label: date.toLocaleDateString('en-GB', { month: 'short' }),
+        revenueCents: 0,
+        paidCount: 0,
+        newClients: 0,
+        servicesCreated: 0,
+      };
+    });
+
+    const dayBuckets = Array.from({ length: 14 }, (_, index) => {
+      const date = new Date(dayStart.getTime() + index * 24 * 60 * 60 * 1000);
+      return {
+        key: `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`,
+        label: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }),
+        revenueCents: 0,
+        paidCount: 0,
+      };
+    });
+
+    const [
+      clients,
+      linkedClients,
+      newClients30d,
+      creditOutstanding,
+      servicesByStatus,
+      unpaidInvoices,
+      overdueCount,
+      cancelledInvoices,
+      paidAllTime,
+      paidThisMonth,
+      paidLastMonth,
+      paidThisWeek,
+      paidPriorWeek,
+      paidTimeline,
+      newClientsTimeline,
+      servicesTimeline,
+      paidWithCatalog,
+      paySamples,
+      renewalsDueSoon,
+      overdueInvoiceList,
+      ticketOpen,
+      ticketAwaiting,
+      ticketAnswered,
+      ticketClosed,
+      activeCoupons,
+      redemptions30d,
+      productsActive,
+      productsTotal,
+      logsByLevel,
+    ] = await Promise.all([
+      prisma.user.count({ where: { role: 'client' } }),
+      prisma.user.count({ where: { role: 'client', panelUserId: { not: null } } }),
+      prisma.user.count({ where: { role: 'client', createdAt: { gte: clientsSince } } }),
+      prisma.user.aggregate({
+        where: { role: 'client', creditBalanceCents: { gt: 0 } },
+        _sum: { creditBalanceCents: true },
+        _count: { _all: true },
+      }),
+      prisma.service.groupBy({ by: ['status'], _count: { _all: true } }),
+      prisma.invoice.aggregate({
+        where: { status: 'unpaid' },
+        _count: { _all: true },
+        _sum: { totalCents: true },
+      }),
+      prisma.invoice.count({ where: { status: 'unpaid', dueAt: { lt: now } } }),
+      prisma.invoice.aggregate({
+        where: { status: 'cancelled' },
+        _count: { _all: true },
+        _sum: { totalCents: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid' },
+        _sum: { totalCents: true, creditAppliedCents: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: monthStart } },
+        _sum: { totalCents: true, creditAppliedCents: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: lastMonthStart, lt: monthStart } },
+        _sum: { totalCents: true, creditAppliedCents: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: weekStart } },
+        _sum: { totalCents: true, creditAppliedCents: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.aggregate({
+        where: { status: 'paid', paidAt: { gte: priorWeekStart, lt: weekStart } },
+        _sum: { totalCents: true, creditAppliedCents: true },
+        _count: { _all: true },
+      }),
+      prisma.invoice.findMany({
+        where: { status: 'paid', paidAt: { gte: chartStart } },
+        select: { paidAt: true, totalCents: true, creditAppliedCents: true },
+      }),
+      prisma.user.findMany({
+        where: { role: 'client', createdAt: { gte: chartStart } },
+        select: { createdAt: true },
+      }),
+      prisma.service.findMany({
+        where: { createdAt: { gte: chartStart } },
+        select: { createdAt: true },
+      }),
+      prisma.invoice.findMany({
+        where: { status: 'paid', paidAt: { gte: chartStart } },
+        select: {
+          totalCents: true,
+          creditAppliedCents: true,
+          service: {
+            select: {
+              category: { select: { id: true, name: true, color: true, icon: true } },
+              product: {
+                select: {
+                  id: true,
+                  name: true,
+                  category: { select: { id: true, name: true, color: true, icon: true } },
+                },
+              },
+            },
+          },
+        },
+      }),
+      prisma.invoice.findMany({
+        where: { status: 'paid', paidAt: { gte: paySampleSince } },
+        select: { createdAt: true, paidAt: true },
+        take: 500,
+      }),
+      prisma.service.count({
+        where: { status: 'active', nextDueAt: { gte: now, lte: dueSoonEnd } },
+      }),
+      prisma.invoice.findMany({
+        where: { status: 'unpaid', dueAt: { lt: now } },
+        orderBy: { dueAt: 'asc' },
+        take: 6,
+        select: {
+          id: true,
+          number: true,
+          totalCents: true,
+          currency: true,
+          dueAt: true,
+          user: { select: { username: true, firstName: true, lastName: true } },
+          service: { select: { name: true } },
+        },
+      }),
+      prisma.ticket.count({ where: { status: 'open' } }).catch(() => 0),
+      prisma.ticket.count({ where: { status: 'awaiting_customer' } }).catch(() => 0),
+      prisma.ticket.count({ where: { status: 'answered' } }).catch(() => 0),
+      prisma.ticket.count({ where: { status: 'closed' } }).catch(() => 0),
+      prisma.coupon.count({ where: { active: true } }),
+      prisma.couponRedemption.aggregate({
+        where: { createdAt: { gte: clientsSince } },
+        _count: { _all: true },
+        _sum: { discountCents: true, creditCents: true },
+      }),
+      prisma.product.count({ where: { active: true } }),
+      prisma.product.count(),
+      prisma.systemLog.groupBy({
+        by: ['level'],
+        where: { createdAt: { gte: clientsSince } },
+        _count: { _all: true },
+      }).catch(() => []),
+    ]);
+
+    for (const invoice of paidTimeline) {
+      if (!invoice.paidAt) continue;
+      const monthKey = `${invoice.paidAt.getFullYear()}-${invoice.paidAt.getMonth()}`;
+      const monthBucket = monthBuckets.find((month) => month.key === monthKey);
+      if (monthBucket) {
+        monthBucket.revenueCents += invoice.totalCents + invoice.creditAppliedCents;
+        monthBucket.paidCount += 1;
+      }
+      const dayKey = `${invoice.paidAt.getFullYear()}-${invoice.paidAt.getMonth()}-${invoice.paidAt.getDate()}`;
+      const dayBucket = dayBuckets.find((day) => day.key === dayKey);
+      if (dayBucket) {
+        dayBucket.revenueCents += invoice.totalCents + invoice.creditAppliedCents;
+        dayBucket.paidCount += 1;
+      }
+    }
+
+    for (const user of newClientsTimeline) {
+      const key = `${user.createdAt.getFullYear()}-${user.createdAt.getMonth()}`;
+      const bucket = monthBuckets.find((month) => month.key === key);
+      if (bucket) bucket.newClients += 1;
+    }
+
+    for (const service of servicesTimeline) {
+      const key = `${service.createdAt.getFullYear()}-${service.createdAt.getMonth()}`;
+      const bucket = monthBuckets.find((month) => month.key === key);
+      if (bucket) bucket.servicesCreated += 1;
+    }
+
+    const categoryMap = new Map<
+      string,
+      { id: string; name: string; color: string; icon: string; revenueCents: number; paidCount: number }
+    >();
+    const productMap = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        color: string;
+        icon: string;
+        categoryName: string;
+        revenueCents: number;
+        paidCount: number;
+      }
+    >();
+
+    for (const invoice of paidWithCatalog) {
+      const amount = invoice.totalCents + invoice.creditAppliedCents;
+      const category =
+        invoice.service?.category || invoice.service?.product?.category || null;
+      const categoryId = category?.id || 'uncategorized';
+      const categoryRow = categoryMap.get(categoryId) || {
+        id: categoryId,
+        name: category?.name || 'Uncategorized',
+        color: category?.color || '#64748b',
+        icon: category?.icon || 'server',
+        revenueCents: 0,
+        paidCount: 0,
+      };
+      categoryRow.revenueCents += amount;
+      categoryRow.paidCount += 1;
+      categoryMap.set(categoryId, categoryRow);
+
+      const product = invoice.service?.product;
+      if (product) {
+        const productRow = productMap.get(product.id) || {
+          id: product.id,
+          name: product.name,
+          color: product.category?.color || category?.color || '#64748b',
+          icon: product.category?.icon || category?.icon || 'package',
+          categoryName: product.category?.name || category?.name || 'Uncategorized',
+          revenueCents: 0,
+          paidCount: 0,
+        };
+        productRow.revenueCents += amount;
+        productRow.paidCount += 1;
+        productMap.set(product.id, productRow);
+      }
+    }
+
+    const revenueByCategory = [...categoryMap.values()]
+      .sort((a, b) => b.revenueCents - a.revenueCents)
+      .slice(0, 8);
+    const topProducts = [...productMap.values()]
+      .sort((a, b) => b.revenueCents - a.revenueCents)
+      .slice(0, 6);
+
+    const services = {
+      total: 0,
+      active: 0,
+      pending_payment: 0,
+      suspended: 0,
+      cancelled: 0,
+    };
+    for (const row of servicesByStatus) {
+      services.total += row._count._all;
+      if (row.status in services) {
+        services[row.status as keyof typeof services] = row._count._all;
+      }
+    }
+
+    let payDaysTotal = 0;
+    let payDaysSamples = 0;
+    for (const sample of paySamples) {
+      if (!sample.paidAt) continue;
+      const days = Math.max(
+        0,
+        Math.round((sample.paidAt.getTime() - sample.createdAt.getTime()) / (24 * 60 * 60 * 1000)),
+      );
+      payDaysTotal += days;
+      payDaysSamples += 1;
+    }
+
+    const revenueThisMonth = settled(paidThisMonth);
+    const revenueLastMonth = settled(paidLastMonth);
+    const revenueThisWeek = settled(paidThisWeek);
+    const revenuePriorWeek = settled(paidPriorWeek);
+    const revenueMomPct =
+      revenueLastMonth > 0
+        ? Math.round(((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 1000) / 10
+        : revenueThisMonth > 0
+          ? 100
+          : 0;
+    const revenueWowPct =
+      revenuePriorWeek > 0
+        ? Math.round(((revenueThisWeek - revenuePriorWeek) / revenuePriorWeek) * 1000) / 10
+        : revenueThisWeek > 0
+          ? 100
+          : 0;
+
+    const paidCount = paidAllTime._count._all;
+    const unpaidCount = unpaidInvoices._count._all;
+    const collectionRate =
+      paidCount + unpaidCount > 0
+        ? Math.round((paidCount / (paidCount + unpaidCount)) * 1000) / 10
+        : 100;
+
+    const logs = { info: 0, warn: 0, error: 0, total: 0 };
+    for (const row of logsByLevel as Array<{ level: 'info' | 'warn' | 'error'; _count: { _all: number } }>) {
+      logs[row.level] = row._count._all;
+      logs.total += row._count._all;
+    }
+
+    return {
+      generatedAt: now.toISOString(),
+      kpis: {
+        revenueAllTimeCents: settled(paidAllTime),
+        paidAllTimeCount: paidCount,
+        revenueThisMonthCents: revenueThisMonth,
+        revenueLastMonthCents: revenueLastMonth,
+        revenueMomPct,
+        revenueThisWeekCents: revenueThisWeek,
+        revenuePriorWeekCents: revenuePriorWeek,
+        revenueWowPct,
+        paidThisMonthCount: paidThisMonth._count._all,
+        unpaidCount,
+        unpaidCents: unpaidInvoices._sum.totalCents ?? 0,
+        overdueCount,
+        cancelledCount: cancelledInvoices._count._all,
+        cancelledCents: cancelledInvoices._sum.totalCents ?? 0,
+        clients,
+        linkedClients,
+        newClients30d,
+        activeServices: services.active,
+        renewalsDueSoon,
+        arpuCents: services.active > 0 ? Math.round(revenueThisMonth / services.active) : 0,
+        panelLinkRate: clients > 0 ? Math.round((linkedClients / clients) * 1000) / 10 : 0,
+        creditOutstandingCents: creditOutstanding._sum.creditBalanceCents ?? 0,
+        creditHolders: creditOutstanding._count._all,
+        collectionRate,
+        avgDaysToPay: payDaysSamples > 0 ? Math.round((payDaysTotal / payDaysSamples) * 10) / 10 : 0,
+      },
+      series: monthBuckets.map(({ label, revenueCents, paidCount: count, newClients, servicesCreated }) => ({
+        label,
+        revenueCents,
+        paidCount: count,
+        newClients,
+        servicesCreated,
+      })),
+      daily: dayBuckets.map(({ label, revenueCents, paidCount: count }) => ({
+        label,
+        revenueCents,
+        paidCount: count,
+      })),
+      services,
+      revenueByCategory,
+      topProducts,
+      invoices: {
+        paid: paidCount,
+        unpaid: unpaidCount,
+        cancelled: cancelledInvoices._count._all,
+        paidCents: settled(paidAllTime),
+        unpaidCents: unpaidInvoices._sum.totalCents ?? 0,
+        cancelledCents: cancelledInvoices._sum.totalCents ?? 0,
+      },
+      overdueInvoices: overdueInvoiceList,
+      tickets: {
+        open: ticketOpen,
+        awaiting: ticketAwaiting,
+        answered: ticketAnswered,
+        closed: ticketClosed,
+      },
+      coupons: {
+        active: activeCoupons,
+        redemptions30d: redemptions30d._count._all,
+        discountCents30d: redemptions30d._sum.discountCents ?? 0,
+        creditCents30d: redemptions30d._sum.creditCents ?? 0,
+      },
+      products: { total: productsTotal, active: productsActive },
+      logs,
+    };
+  });
+
   app.get('/meta', async () => ({
     categoryColors: CATEGORY_COLORS,
     categoryIcons: CATEGORY_ICONS,

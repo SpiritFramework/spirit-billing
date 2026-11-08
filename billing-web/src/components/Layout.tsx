@@ -1,8 +1,11 @@
 import { Link, NavLink, Outlet, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  AlertCircle,
+  BarChart3,
   Bell,
   CheckCheck,
+  CheckCircle2,
   ChevronRight,
   CreditCard,
   ExternalLink,
@@ -11,23 +14,21 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MessageSquare,
   Package,
   PanelsTopLeft,
   Receipt,
+  ScrollText,
   Settings,
   Server,
-  ShoppingCart,
   ShoppingBag,
+  ShoppingCart,
+  Tags,
   TicketPercent,
   Trash2,
-  ScrollText,
-  MessageSquare,
-  Tags,
   User as UserIcon,
   Users,
   Wallet,
-  AlertCircle,
-  CheckCircle2,
   X,
 } from 'lucide-react';
 import { useAuth, useLogout } from '../context/AuthContext';
@@ -46,6 +47,25 @@ type Notification = {
   readAt: string | null;
   createdAt: string;
 };
+
+function formatNotificationWhen(value: string) {
+  const date = new Date(value);
+  const diff = Date.now() - date.getTime();
+  const mins = Math.round(diff / 60_000);
+  if (mins < 1) return 'Just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  if (days < 7) return `${days}d ago`;
+  return date.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
+function notificationTypeLabel(type: Notification['type']) {
+  if (type === 'success') return 'Success';
+  if (type === 'warning') return 'Warning';
+  return 'Update';
+}
 
 function Brand() {
   const branding = useBranding();
@@ -162,8 +182,15 @@ function TopNavbar({
     function close(event: MouseEvent) {
       if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
     }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false);
+    }
     document.addEventListener('mousedown', close);
-    return () => document.removeEventListener('mousedown', close);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', onKey);
+    };
   }, []);
 
   async function markRead(id: string) {
@@ -244,73 +271,133 @@ function TopNavbar({
             <div className="ds-notifications__panel" role="dialog" aria-label="Notifications">
               <div className="ds-notifications__header">
                 <div className="ds-notifications__title">
-                  <span className="ds-notifications__mark"><Bell size={15} /></span>
+                  <span className="ds-notifications__mark" aria-hidden>
+                    <Bell size={14} />
+                  </span>
                   <div>
+                    <span className="ds-notifications__eyebrow">Inbox</span>
                     <strong>Notifications</strong>
-                    <small>
-                      {data.unreadCount > 0
-                        ? `${data.unreadCount} unread update${data.unreadCount === 1 ? '' : 's'}`
-                        : 'You are up to date'}
-                    </small>
                   </div>
+                  {data.unreadCount > 0 ? (
+                    <em className="ds-notifications__count">{data.unreadCount} new</em>
+                  ) : (
+                    <em className="ds-notifications__count is-clear">Clear</em>
+                  )}
                 </div>
                 <div className="ds-notifications__actions">
-                  {data.unreadCount > 0 && (
-                    <button type="button" onClick={() => void markAllRead()}>
-                      <CheckCheck size={14} /> Mark all read
+                  {data.unreadCount > 0 ? (
+                    <button
+                      type="button"
+                      title="Mark all as read"
+                      aria-label="Mark all as read"
+                      onClick={() => void markAllRead()}
+                    >
+                      <CheckCheck size={14} />
                     </button>
-                  )}
-                  {data.notifications.length > 0 && (
-                    <button type="button" className="is-clear" onClick={() => void clearAll()}>
-                      <Trash2 size={14} /> Clear all
+                  ) : null}
+                  {data.notifications.length > 0 ? (
+                    <button
+                      type="button"
+                      className="is-clear"
+                      title="Clear all notifications"
+                      aria-label="Clear all notifications"
+                      onClick={() => void clearAll()}
+                    >
+                      <Trash2 size={14} />
                     </button>
-                  )}
+                  ) : null}
+                  <button
+                    type="button"
+                    className="is-close"
+                    title="Close"
+                    aria-label="Close notifications"
+                    onClick={() => setOpen(false)}
+                  >
+                    <X size={14} />
+                  </button>
                 </div>
               </div>
+
               <div className="ds-notifications__list">
-                {data.notifications.map((item) => (
-                  <Link
-                    key={item.id}
-                    to={item.href || '#'}
-                    className={`ds-notification is-${item.type} ${item.readAt ? '' : 'is-unread'}`}
-                    onClick={() => {
-                      void markRead(item.id);
-                      setOpen(false);
-                    }}
-                  >
-                    <span className={`ds-notification__icon is-${item.type}`}>
-                      {item.type === 'success' ? (
-                        <CheckCircle2 size={15} />
-                      ) : item.type === 'warning' ? (
-                        <AlertCircle size={15} />
-                      ) : (
-                        <Bell size={15} />
-                      )}
-                    </span>
-                    <span className="ds-notification__body">
-                      <span className="ds-notification__meta">
-                        <strong>{item.title}</strong>
-                        <time dateTime={item.createdAt}>
-                          {new Date(item.createdAt).toLocaleString(undefined, {
-                            day: 'numeric',
-                            month: 'short',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
-                        </time>
+                {data.notifications.map((item) => {
+                  const content = (
+                    <>
+                      <span className={`ds-notification__icon is-${item.type}`} aria-hidden>
+                        {item.type === 'success' ? (
+                          <CheckCircle2 size={14} />
+                        ) : item.type === 'warning' ? (
+                          <AlertCircle size={14} />
+                        ) : (
+                          <Bell size={14} />
+                        )}
                       </span>
-                      <span className="ds-notification__message">{item.message}</span>
-                    </span>
-                    {!item.readAt && <i className="ds-notification__unread" aria-hidden />}
-                  </Link>
-                ))}
-                {!data.notifications.length && (
+                      <span className="ds-notification__body">
+                        <span className="ds-notification__meta">
+                          <strong>{item.title}</strong>
+                          <time dateTime={item.createdAt} title={new Date(item.createdAt).toLocaleString()}>
+                            {formatNotificationWhen(item.createdAt)}
+                          </time>
+                        </span>
+                        <span className="ds-notification__message">{item.message}</span>
+                        <span className={`ds-notification__type is-${item.type}`}>
+                          {notificationTypeLabel(item.type)}
+                          {!item.readAt ? <i>Unread</i> : null}
+                        </span>
+                      </span>
+                      {item.href ? <ChevronRight size={14} className="ds-notification__go" aria-hidden /> : null}
+                    </>
+                  );
+
+                  const className = `ds-notification is-${item.type}${item.readAt ? '' : ' is-unread'}${
+                    item.href ? '' : ' is-static'
+                  }`;
+
+                  if (item.href) {
+                    return (
+                      <Link
+                        key={item.id}
+                        to={item.href}
+                        className={className}
+                        onClick={() => {
+                          void markRead(item.id);
+                          setOpen(false);
+                        }}
+                      >
+                        {content}
+                      </Link>
+                    );
+                  }
+
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={className}
+                      onClick={() => void markRead(item.id)}
+                    >
+                      {content}
+                    </button>
+                  );
+                })}
+
+                {!data.notifications.length ? (
                   <div className="ds-notifications__empty">
-                    <span><CheckCheck size={22} /></span>
-                    <strong>All caught up</strong>
-                    <small>Billing, upgrades, and service updates will show up here.</small>
+                    <span aria-hidden>
+                      <CheckCheck size={18} />
+                    </span>
+                    <strong>Nothing new</strong>
+                    <small>Invoice, service, and account updates land here.</small>
                   </div>
-                )}
+                ) : null}
+              </div>
+
+              <div className="ds-notifications__footer">
+                <span>
+                  {data.notifications.length
+                    ? `${data.notifications.length} kept`
+                    : 'Inbox empty'}
+                </span>
+                <span>Esc to close</span>
               </div>
             </div>
           )}
@@ -586,6 +673,7 @@ export function AdminLayout() {
   const adminNavLinks = (
     <>
       <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
+      <NavLink to="/admin/analytics"><BarChart3 size={15} /> Analytics</NavLink>
       <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>
       <NavLink to="/admin/services"><Server size={15} /> Services</NavLink>
       <NavLink to="/admin/invoices"><CreditCard size={15} /> Invoices</NavLink>
@@ -622,6 +710,7 @@ export function AdminLayout() {
             <>
               <NavSection label="Overview">
                 <NavLink to="/admin" end><LayoutDashboard size={15} /> Overview</NavLink>
+                <NavLink to="/admin/analytics"><BarChart3 size={15} /> Analytics</NavLink>
               </NavSection>
               <NavSection label="Operations">
                 <NavLink to="/admin/users"><Users size={15} /> Users</NavLink>

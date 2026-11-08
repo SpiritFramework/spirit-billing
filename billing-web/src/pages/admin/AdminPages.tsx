@@ -6,6 +6,7 @@ import {
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
+  BarChart3,
   CheckCircle2,
   ChevronRight,
   CircleDollarSign,
@@ -839,6 +840,10 @@ export function AdminOverview() {
               </div>
             </header>
             <div className="ops-dash__launch">
+              <Link to="/admin/analytics">
+                <BarChart3 size={15} />
+                <strong>Analytics</strong>
+              </Link>
               <Link to="/admin/products/new">
                 <Plus size={15} />
                 <strong>Product</strong>

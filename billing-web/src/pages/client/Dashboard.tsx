@@ -160,7 +160,7 @@ export function DashboardPage() {
       <header className="client-home__intro">
         <div className="client-home__intro-copy">
           <p>{greeting()}, {firstName}</p>
-          <h1>Your hosting home</h1>
+          <h1>Dashboard</h1>
         </div>
         <div className="client-home__intro-actions">
           <Link className="client-home__btn client-home__btn--primary client-home__btn--cta" to="/game-hosting">
