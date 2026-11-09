@@ -29,6 +29,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Client **service detail** Manage server opens that server on the panel (`/servers/{id}`) when a panel server is assigned
 - Client **invoice detail** plan resources include backups, databases, and ports. A limit of zero shows as Off
 - Client **game plan** “What’s included” expands in place with a smooth open, accented trigger, and staggered feature rows. Opening it on one plan no longer stretches the closed trigger on the others
+- Public **home** is tighter: game cards use category art with the logo centered, two games fill the row, and section type and cards read more clearly
 
 ### Fixed
 

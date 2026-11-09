@@ -32,6 +32,7 @@ type Category = {
   color: string;
   icon: string;
   logoUrl?: string | null;
+  backgroundUrl?: string | null;
   _count?: { products: number };
   startingFrom?: {
     priceCents: number;
@@ -207,28 +208,34 @@ export function LandingPage() {
             </header>
 
             <div className="landing-v3-games__grid">
-              {categories.slice(0, 6).map((category, index) => (
+              {categories.slice(0, 6).map((category, index) => {
+                const plans = category._count?.products ?? 0;
+                const hasBg = Boolean(category.backgroundUrl && /^https?:\/\//i.test(category.backgroundUrl));
+                return (
                 <Link
                   key={category.id}
                   to={`/game-hosting/${category.slug || category.id}`}
-                  className="landing-v3-game"
+                  className={`landing-v3-game${hasBg ? ' has-bg' : ''}`}
                   style={{
                     ['--game-color' as string]: category.color || 'var(--accent)',
                     animationDelay: `${index * 55}ms`,
                   }}
                 >
-                  <div className="landing-v3-game__top">
+                  <div className="landing-v3-game__art">
+                    {hasBg ? <img src={category.backgroundUrl!} alt="" /> : null}
                     <CategoryMark
                       icon={category.icon}
                       logoUrl={category.logoUrl}
                       color={category.color}
-                      size={48}
+                      size={46}
                     />
-                    <span>{category._count?.products ?? 0} plan{category._count?.products === 1 ? '' : 's'}</span>
+                    {plans > 0 ? (
+                      <span>{plans} plan{plans === 1 ? '' : 's'}</span>
+                    ) : null}
                   </div>
-                  <div>
+                  <div className="landing-v3-game__body">
                     <h3>{category.name}</h3>
-                    <p>{category.description || 'Performance-focused game server hosting.'}</p>
+                    {category.description ? <p>{category.description}</p> : null}
                     {category.startingFrom && (
                       <strong className="landing-v3-game__price">
                         From {money(category.startingFrom.priceCents, category.startingFrom.currency)}
@@ -238,7 +245,8 @@ export function LandingPage() {
                   </div>
                   <footer>View plans <ArrowRight size={14} /></footer>
                 </Link>
-              ))}
+                );
+              })}
               {!categories.length && (
                 <div className="landing-v3-game__empty">
                   <Cloud size={24} />
