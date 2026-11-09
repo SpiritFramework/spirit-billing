@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { useEffect, useId, useMemo, useRef, useState, type ComponentType } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -56,6 +56,7 @@ function featureIcon(feature: string): FeatureIcon {
 function PlanFeatures({ features }: { features: string[] }) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const panelId = useId();
   const items = features.map((label) => label.trim()).filter(Boolean);
 
   useEffect(() => {
@@ -82,6 +83,7 @@ function PlanFeatures({ features }: { features: string[] }) {
         type="button"
         className="client-gh-plan__features-trigger"
         aria-expanded={open}
+        aria-controls={panelId}
         onClick={() => setOpen((value) => !value)}
       >
         <span>
@@ -89,25 +91,33 @@ function PlanFeatures({ features }: { features: string[] }) {
           <strong>What&apos;s included</strong>
         </span>
         <em>
-          {items.length}
-          <ChevronDown size={15} aria-hidden className={open ? 'is-open' : undefined} />
+          <b>{items.length}</b>
+          <ChevronDown size={15} aria-hidden />
         </em>
       </button>
-      {open ? (
-        <ul className="client-gh-plan__features-list" aria-label="Plan features">
-          {items.map((feature, index) => {
-            const Icon = featureIcon(feature);
-            return (
-              <li key={`${index}-${feature}`}>
-                <span aria-hidden>
-                  <Icon size={13} />
-                </span>
-                <span>{feature}</span>
-              </li>
-            );
-          })}
-        </ul>
-      ) : null}
+      <div
+        id={panelId}
+        className="client-gh-plan__features-panel"
+        role="region"
+        aria-label="Plan features"
+        aria-hidden={!open}
+      >
+        <div className="client-gh-plan__features-panel-inner">
+          <ul className="client-gh-plan__features-list">
+            {items.map((feature, index) => {
+              const Icon = featureIcon(feature);
+              return (
+                <li key={`${index}-${feature}`} style={{ ['--i' as string]: index }}>
+                  <span aria-hidden>
+                    <Icon size={13} />
+                  </span>
+                  <span>{feature}</span>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      </div>
     </div>
   );
 }
@@ -219,19 +229,48 @@ export function GameHostingPage() {
           ['--hero-b' as string]: categories[1]?.color || categories[0]?.color || 'var(--accent)',
         }}
       >
-        <div className="client-host__hero-shade" aria-hidden />
-        <div className="client-host__hero-main">
-          <p>Catalog</p>
+        <div className="client-host__hero-bg" aria-hidden>
+          <span className="client-host__hero-bg-grid" />
+          <span className="client-host__hero-bg-orb client-host__hero-bg-orb--a" />
+          <span className="client-host__hero-bg-orb client-host__hero-bg-orb--b" />
+          <svg className="client-host__hero-bg-rings" viewBox="0 0 640 320" preserveAspectRatio="xMaxYMid slice">
+            <g fill="none" stroke="currentColor" strokeWidth="1.2">
+              <circle cx="470" cy="160" r="46" opacity="0.28" />
+              <circle cx="470" cy="160" r="86" opacity="0.2" />
+              <circle cx="470" cy="160" r="132" opacity="0.14" />
+              <circle cx="470" cy="160" r="178" opacity="0.1" />
+              <path d="M292 160h356" opacity="0.16" />
+              <path d="M470 2v316" opacity="0.16" />
+              <path d="M350 52l240 216" opacity="0.12" />
+              <path d="M350 268l240-216" opacity="0.12" />
+            </g>
+            <g fill="currentColor">
+              <circle cx="470" cy="160" r="4.5" opacity="0.55" />
+              <circle cx="556" cy="102" r="3" opacity="0.4" />
+              <circle cx="392" cy="214" r="2.5" opacity="0.35" />
+              <circle cx="538" cy="232" r="2.2" opacity="0.3" />
+            </g>
+          </svg>
+        </div>
+        <div className="client-host__hero-body">
           <h1>Game hosting</h1>
-          <span>
+          <p>
             {loading
               ? 'Loading games…'
               : categories.length
-                ? 'Choose a game, then a plan.'
+                ? 'Choose a game, then a plan built for it.'
                 : 'Games appear here once they are published.'}
-          </span>
-          <div className="client-host__hero-row">
-            <div className="client-host__facts" aria-label="Catalog totals">
+          </p>
+          <div className="client-host__hero-actions">
+            {categories.length ? (
+              <a className="client-home__btn client-home__btn--primary client-home__btn--cta" href="#games">
+                <span>Browse games</span>
+                <span className="client-home__btn-icon" aria-hidden>
+                  <ArrowRight size={16} className="client-home__btn-arrow" />
+                </span>
+              </a>
+            ) : null}
+            <div className="client-host__hero-stats" aria-label="Catalog totals">
               <span>
                 <Gamepad2 size={15} aria-hidden />
                 <strong>{loading ? '—' : categories.length}</strong>
@@ -243,29 +282,7 @@ export function GameHostingPage() {
                 <small>{totalPlans === 1 ? 'Plan' : 'Plans'}</small>
               </span>
             </div>
-            {showSearch ? (
-              <label className="client-gh__search">
-                <Search size={15} aria-hidden />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search games"
-                  aria-label="Search games"
-                />
-              </label>
-            ) : null}
           </div>
-        </div>
-        <div className="client-host__hero-art" aria-hidden>
-          {categories.slice(0, 2).map((category, index) => (
-            <span
-              key={category.id}
-              className={`client-host__hero-mark is-${index + 1}`}
-              style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
-            >
-              <CategoryMark icon={category.icon} logoUrl={category.logoUrl} color={category.color} size={index === 0 ? 74 : 52} />
-            </span>
-          ))}
         </div>
       </section>
 
@@ -275,11 +292,24 @@ export function GameHostingPage() {
             <p>Start here</p>
             <h2 id="popular-games">Popular games</h2>
           </div>
-          {!loading ? (
-            <span>
-              {filtered.length} game{filtered.length === 1 ? '' : 's'}
-            </span>
-          ) : null}
+          <div className="client-host__block-tools">
+            {showSearch ? (
+              <label className="client-gh__search client-host__catalog-search">
+                <Search size={15} aria-hidden />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search games"
+                  aria-label="Search games"
+                />
+              </label>
+            ) : null}
+            {!loading ? (
+              <span>
+                {filtered.length} game{filtered.length === 1 ? '' : 's'}
+              </span>
+            ) : null}
+          </div>
         </header>
         {loading ? (
           <div className="client-host__grid">

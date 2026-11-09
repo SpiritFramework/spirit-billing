@@ -24,10 +24,11 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Admin **user detail** is one account desk: identity, metrics, and section switcher share a stage, and profile, panel, password, wallet, services, invoices, and delete use the same cards
 - Admin **service detail** is one server desk: identity, price, due date, panel, and unpaid share a stage. Overview, invoices, and the whole settings tab (name, price, limits, features, jobs, and delete) use the same cards. Resource limits show the real values, without decorative meters
 - Client **Dashboard** adds the next renewal and recent support tickets beside account credit. The services count notes plans still waiting on payment
-- Client **Game hosting** opens with a catalog hero, then Popular games as cards, then Online in three steps in one strip. Section titles use the display face. Cards without a description no longer invent a hosting line, and a category with no plans does not show “0 plans”. The cart sits under those sections
+- Client **Game hosting** opens with a custom invite hero (grid/orbit artwork, Browse games, Games/Plans stats with icons). Popular games holds search and the catalog; Online in three steps follows. Cards without a description no longer invent a hosting line, and a category with no plans does not show “0 plans”. The cart sits under those sections
 - Client **service detail** Resources includes backups, databases, and ports alongside RAM, CPU, and disk. A limit of zero shows as Off
 - Client **service detail** Manage server opens that server on the panel (`/servers/{id}`) when a panel server is assigned
 - Client **invoice detail** plan resources include backups, databases, and ports. A limit of zero shows as Off
+- Client **game plan** “What’s included” expands in place with a smooth open, accented trigger, and staggered feature rows. Opening it on one plan no longer stretches the closed trigger on the others
 
 ### Fixed
 
