@@ -120,6 +120,7 @@ type Category = {
   color: string;
   icon: string;
   logoUrl?: string | null;
+  backgroundUrl?: string | null;
   _count?: { products: number };
   startingFrom?: {
     priceCents: number;
@@ -298,27 +299,33 @@ export function GameHostingPage() {
                   className="client-host__card"
                   style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
                 >
-                  <span className="client-host__card-art" aria-hidden>
+                  <span className={`client-host__card-art${category.backgroundUrl ? ' has-bg' : ''}`} aria-hidden>
+                    {category.backgroundUrl && /^https?:\/\//i.test(category.backgroundUrl) ? (
+                      <img className="client-host__card-bg" src={category.backgroundUrl} alt="" />
+                    ) : null}
                     <span className="client-host__plate">
                       <CategoryMark
                         icon={category.icon}
                         logoUrl={category.logoUrl}
                         color={category.color}
-                        size={68}
+                        size={74}
                       />
                     </span>
                   </span>
                   <span className="client-host__card-body">
                     <span className="client-host__title">
                       <strong>{category.name}</strong>
-                      <em>
-                        {planCount} plan{planCount === 1 ? '' : 's'}
-                      </em>
+                      {planCount > 0 ? (
+                        <em>
+                          {planCount} plan{planCount === 1 ? '' : 's'}
+                        </em>
+                      ) : null}
                     </span>
-                    <p>
-                      {category.description ||
-                        `High-performance ${category.name} hosting with Spirit-Panel access.`}
-                    </p>
+                    {category.description?.trim() ? (
+                      <p>{category.description}</p>
+                    ) : planCount === 0 ? (
+                      <p>Plans will be published here.</p>
+                    ) : null}
                     <span className="client-host__card-foot">
                       {from ? (
                         <span className="client-host__price">

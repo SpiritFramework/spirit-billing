@@ -7253,16 +7253,39 @@ button.ops-svc__attention-item:hover {
 }
 
 .ops-cat__preview-card {
+  position: relative;
   display: grid;
   gap: 0.35rem;
   justify-items: start;
+  overflow: hidden;
   padding: 0.95rem;
   border-radius: 0.45rem;
   background: color-mix(in srgb, var(--ops-panel) 92%, transparent);
   border: 1px solid color-mix(in srgb, var(--category-color, var(--ops-line)) 28%, var(--ops-line));
 }
 
-.ops-cat__preview-card img {
+.ops-cat__preview-bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ops-cat__preview-card.has-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, color-mix(in srgb, #07080d 25%, transparent), color-mix(in srgb, #07080d 72%, transparent));
+}
+
+.ops-cat__preview-card.has-bg > :not(.ops-cat__preview-bg) {
+  position: relative;
+  z-index: 1;
+}
+
+.ops-cat__preview-logo,
+.ops-cat__preview-card img.ops-cat__preview-logo {
   width: 3.25rem;
   height: 3.25rem;
   object-fit: contain;

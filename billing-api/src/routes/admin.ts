@@ -167,6 +167,13 @@ const categoryBody = z.object({
       z.string().max(512).refine(isSafeHttpUrl, { message: 'Logo URL must use http or https' }),
     ])
     .optional(),
+  backgroundUrl: z
+    .union([
+      z.literal(''),
+      z.null(),
+      z.string().max(512).refine(isSafeHttpUrl, { message: 'Background URL must use http or https' }),
+    ])
+    .optional(),
   panelEggId: z
     .union([z.literal(''), z.null(), z.string().min(1).max(191)])
     .optional()
@@ -844,6 +851,7 @@ export async function adminRoutes(app: FastifyInstance) {
     const body = categoryBody.parse(request.body);
     const slug = await uniqueCategorySlug(body.name);
     const logoUrl = normalizeCategoryLogo(body.logoUrl) ?? null;
+    const backgroundUrl = normalizeCategoryLogo(body.backgroundUrl) ?? null;
     try {
       return await prisma.category.create({
         data: {
@@ -852,6 +860,7 @@ export async function adminRoutes(app: FastifyInstance) {
           color: body.color,
           icon: body.icon,
           logoUrl,
+          backgroundUrl,
           panelEggId: body.panelEggId ?? null,
           sortOrder: body.sortOrder,
           active: body.active,
@@ -879,6 +888,9 @@ export async function adminRoutes(app: FastifyInstance) {
           ...(body.sortOrder !== undefined ? { sortOrder: body.sortOrder } : {}),
           ...(body.active !== undefined ? { active: body.active } : {}),
           ...(body.logoUrl !== undefined ? { logoUrl: normalizeCategoryLogo(body.logoUrl) } : {}),
+          ...(body.backgroundUrl !== undefined
+            ? { backgroundUrl: normalizeCategoryLogo(body.backgroundUrl) }
+            : {}),
           ...(body.panelEggId !== undefined ? { panelEggId: body.panelEggId } : {}),
           ...(body.name ? { slug: await uniqueCategorySlug(body.name, id) } : {}),
         },

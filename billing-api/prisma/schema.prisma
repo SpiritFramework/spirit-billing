@@ -155,7 +155,9 @@ model Category {
   description String   @default("") @db.Text
   color       String   @default("#6366f1")
   icon        String   @default("gamepad")
-  logoUrl     String?  @map("logo_url") @db.VarChar(512)
+  logoUrl       String? @map("logo_url") @db.VarChar(512)
+  /// Cover image behind the logo on game hosting cards.
+  backgroundUrl String? @map("background_url") @db.VarChar(512)
   /// Spirit-Panel egg this game category provisions / matches on import.
   panelEggId  String?  @map("panel_egg_id")
   sortOrder   Int      @default(0) @map("sort_order")

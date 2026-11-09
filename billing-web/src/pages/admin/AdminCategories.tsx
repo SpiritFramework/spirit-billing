@@ -44,6 +44,7 @@ type Category = {
   color?: string;
   icon?: string;
   logoUrl?: string | null;
+  backgroundUrl?: string | null;
   panelEggId?: string | null;
   sortOrder: number;
   active: boolean;
@@ -58,6 +59,7 @@ type CategoryForm = {
   color: string;
   icon: string;
   logoUrl: string;
+  backgroundUrl: string;
   panelEggId: string;
 };
 
@@ -73,6 +75,7 @@ const emptyForm: CategoryForm = {
   color: '#6366f1',
   icon: 'gamepad',
   logoUrl: '',
+  backgroundUrl: '',
   panelEggId: '',
 };
 
@@ -509,6 +512,7 @@ export function AdminCategoryEdit() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(!isNew);
   const [logoBroken, setLogoBroken] = useState(false);
+  const [backgroundBroken, setBackgroundBroken] = useState(false);
   const [productCount, setProductCount] = useState(0);
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -547,11 +551,13 @@ export function AdminCategoryEdit() {
           color: category.color || '#6366f1',
           icon: category.icon || 'gamepad',
           logoUrl: category.logoUrl || '',
+          backgroundUrl: category.backgroundUrl || '',
           panelEggId: category.panelEggId || '',
         });
         setSlug(category.slug || '');
         setProductCount(category._count?.products ?? 0);
         setLogoBroken(false);
+        setBackgroundBroken(false);
       })
       .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load category'))
       .finally(() => setLoading(false));
@@ -565,6 +571,7 @@ export function AdminCategoryEdit() {
     const payload = {
       ...form,
       logoUrl: form.logoUrl.trim() || null,
+      backgroundUrl: form.backgroundUrl.trim() || null,
       panelEggId: form.panelEggId.trim() || null,
     };
     try {
@@ -606,7 +613,9 @@ export function AdminCategoryEdit() {
   }
 
   const liveLogo = form.logoUrl.trim();
+  const liveBackground = form.backgroundUrl.trim();
   const showLogo = Boolean(liveLogo && /^https?:\/\//i.test(liveLogo) && !logoBroken);
+  const showBackground = Boolean(liveBackground && /^https?:\/\//i.test(liveBackground) && !backgroundBroken);
   const selectedEgg = eggs.find((egg) => egg.id === form.panelEggId);
   const readyBits = [
     form.name.trim(),
@@ -887,6 +896,23 @@ export function AdminCategoryEdit() {
               </div>
               <label className="ops-user__field ops-cat__full">
                 <span>
+                  Card background <em>Optional · sits behind the logo</em>
+                </span>
+                <div className="ops-cat__logo-input">
+                  <Image size={14} aria-hidden />
+                  <input
+                    type="url"
+                    value={form.backgroundUrl}
+                    placeholder="https://cdn.example.com/game-background.jpg"
+                    onChange={(event) => {
+                      setBackgroundBroken(false);
+                      setForm({ ...form, backgroundUrl: event.target.value });
+                    }}
+                  />
+                </div>
+              </label>
+              <label className="ops-user__field ops-cat__full">
+                <span>
                   Logo URL <em>Optional · overrides icon</em>
                 </span>
                 <div className="ops-cat__logo-input">
@@ -973,13 +999,21 @@ export function AdminCategoryEdit() {
               </span>
               <div>
                 <h2>Preview</h2>
-                <p>How the mark reads in the catalog.</p>
+                <p>How the card reads in the catalog.</p>
               </div>
             </header>
             <div className="ops-cat__preview-stage" style={{ ['--category-color' as string]: form.color }}>
-              <div className="ops-cat__preview-card">
+              <div className={`ops-cat__preview-card${showBackground ? ' has-bg' : ''}`}>
+                {showBackground ? (
+                  <img
+                    className="ops-cat__preview-bg"
+                    src={liveBackground}
+                    alt=""
+                    onError={() => setBackgroundBroken(true)}
+                  />
+                ) : null}
                 {showLogo ? (
-                  <img src={liveLogo} alt="" onError={() => setLogoBroken(true)} />
+                  <img className="ops-cat__preview-logo" src={liveLogo} alt="" onError={() => setLogoBroken(true)} />
                 ) : (
                   <CategoryMark icon={form.icon} color={form.color} size={52} />
                 )}

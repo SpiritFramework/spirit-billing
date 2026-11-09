@@ -15,6 +15,8 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Added
 
+- Game hosting categories can take a card background image. The logo stays on top of the art. Schema: `categories.background_url` (applied on update)
+
 ### Changed
 
 - Admin **Analytics** rebuilt as an intelligence desk: stage chart with its own controls, metric rail, share rings, and a promotions/health band. Empty revenue windows and zero-share rows stay out of the way
@@ -22,7 +24,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Admin **user detail** is one account desk: identity, metrics, and section switcher share a stage, and profile, panel, password, wallet, services, invoices, and delete use the same cards
 - Admin **service detail** is one server desk: identity, price, due date, panel, and unpaid share a stage. Overview, invoices, and the whole settings tab (name, price, limits, features, jobs, and delete) use the same cards. Resource limits show the real values, without decorative meters
 - Client **Dashboard** adds the next renewal and recent support tickets beside account credit. The services count notes plans still waiting on payment
-- Client **Game hosting** opens with a catalog hero, then Popular games as cards, then Online in three steps in one strip. Section titles use the display face. The cart sits under those sections
+- Client **Game hosting** opens with a catalog hero, then Popular games as cards, then Online in three steps in one strip. Section titles use the display face. Cards without a description no longer invent a hosting line, and a category with no plans does not show “0 plans”. The cart sits under those sections
 - Client **service detail** Resources includes backups, databases, and ports alongside RAM, CPU, and disk. A limit of zero shows as Off
 - Client **service detail** Manage server opens that server on the panel (`/servers/{id}`) when a panel server is assigned
 - Client **invoice detail** plan resources include backups, databases, and ports. A limit of zero shows as Off

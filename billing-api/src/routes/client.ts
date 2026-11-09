@@ -45,6 +45,7 @@ const categoryPublicSelect = {
   color: true,
   icon: true,
   logoUrl: true,
+  backgroundUrl: true,
 } as const;
 
 const productPublicSelect = {
@@ -178,7 +179,7 @@ export async function clientRoutes(app: FastifyInstance) {
       select: {
         ...productPublicSelect,
         category: {
-          select: { id: true, name: true, slug: true, color: true, icon: true, logoUrl: true, description: true },
+          select: { id: true, name: true, slug: true, color: true, icon: true, logoUrl: true, backgroundUrl: true, description: true },
         },
       },
     });
@@ -197,6 +198,7 @@ export async function clientRoutes(app: FastifyInstance) {
         color: true,
         icon: true,
         logoUrl: true,
+        backgroundUrl: true,
         _count: { select: { products: { where: provisionableProductWhere } } },
         products: {
           where: provisionableProductWhere,
@@ -235,6 +237,7 @@ export async function clientRoutes(app: FastifyInstance) {
           color: true,
           icon: true,
           logoUrl: true,
+          backgroundUrl: true,
         },
       });
       if (!category) return reply.status(404).send({ error: 'Category not found' });
