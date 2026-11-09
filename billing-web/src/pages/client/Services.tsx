@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Activity,
   AlertCircle,
+  Archive,
   ArrowLeft,
   ArrowRight,
   CalendarDays,
@@ -10,10 +11,12 @@ import {
   CircleDollarSign,
   Clock3,
   Cpu,
+  Database,
   ExternalLink,
   FileText,
   Gamepad2,
   HardDrive,
+  Layers3,
   MemoryStick,
   Search,
   Server,
@@ -44,6 +47,9 @@ type Service = {
   memoryMb: number | null;
   diskMb: number | null;
   cpuPercent: number | null;
+  backupLimit: number | null;
+  databaseLimit: number | null;
+  allocationLimit: number | null;
   priceCents: number | null;
   currency: string | null;
   cycle: string | null;
@@ -59,6 +65,9 @@ type Service = {
     memoryMb?: number;
     diskMb?: number;
     cpuPercent?: number;
+    backupLimit?: number;
+    databaseLimit?: number;
+    allocationLimit?: number;
     category?: ServiceCategory | null;
   };
 };
@@ -112,7 +121,28 @@ function serviceLimits(service: Service) {
     memoryMb: service.memoryMb ?? service.product.memoryMb,
     diskMb: service.diskMb ?? service.product.diskMb,
     cpuPercent: service.cpuPercent ?? service.product.cpuPercent,
+    backupLimit: service.backupLimit ?? service.product.backupLimit ?? 0,
+    databaseLimit: service.databaseLimit ?? service.product.databaseLimit ?? 0,
+    allocationLimit: service.allocationLimit ?? service.product.allocationLimit ?? 0,
   };
+}
+
+function formatSlotLimit(value: number | null | undefined) {
+  if (value == null || value <= 0) return 'Off';
+  return String(value);
+}
+
+function panelServerHref(panelWebUrl: string | null | undefined, panelServerId: string | null | undefined) {
+  const base = safeExternalHref(panelWebUrl);
+  if (!base) return undefined;
+  const id = panelServerId?.trim();
+  if (!id || /[^a-zA-Z0-9_-]/.test(id)) return base;
+  const url = new URL(base);
+  const prefix = url.pathname.replace(/\/$/, '');
+  url.pathname = `${prefix}/servers/${id}`;
+  url.search = '';
+  url.hash = '';
+  return url.toString();
 }
 
 function serviceBilling(service: Service) {
@@ -523,6 +553,7 @@ export function ServiceDetailPage() {
   }
 
   const panelHref = safeExternalHref(service.panelWebUrl);
+  const manageHref = panelServerHref(service.panelWebUrl, service.panelServerId);
   const limits = serviceLimits(service);
   const billing = serviceBilling(service);
   const paidInvoices = service.invoices.filter((invoice) => invoice.status === 'paid');
@@ -748,6 +779,27 @@ export function ServiceDetailPage() {
                   <small>Disk</small>
                 </span>
               </span>
+              <span>
+                <Archive size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatSlotLimit(limits.backupLimit)}</em>
+                  <small>Backups</small>
+                </span>
+              </span>
+              <span>
+                <Database size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatSlotLimit(limits.databaseLimit)}</em>
+                  <small>Databases</small>
+                </span>
+              </span>
+              <span>
+                <Layers3 size={14} strokeWidth={1.75} aria-hidden />
+                <span>
+                  <em>{formatSlotLimit(limits.allocationLimit)}</em>
+                  <small>Ports</small>
+                </span>
+              </span>
             </div>
             {canUpgrade && !upgradeLoading && !hasUpgradeOptions && (
               <p className="client-service-detail__upgrade-note">
@@ -910,10 +962,10 @@ export function ServiceDetailPage() {
               <span>Server ID</span>
               <strong>{service.panelServerId || 'Pending assignment'}</strong>
             </div>
-            {panelReady ? (
+            {panelReady && manageHref ? (
               <a
                 className="client-home__btn client-home__btn--ghost client-home__btn--sm"
-                href={panelHref!}
+                href={manageHref}
                 target="_blank"
                 rel="noopener noreferrer"
               >

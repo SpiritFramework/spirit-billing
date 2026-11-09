@@ -1444,3 +1444,601 @@
     bottom: 0.65rem;
   }
 }
+
+.client-host .client-home__intro-copy > span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.client-host.has-dock {
+  padding-bottom: 0;
+}
+
+.client-host .client-gh__dock {
+  position: static;
+  left: auto;
+  bottom: auto;
+  translate: none;
+  width: 100%;
+  z-index: auto;
+  border-radius: 1.2rem;
+  border-color: color-mix(in srgb, var(--accent) 24%, var(--border));
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, #020617), color-mix(in srgb, var(--surface) 88%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+  backdrop-filter: none;
+  padding: 0.85rem 1.05rem;
+}
+
+.client-host__sheet {
+  display: grid;
+  gap: 0.85rem;
+  padding: 1rem 1rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+}
+
+.client-host .client-home__block-head {
+  align-items: center;
+}
+
+.client-host__list {
+  display: grid;
+  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+}
+
+.client-host__title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.client-host__title em {
+  font-style: normal;
+  font-size: 0.66rem;
+  font-weight: 650;
+  padding: 0.1rem 0.42rem;
+  border-radius: 999px;
+  color: color-mix(in srgb, var(--gh-color, var(--accent)) 78%, #fff);
+  background: color-mix(in srgb, var(--gh-color, var(--accent)) 14%, transparent);
+  white-space: nowrap;
+}
+
+.client-host__game {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.95rem 1rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-left: 3px solid var(--gh-color, var(--accent));
+  background: linear-gradient(90deg, color-mix(in srgb, var(--gh-color, var(--accent)) 8%, transparent), transparent 46%);
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.client-host__game:last-child {
+  border-bottom: 0;
+}
+
+.client-host__game:hover {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--gh-color, var(--accent)) 14%, transparent), color-mix(in srgb, var(--accent) 4%, transparent));
+}
+
+.client-host__copy {
+  min-width: 0;
+  display: grid;
+  gap: 0.15rem;
+}
+
+.client-host__copy strong {
+  font-size: 0.98rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.client-host__copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.client-host__copy small,
+.client-host__price small {
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+
+.client-host__price {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.client-host__price strong {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.95rem;
+}
+
+.client-host__price small {
+  margin-left: 0.12rem;
+  font-weight: 550;
+}
+
+.client-host__hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 16.5rem;
+  align-items: center;
+  gap: 1rem;
+  min-height: 16.5rem;
+  padding: 1.5rem 1.35rem 1.35rem 1.5rem;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--hero-a, var(--accent)) 34%, var(--border));
+  border-radius: 1.2rem;
+  background:
+    radial-gradient(42% 90% at 88% 12%, color-mix(in srgb, var(--hero-a, var(--accent)) 46%, transparent), transparent 70%),
+    radial-gradient(38% 80% at 68% 100%, color-mix(in srgb, var(--hero-b, var(--accent)) 38%, transparent), transparent 72%),
+    linear-gradient(155deg, #161824 0%, #0b0d14 58%, #08090f 100%);
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, #fff 8%, transparent),
+    0 18px 40px color-mix(in srgb, #000 22%, transparent);
+}
+
+.client-host__hero-shade {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(color-mix(in srgb, #fff 5%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in srgb, #fff 5%, transparent) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(65% 90% at 78% 40%, #000 10%, transparent 72%);
+  pointer-events: none;
+}
+
+.client-host__hero-main {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: center;
+  gap: 0.28rem;
+  min-width: 0;
+}
+
+.client-host__hero-main p {
+  margin: 0;
+  color: color-mix(in srgb, var(--hero-a, var(--accent)) 70%, #fff);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.client-host__hero-main h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: clamp(2.35rem, 4.4vw, 3.35rem);
+  font-weight: 650;
+  letter-spacing: -0.045em;
+  line-height: 0.95;
+}
+
+.client-host__hero-main > span {
+  max-width: 28rem;
+  margin-top: 0.25rem;
+  color: color-mix(in srgb, var(--text) 72%, var(--muted));
+  font-size: 0.95rem;
+}
+
+.client-host__hero-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-top: 1.15rem;
+  flex-wrap: wrap;
+}
+
+.client-host__hero .client-host__facts {
+  width: auto;
+  flex: 0 0 auto;
+}
+
+.client-host__hero .client-gh__search {
+  flex: 1 1 12rem;
+  min-width: 11rem;
+  max-width: none;
+  min-height: 3.15rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, #000 38%, transparent);
+}
+
+.client-host__hero-art {
+  position: relative;
+  z-index: 1;
+  height: 13.5rem;
+}
+
+.client-host__hero-mark {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  border-radius: 1.35rem;
+  border: 1px solid color-mix(in srgb, var(--gh-color, var(--accent)) 55%, transparent);
+  background:
+    radial-gradient(80% 80% at 50% 20%, color-mix(in srgb, var(--gh-color, var(--accent)) 28%, transparent), transparent 70%),
+    color-mix(in srgb, #000 42%, #12141c);
+  box-shadow:
+    0 22px 40px color-mix(in srgb, var(--gh-color, var(--accent)) 28%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 14%, transparent);
+}
+
+.client-host__hero-mark.is-1 {
+  width: 8.4rem;
+  height: 8.4rem;
+  top: 0.15rem;
+  right: 0.35rem;
+}
+
+.client-host__hero-mark.is-2 {
+  width: 6.15rem;
+  height: 6.15rem;
+  left: 1.15rem;
+  bottom: 0.35rem;
+}
+
+.client-host__facts {
+  display: flex;
+  gap: 0.45rem;
+  width: 100%;
+}
+
+.client-host__facts span {
+  flex: 1;
+}
+
+.client-host__facts span {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-areas: "icon value" "icon label";
+  align-items: center;
+  column-gap: 0.45rem;
+  row-gap: 0;
+  min-width: 0;
+  min-height: 3.15rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, #000 20%, transparent);
+}
+
+.client-host__facts svg {
+  grid-area: icon;
+  opacity: 0.85;
+}
+
+.client-host__facts strong {
+  grid-area: value;
+}
+
+.client-host__facts small {
+  grid-area: label;
+}
+
+.client-host__facts strong {
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+.client-host__facts small {
+  color: var(--muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.client-host__hero .client-host__facts span {
+  background: color-mix(in srgb, #000 32%, transparent);
+}
+
+.client-host__catalog,
+.client-host__steps {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.client-host__block-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.client-host__block-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.client-host__block-head h2 {
+  margin: 0.12rem 0 0;
+  font-size: clamp(1.25rem, 2vw, 1.5rem);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.client-host__block-head > span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  padding-bottom: 0.15rem;
+}
+
+.client-host__steps ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 1.05rem;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--surface) 94%, #020617), color-mix(in srgb, var(--surface) 88%, transparent));
+  box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+}
+
+.client-host__steps li {
+  display: grid;
+  align-content: start;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 1.05rem 1.15rem 1.15rem;
+  border-right: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.client-host__steps li:last-child {
+  border-right: 0;
+}
+
+.client-host__steps li > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: fit-content;
+  margin-bottom: 0.35rem;
+  padding: 0.28rem 0.55rem 0.28rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: color-mix(in srgb, var(--accent) 72%, #fff);
+}
+
+.client-host__steps li > span em {
+  font-style: normal;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.client-host__steps li strong {
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.client-host__steps li p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.client-host__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17.5rem, 1fr));
+  gap: 0.85rem;
+}
+
+.client-host__card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100%;
+  border: 1px solid color-mix(in srgb, var(--gh-color, var(--accent)) 28%, var(--border));
+  border-radius: 1rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.client-host__card:hover {
+  border-color: color-mix(in srgb, var(--gh-color, var(--accent)) 55%, var(--border));
+  box-shadow: 0 16px 36px color-mix(in srgb, var(--gh-color, var(--accent)) 16%, transparent);
+}
+
+.client-host__card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--gh-color, var(--accent)) 70%, #fff);
+  outline-offset: 3px;
+}
+
+.client-host__card.is-loading {
+  min-height: 16rem;
+  background: color-mix(in srgb, var(--surface) 70%, transparent);
+}
+
+.client-host__card-art {
+  display: grid;
+  place-items: center;
+  min-height: 9.25rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--gh-color, var(--accent)) 18%, var(--border));
+  background:
+    radial-gradient(60% 90% at 50% 40%, color-mix(in srgb, var(--gh-color, var(--accent)) 28%, transparent), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--gh-color, var(--accent)) 14%, #07080d), color-mix(in srgb, var(--surface) 40%, transparent));
+}
+
+.client-host__plate {
+  display: grid;
+  place-items: center;
+  width: 5.6rem;
+  height: 5.6rem;
+  border-radius: 1.2rem;
+  border: 1px solid color-mix(in srgb, var(--gh-color, var(--accent)) 42%, transparent);
+  background: color-mix(in srgb, #000 35%, transparent);
+  box-shadow:
+    0 16px 32px color-mix(in srgb, var(--gh-color, var(--accent)) 22%, transparent),
+    inset 0 1px 0 color-mix(in srgb, #fff 12%, transparent);
+}
+
+.client-host__card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  flex: 1;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.client-host__card-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.client-host__card .client-host__title strong {
+  font-size: 1.05rem;
+  letter-spacing: -0.02em;
+}
+
+.client-host__card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: auto;
+  padding-top: 0.8rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.client-host__card .client-host__price strong {
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+}
+
+.client-host__card .client-host__price {
+  display: grid;
+  justify-items: start;
+  text-align: left;
+  white-space: normal;
+}
+
+.client-host__card .client-host__price > small {
+  margin: 0 0 0.1rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.client-host__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.38rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--gh-color, var(--accent)) 38%, transparent);
+  background: color-mix(in srgb, var(--gh-color, var(--accent)) 16%, transparent);
+  color: color-mix(in srgb, var(--gh-color, var(--accent)) 78%, #fff);
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.client-host__card:hover .client-host__cta svg {
+  transform: translateX(2px);
+}
+
+.client-host__cta svg {
+  transition: transform 0.15s ease;
+}
+
+@media (max-width: 860px) {
+  .client-host__hero {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+
+  .client-host__hero-art {
+    display: none;
+  }
+
+  .client-host__hero .client-host__facts,
+  .client-host__hero .client-gh__search {
+    width: 100%;
+    max-width: none;
+  }
+
+  .client-host__grid,
+  .client-host__steps ol {
+    grid-template-columns: 1fr;
+  }
+
+  .client-host__steps li {
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  }
+
+  .client-host__steps li:last-child {
+    border-bottom: 0;
+  }
+}
+
+.client-host__go {
+  color: var(--faint);
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.client-host__game:hover .client-host__go {
+  color: var(--accent-hover);
+  transform: translateX(2px);
+}
+
+.client-host__loading {
+  min-height: 8rem;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  border: 1px solid color-mix(in srgb, var(--border) 88%, transparent);
+  border-radius: 1rem;
+}
+
+@media (max-width: 720px) {
+  .client-host__game {
+    grid-template-columns: auto minmax(0, 1fr) auto;
+  }
+
+  .client-host__price {
+    grid-column: 2;
+    justify-items: start;
+    text-align: left;
+  }
+
+  .client-host__go {
+    grid-column: 3;
+    grid-row: 1 / span 2;
+    align-self: center;
+  }
+}

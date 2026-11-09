@@ -3,9 +3,11 @@ import { Link } from 'react-router-dom';
 import {
   ArrowRight,
   ArrowUpRight,
+  CalendarDays,
   Cpu,
   Gamepad2,
   HardDrive,
+  LifeBuoy,
   MemoryStick,
   PanelsTopLeft,
   Receipt,
@@ -29,6 +31,23 @@ type DashboardData = {
   memberSince: string;
   panelLinked: boolean;
   panelStatus?: 'linked' | 'missing' | 'unreachable';
+  ticketsEnabled?: boolean;
+  openTickets?: number;
+  recentTickets?: Array<{
+    id: string;
+    number: string;
+    subject: string;
+    status: string;
+    updatedAt: string;
+  }>;
+  nextRenewal?: {
+    id: string;
+    name: string;
+    nextDueAt: string;
+    priceCents: number;
+    currency: string;
+    cycle: string;
+  } | null;
   recentInvoices: Array<{
     id: string;
     number: string;
@@ -88,6 +107,21 @@ function planLabel(service: DashboardData['recentServices'][number]) {
     return `Custom · ${service.panelEggName}`;
   }
   return service.product.name;
+}
+
+function duePhrase(iso: string) {
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days < 0) return `${Math.abs(days)}d overdue`;
+  if (days === 0) return 'Due today';
+  if (days === 1) return 'Tomorrow';
+  return `in ${days} days`;
+}
+
+function ticketLabel(status: string) {
+  if (status === 'awaiting_customer') return 'Needs you';
+  if (status === 'answered') return 'Answered';
+  if (status === 'closed') return 'Closed';
+  return 'Open';
 }
 
 function greeting() {
@@ -152,6 +186,9 @@ export function DashboardPage() {
   const unpaid = data?.unpaidBalanceCents ?? 0;
   const panelOk = data?.panelLinked === true;
   const panelWarn = data != null && data.panelLinked !== true;
+  const renewalDays = data?.nextRenewal
+    ? Math.ceil((new Date(data.nextRenewal.nextDueAt).getTime() - Date.now()) / 86_400_000)
+    : null;
 
   return (
     <div className="client-home">
@@ -219,7 +256,13 @@ export function DashboardPage() {
           <span className="client-home__pulse-copy">
             <small>Services</small>
             <strong>{data ? data.activeServices : '—'}</strong>
-            <span>{data ? `${data.totalServices} total` : 'Loading'}</span>
+            <span>
+              {data
+                ? data.pendingServices > 0
+                  ? `${data.pendingServices} waiting on payment`
+                  : `${data.totalServices} total`
+                : 'Loading'}
+            </span>
           </span>
           <span className="client-home__pulse-icon is-services" aria-hidden>
             <Server size={18} />
@@ -451,6 +494,7 @@ export function DashboardPage() {
           </div>
         </section>
 
+        <div className="client-home__side">
         <section className="client-home__block client-home__credit">
           <div className="client-home__credit-top">
             <div>
@@ -487,6 +531,81 @@ export function DashboardPage() {
           {redeemMsg && <p className="client-home__redeem-msg is-ok">{redeemMsg}</p>}
           {redeemErr && <p className="client-home__redeem-msg is-err">{redeemErr}</p>}
         </section>
+
+        {data?.nextRenewal ? (
+          <Link
+            to={`/services/${data.nextRenewal.id}`}
+            className={`client-home__renew${renewalDays != null && renewalDays <= 3 ? ' is-soon' : ''}`}
+          >
+            <span className="client-home__renew-icon" aria-hidden>
+              <CalendarDays size={16} />
+            </span>
+            <span className="client-home__renew-copy">
+              <small>Next renewal</small>
+              <strong>{data.nextRenewal.name}</strong>
+              <span>
+                {new Date(data.nextRenewal.nextDueAt).toLocaleDateString(undefined, {
+                  day: 'numeric',
+                  month: 'short',
+                })}
+                <span aria-hidden> · </span>
+                {duePhrase(data.nextRenewal.nextDueAt)}
+              </span>
+            </span>
+            <span className="client-home__renew-price">
+              <strong>{money(data.nextRenewal.priceCents, data.nextRenewal.currency)}</strong>
+              <small>{data.nextRenewal.cycle}</small>
+            </span>
+            <ArrowRight size={14} className="client-home__renew-go" aria-hidden />
+          </Link>
+        ) : null}
+
+        {data?.ticketsEnabled !== false ? (
+          <section className="client-home__block client-home__support">
+            <div className="client-home__block-head">
+              <div>
+                <h2>Support</h2>
+                <p>
+                  {data
+                    ? data.openTickets
+                      ? `${data.openTickets} open`
+                      : data.recentTickets?.length
+                        ? 'Latest requests'
+                        : 'Nothing waiting on you'
+                    : 'Recent requests'}
+                </p>
+              </div>
+              <Link className="client-home__btn client-home__btn--text" to="/tickets">
+                View all <ArrowRight size={14} />
+              </Link>
+            </div>
+            <div className="client-home__ticket-list">
+              {(data?.recentTickets ?? []).map((ticket) => (
+                <Link key={ticket.id} to={`/tickets/${ticket.id}`} className={`client-home__ticket is-${ticket.status}`}>
+                  <span className="client-home__ticket-mark" aria-hidden>
+                    <LifeBuoy size={15} />
+                  </span>
+                  <span className="client-home__ticket-copy">
+                    <strong>{ticket.subject}</strong>
+                    <small>{ticket.number}</small>
+                  </span>
+                  <em>{ticketLabel(ticket.status)}</em>
+                  <ArrowRight size={14} className="client-home__ticket-go" aria-hidden />
+                </Link>
+              ))}
+              {data && !data.recentTickets?.length ? (
+                <div className="client-home__empty is-compact">
+                  <span><LifeBuoy size={18} /></span>
+                  <div>
+                    <strong>No tickets yet</strong>
+                    <p>Questions about a server or invoice start here.</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ) : null}
+        </div>
       </div>
     </div>
   );

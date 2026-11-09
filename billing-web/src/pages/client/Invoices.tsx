@@ -2,15 +2,18 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import {
   AlertCircle,
+  Archive,
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
   CircleDollarSign,
   Clock3,
   Cpu,
+  Database,
   FileText,
   Gamepad2,
   HardDrive,
+  Layers3,
   MemoryStick,
   ReceiptText,
   Search,
@@ -38,6 +41,7 @@ type InvoiceProduct = {
   cpuPercent?: number;
   backupLimit?: number;
   databaseLimit?: number;
+  allocationLimit?: number;
 };
 
 type UpgradeProduct = InvoiceProduct;
@@ -67,6 +71,9 @@ type Invoice = {
     memoryMb?: number | null;
     diskMb?: number | null;
     cpuPercent?: number | null;
+    backupLimit?: number | null;
+    databaseLimit?: number | null;
+    allocationLimit?: number | null;
     priceCents?: number | null;
     currency?: string | null;
     cycle?: string | null;
@@ -592,6 +599,15 @@ export function InvoiceDetailPage() {
   const planCpu = isUpgrade
     ? upgrade?.cpuPercent
     : invoice.service?.cpuPercent ?? currentPlan?.cpuPercent;
+  const planBackups = isUpgrade
+    ? upgrade?.backupLimit
+    : invoice.service?.backupLimit ?? currentPlan?.backupLimit;
+  const planDatabases = isUpgrade
+    ? upgrade?.databaseLimit
+    : invoice.service?.databaseLimit ?? currentPlan?.databaseLimit;
+  const planPorts = isUpgrade
+    ? upgrade?.allocationLimit
+    : invoice.service?.allocationLimit ?? currentPlan?.allocationLimit;
   const planFeatures = Array.isArray(featuredProduct?.features)
     ? featuredProduct.features.filter(Boolean).slice(0, 8)
     : [];
@@ -625,7 +641,12 @@ export function InvoiceDetailPage() {
       : invoice.description || featuredProduct?.name || 'Managed game hosting';
   const itemBilling = isUpgrade ? 'Upgrade' : planCycle || 'One-time';
   const hasResources =
-    typeof planMemory === 'number' || typeof planCpu === 'number' || typeof planDisk === 'number';
+    typeof planMemory === 'number' ||
+    typeof planCpu === 'number' ||
+    typeof planDisk === 'number' ||
+    typeof planBackups === 'number' ||
+    typeof planDatabases === 'number' ||
+    typeof planPorts === 'number';
 
   return (
     <div className={`client-invoice-detail is-${statusKey}`}>
@@ -851,28 +872,35 @@ export function InvoiceDetailPage() {
                         </span>
                       </span>
                     ) : null}
+                    {typeof planBackups === 'number' ? (
+                      <span>
+                        <Archive size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{planBackups <= 0 ? 'Off' : planBackups}</em>
+                          <small>Backups</small>
+                        </span>
+                      </span>
+                    ) : null}
+                    {typeof planDatabases === 'number' ? (
+                      <span>
+                        <Database size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{planDatabases <= 0 ? 'Off' : planDatabases}</em>
+                          <small>Databases</small>
+                        </span>
+                      </span>
+                    ) : null}
+                    {typeof planPorts === 'number' ? (
+                      <span>
+                        <Layers3 size={14} strokeWidth={1.75} aria-hidden />
+                        <span>
+                          <em>{planPorts <= 0 ? 'Off' : planPorts}</em>
+                          <small>Ports</small>
+                        </span>
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
-
-                {(typeof featuredProduct?.backupLimit === 'number' ||
-                  typeof featuredProduct?.databaseLimit === 'number') && (
-                  <div className="client-invoice-detail__extras">
-                    {typeof featuredProduct?.backupLimit === 'number' ? (
-                      <span>
-                        {featuredProduct.backupLimit <= 0
-                          ? 'Unlimited backups'
-                          : `${featuredProduct.backupLimit} backup${featuredProduct.backupLimit === 1 ? '' : 's'}`}
-                      </span>
-                    ) : null}
-                    {typeof featuredProduct?.databaseLimit === 'number' ? (
-                      <span>
-                        {featuredProduct.databaseLimit <= 0
-                          ? 'Unlimited databases'
-                          : `${featuredProduct.databaseLimit} database${featuredProduct.databaseLimit === 1 ? '' : 's'}`}
-                      </span>
-                    ) : null}
-                  </div>
-                )}
 
                 {planFeatures.length > 0 ? (
                   <ul className="client-invoice-detail__features">

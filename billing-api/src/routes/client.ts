@@ -20,6 +20,7 @@ import { withEffectiveServiceCategory } from '../lib/service-display.js';
 import { normalizeProductFeatures, loadStorefrontProducts, repairInvalidProductFeatures } from '../lib/product-features.js';
 import { publicErrorMessage } from '../lib/public-errors.js';
 import { recordLogFireAndForget } from '../lib/system-log.js';
+import { areTicketsEnabled } from '../lib/tickets.js';
 
 function withProductFeatures<T extends { features?: unknown }>(product: T) {
   return {
@@ -59,6 +60,7 @@ const productPublicSelect = {
   cpuPercent: true,
   backupLimit: true,
   databaseLimit: true,
+  allocationLimit: true,
 } as const;
 
 /** List/detail fields used by client services UI (avoid full-row include). */
@@ -71,6 +73,9 @@ const serviceListSelect = {
   memoryMb: true,
   diskMb: true,
   cpuPercent: true,
+  backupLimit: true,
+  databaseLimit: true,
+  allocationLimit: true,
   priceCents: true,
   currency: true,
   cycle: true,
@@ -89,6 +94,9 @@ const serviceListSelect = {
       memoryMb: true,
       diskMb: true,
       cpuPercent: true,
+      backupLimit: true,
+      databaseLimit: true,
+      allocationLimit: true,
       category: { select: categoryPublicSelect },
     },
   },
@@ -285,6 +293,10 @@ export async function clientRoutes(app: FastifyInstance) {
       recentInvoices,
       recentServices,
       user,
+      ticketsEnabled,
+      openTickets,
+      recentTickets,
+      nextRenewal,
     ] = await Promise.all([
       prisma.service.count({ where: { userId } }),
       prisma.service.count({ where: { userId, status: 'active' } }),
@@ -346,6 +358,27 @@ export async function clientRoutes(app: FastifyInstance) {
         where: { id: userId },
         select: { id: true, email: true, creditBalanceCents: true, createdAt: true, panelUserId: true },
       }),
+      areTicketsEnabled(),
+      prisma.ticket.count({ where: { userId, status: { not: 'closed' } } }),
+      prisma.ticket.findMany({
+        where: { userId },
+        orderBy: { updatedAt: 'desc' },
+        take: 3,
+        select: { id: true, number: true, subject: true, status: true, updatedAt: true },
+      }),
+      prisma.service.findFirst({
+        where: { userId, status: { in: ['active', 'suspended'] }, nextDueAt: { not: null } },
+        orderBy: { nextDueAt: 'asc' },
+        select: {
+          id: true,
+          name: true,
+          nextDueAt: true,
+          priceCents: true,
+          currency: true,
+          cycle: true,
+          product: { select: { priceCents: true, currency: true, cycle: true } },
+        },
+      }),
     ]);
     const link = await resolvePanelUserLink(user);
     const statusRank: Record<string, number> = {
@@ -371,6 +404,19 @@ export async function clientRoutes(app: FastifyInstance) {
       panelLinked: link.panelLinked,
       panelStatus: link.panelStatus,
       panelWebUrl: (await getPanelConnectionConfig()).panelWebUrl,
+      ticketsEnabled,
+      openTickets,
+      recentTickets,
+      nextRenewal: nextRenewal
+        ? {
+            id: nextRenewal.id,
+            name: nextRenewal.name,
+            nextDueAt: nextRenewal.nextDueAt,
+            priceCents: nextRenewal.priceCents ?? nextRenewal.product.priceCents,
+            currency: nextRenewal.currency ?? nextRenewal.product.currency,
+            cycle: nextRenewal.cycle ?? nextRenewal.product.cycle,
+          }
+        : null,
     };
   });
 
@@ -1071,6 +1117,9 @@ export async function clientRoutes(app: FastifyInstance) {
             memoryMb: true,
             diskMb: true,
             cpuPercent: true,
+            backupLimit: true,
+            databaseLimit: true,
+            allocationLimit: true,
             priceCents: true,
             currency: true,
             cycle: true,

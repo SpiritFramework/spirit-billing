@@ -27,7 +27,6 @@ import {
 } from 'lucide-react';
 import { api, money } from '../../lib/api';
 import { CategoryMark } from '../../lib/icons';
-import { useBranding } from '../../context/BrandingContext';
 import { useCart, type CartProduct } from '../../context/CartContext';
 
 type FeatureIcon = ComponentType<LucideProps>;
@@ -188,7 +187,6 @@ function CartDock({ count }: { count: number }) {
 }
 
 export function GameHostingPage() {
-  const branding = useBranding();
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -209,312 +207,209 @@ export function GameHostingPage() {
   }, [categories, query]);
 
   const totalPlans = categories.reduce((sum, category) => sum + (category._count?.products ?? 0), 0);
-  const featured = useMemo(
-    () =>
-      [...categories]
-        .sort((a, b) => (b._count?.products ?? 0) - (a._count?.products ?? 0))
-        .slice(0, Math.min(3, categories.length)),
-    [categories],
-  );
-  const heroGames = featured.slice(0, 3);
-  const brand = branding.companyName || 'SpiritHost';
-  const gridMode =
-    filtered.length === 1 ? 'is-solo' : filtered.length === 2 ? 'is-duo' : 'is-multi';
   const showSearch = categories.length > 1 || Boolean(query.trim());
 
   return (
-    <div className={`client-gh${count > 0 ? ' has-dock' : ''}`}>
-      <section className="client-gh__hero">
-        <div className="client-gh__hero-stage" aria-hidden>
-          <span className="client-gh__hero-orb is-a" />
-          <span className="client-gh__hero-orb is-b" />
-          <span className="client-gh__hero-grid" />
-          {heroGames.length > 0 ? (
-            <div className={`client-gh__hero-games is-${heroGames.length}`}>
-              {heroGames.map((category, index) => (
-                <span
-                  key={category.id}
-                  className={`client-gh__hero-game is-${index + 1}`}
-                  style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
-                >
-                  <CategoryMark
-                    icon={category.icon}
-                    logoUrl={category.logoUrl}
-                    color={category.color}
-                    size={index === 0 ? 64 : 48}
-                  />
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="client-gh__hero-mark">
-              <Gamepad2 size={54} strokeWidth={1.5} />
-            </div>
-          )}
-        </div>
-        <div className="client-gh__hero-copy">
-          <p>{brand}</p>
-          <h1>Game Hosting</h1>
+    <div className={`client-home client-gh client-host${count > 0 ? ' has-dock' : ''}`}>
+      <section
+        className="client-host__hero"
+        style={{
+          ['--hero-a' as string]: categories[0]?.color || 'var(--accent)',
+          ['--hero-b' as string]: categories[1]?.color || categories[0]?.color || 'var(--accent)',
+        }}
+      >
+        <div className="client-host__hero-shade" aria-hidden />
+        <div className="client-host__hero-main">
+          <p>Catalog</p>
+          <h1>Game hosting</h1>
           <span>
-            Pick a game, choose your power, and launch a server built for the community you run.
+            {loading
+              ? 'Loading games…'
+              : categories.length
+                ? 'Choose a game, then a plan.'
+                : 'Games appear here once they are published.'}
           </span>
-          <div className="client-gh__hero-actions">
-            {categories.length === 1 ? (
-              <Link
-                className="client-home__btn client-home__btn--primary client-home__btn--cta"
-                to={`/game-hosting/${categories[0].slug || categories[0].id}`}
-              >
-                <span className="client-home__btn-icon" aria-hidden>
-                  <Gamepad2 size={15} />
-                </span>
-                <span>View {categories[0].name} plans</span>
-                <ArrowRight size={14} className="client-home__btn-arrow" />
-              </Link>
-            ) : (
-              <a className="client-home__btn client-home__btn--primary client-home__btn--cta" href="#games">
-                <span className="client-home__btn-icon" aria-hidden>
-                  <Gamepad2 size={15} />
-                </span>
-                <span>Browse games</span>
-                <ArrowRight size={14} className="client-home__btn-arrow" />
-              </a>
-            )}
-            <Link className="client-home__btn client-home__btn--ghost client-home__btn--cta" to="/cart">
-              <span className="client-home__btn-icon" aria-hidden>
-                <ShoppingCart size={15} />
+          <div className="client-host__hero-row">
+            <div className="client-host__facts" aria-label="Catalog totals">
+              <span>
+                <Gamepad2 size={15} aria-hidden />
+                <strong>{loading ? '—' : categories.length}</strong>
+                <small>{categories.length === 1 ? 'Game' : 'Games'}</small>
               </span>
-              <span>View cart{count > 0 ? ` (${count})` : ''}</span>
-            </Link>
+              <span>
+                <Layers3 size={15} aria-hidden />
+                <strong>{loading ? '—' : totalPlans}</strong>
+                <small>{totalPlans === 1 ? 'Plan' : 'Plans'}</small>
+              </span>
+            </div>
+            {showSearch ? (
+              <label className="client-gh__search">
+                <Search size={15} aria-hidden />
+                <input
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  placeholder="Search games"
+                  aria-label="Search games"
+                />
+              </label>
+            ) : null}
           </div>
+        </div>
+        <div className="client-host__hero-art" aria-hidden>
+          {categories.slice(0, 2).map((category, index) => (
+            <span
+              key={category.id}
+              className={`client-host__hero-mark is-${index + 1}`}
+              style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
+            >
+              <CategoryMark icon={category.icon} logoUrl={category.logoUrl} color={category.color} size={index === 0 ? 74 : 52} />
+            </span>
+          ))}
         </div>
       </section>
 
-      <div className="client-gh__trust" aria-label="Why SpiritHost hosting">
-        <div>
-          <Zap size={16} aria-hidden />
+      <section className="client-host__catalog" id="games" aria-labelledby="popular-games">
+        <header className="client-host__block-head">
           <div>
-            <strong>Instant deploy</strong>
-            <small>Online minutes after payment</small>
+            <p>Start here</p>
+            <h2 id="popular-games">Popular games</h2>
           </div>
-        </div>
-        <div>
-          <ShieldCheck size={16} aria-hidden />
-          <div>
-            <strong>DDoS covered</strong>
-            <small>Protection included</small>
-          </div>
-        </div>
-        <div>
-          <Layers3 size={16} aria-hidden />
-          <div>
-            <strong>Spirit-Panel</strong>
-            <small>Full control out of the box</small>
-          </div>
-        </div>
-        <div>
-          <Headphones size={16} aria-hidden />
-          <div>
-            <strong>Real support</strong>
-            <small>People who know game servers</small>
-          </div>
-        </div>
-      </div>
-
-      {!loading && featured.length > 2 && !query.trim() ? (
-        <section className="client-gh__featured">
-          <div className="client-gh__section-head">
-            <div>
-              <p>Start here</p>
-              <h2>Popular games</h2>
-            </div>
-          </div>
-          <div className="client-gh__featured-rail">
-            {featured.map((category) => (
-              <Link
-                key={category.id}
-                to={`/game-hosting/${category.slug || category.id}`}
-                className="client-gh__featured-card"
-                style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
-              >
-                <CategoryMark
-                  icon={category.icon}
-                  logoUrl={category.logoUrl}
-                  color={category.color}
-                  size={52}
-                />
-                <div>
-                  <strong>{category.name}</strong>
-                  <small>
-                    {category._count?.products ?? 0} plan
-                    {(category._count?.products ?? 0) === 1 ? '' : 's'}
-                  </small>
-                </div>
-                <span aria-hidden>
-                  <ArrowRight size={16} />
-                </span>
-              </Link>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <section className="client-gh__catalog" id="games">
-        <div className="client-gh__catalog-head">
-          <div>
-            <p>Catalog</p>
-            <h2>{filtered.length === 1 ? 'Your game' : 'Choose your game'}</h2>
+          {!loading ? (
             <span>
-              {loading
-                ? 'Loading games…'
-                : query.trim()
-                  ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'}`
-                  : `${categories.length} game${categories.length === 1 ? '' : 's'} · ${totalPlans} plan${totalPlans === 1 ? '' : 's'}`}
+              {filtered.length} game{filtered.length === 1 ? '' : 's'}
             </span>
-          </div>
-          {showSearch ? (
-            <label className="client-gh__search">
-              <Search size={15} aria-hidden />
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search Minecraft, Rust, FiveM…"
-                aria-label="Search games"
-              />
-            </label>
           ) : null}
-        </div>
-
+        </header>
         {loading ? (
-          <div className="client-gh__game-grid is-multi">
-            {[0, 1, 2].map((item) => (
-              <div className="client-gh__game-skeleton" key={item} />
+          <div className="client-host__grid">
+            {[0, 1].map((item) => (
+              <div className="client-host__card is-loading" key={item} />
             ))}
           </div>
-        ) : (
-          <div className={`client-gh__game-grid ${gridMode}`}>
-            {filtered.map((category, index) => {
+        ) : filtered.length ? (
+          <div className="client-host__grid">
+            {filtered.map((category) => {
               const planCount = category._count?.products ?? 0;
-              const solo = filtered.length === 1;
               const from = category.startingFrom;
               return (
                 <Link
                   key={category.id}
                   to={`/game-hosting/${category.slug || category.id}`}
-                  className={`client-gh__game${solo ? ' is-spotlight' : ''}`}
-                  style={{
-                    ['--gh-color' as string]: category.color || 'var(--accent)',
-                    animationDelay: `${Math.min(index, 8) * 45}ms`,
-                  }}
+                  className="client-host__card"
+                  style={{ ['--gh-color' as string]: category.color || 'var(--accent)' }}
                 >
-                  <span className="client-gh__game-glow" aria-hidden />
-                  <span className="client-gh__game-shine" aria-hidden />
-                  <div className="client-gh__game-art">
-                    <span className="client-gh__game-index" aria-hidden>
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <span className="client-gh__game-plate">
+                  <span className="client-host__card-art" aria-hidden>
+                    <span className="client-host__plate">
                       <CategoryMark
                         icon={category.icon}
                         logoUrl={category.logoUrl}
                         color={category.color}
-                        size={solo ? 92 : 78}
-                        className="client-gh__game-mark"
+                        size={68}
                       />
                     </span>
-                    <em className="client-gh__game-plans">
-                      {planCount} plan{planCount === 1 ? '' : 's'}
-                    </em>
-                  </div>
-                  <div className="client-gh__game-body">
-                    <h3>{category.name}</h3>
+                  </span>
+                  <span className="client-host__card-body">
+                    <span className="client-host__title">
+                      <strong>{category.name}</strong>
+                      <em>
+                        {planCount} plan{planCount === 1 ? '' : 's'}
+                      </em>
+                    </span>
                     <p>
                       {category.description ||
                         `High-performance ${category.name} hosting with Spirit-Panel access.`}
                     </p>
-                    <div className="client-gh__game-foot">
+                    <span className="client-host__card-foot">
                       {from ? (
-                        <span className="client-gh__game-price">
+                        <span className="client-host__price">
                           <small>From</small>
                           <strong>
                             {money(from.priceCents, from.currency)}
-                            <em>/{cycleShort(from.cycle)}</em>
+                            <small>/{cycleShort(from.cycle)}</small>
                           </strong>
                         </span>
                       ) : (
-                        <span className="client-gh__game-price">
+                        <span className="client-host__price">
                           <small>Plans</small>
-                          <strong>Coming soon</strong>
+                          <strong>Soon</strong>
                         </span>
                       )}
-                      <span className="client-gh__game-cta">
-                        {solo ? 'Choose a plan' : 'View plans'}
+                      <span className="client-host__cta">
+                        View plans
                         <ArrowRight size={14} />
                       </span>
-                    </div>
-                  </div>
+                    </span>
+                  </span>
                 </Link>
               );
             })}
-
-            {!filtered.length ? (
-              <div className="client-gh__empty">
-                <span aria-hidden>
-                  <PackageOpen size={22} />
-                </span>
-                <strong>{categories.length ? 'No games match your search' : 'No games available yet'}</strong>
-                <p>
-                  {categories.length
-                    ? 'Try another game name or clear your search.'
-                    : 'Hosting categories will appear here once configured.'}
-                </p>
-                {query ? (
-                  <button
-                    type="button"
-                    className="client-home__btn client-home__btn--ghost client-home__btn--sm"
-                    onClick={() => setQuery('')}
-                  >
-                    Clear search
-                  </button>
-                ) : null}
-              </div>
+          </div>
+        ) : (
+          <div className="client-home__empty">
+            <span aria-hidden>
+              <PackageOpen size={22} />
+            </span>
+            <div>
+              <strong>{categories.length ? 'No games match that search' : 'No games yet'}</strong>
+              <p>
+                {categories.length
+                  ? 'Try another name, or clear the search.'
+                  : 'Hosting categories will appear here once they are published.'}
+              </p>
+            </div>
+            {query ? (
+              <button
+                type="button"
+                className="client-home__btn client-home__btn--ghost client-home__btn--sm"
+                onClick={() => setQuery('')}
+              >
+                Clear search
+              </button>
             ) : null}
           </div>
         )}
       </section>
 
-      <section className="client-gh__path">
-        <div className="client-gh__section-head">
+      <section className="client-host__steps" aria-labelledby="online-steps">
+        <header className="client-host__block-head">
           <div>
-            <p>How it works</p>
-            <h2>Online in three steps</h2>
+            <p>Get started</p>
+            <h2 id="online-steps">Online in three steps</h2>
           </div>
-        </div>
-        <div className="client-gh__path-grid">
-          <article>
-            <span>01</span>
-            <Gamepad2 size={20} aria-hidden />
-            <h3>Choose a game</h3>
-            <p>Browse hosting tuned for the title your community actually plays.</p>
-          </article>
-          <article>
-            <span>02</span>
-            <MemoryStick size={20} aria-hidden />
-            <h3>Pick your power</h3>
-            <p>Match RAM, CPU, and storage to your player count and mods.</p>
-          </article>
-          <article>
-            <span>03</span>
-            <Rocket size={20} aria-hidden />
-            <h3>Launch & manage</h3>
-            <p>Pay once, provision automatically, and run everything in Spirit-Panel.</p>
-          </article>
-        </div>
+        </header>
+        <ol>
+          <li>
+            <span>
+              <em>01</em>
+              <Gamepad2 size={16} aria-hidden />
+            </span>
+            <strong>Choose a game</strong>
+            <p>Open a game from the catalog and see the plans built for it.</p>
+          </li>
+          <li>
+            <span>
+              <em>02</em>
+              <Layers3 size={16} aria-hidden />
+            </span>
+            <strong>Pick a plan</strong>
+            <p>Compare memory, storage, and price, then add it to your cart.</p>
+          </li>
+          <li>
+            <span>
+              <em>03</em>
+              <Rocket size={16} aria-hidden />
+            </span>
+            <strong>You&apos;re online</strong>
+            <p>Check out, then manage the server from Spirit-Panel.</p>
+          </li>
+        </ol>
       </section>
 
       <CartDock count={count} />
     </div>
   );
 }
+
 
 export function CategoryPlansPage() {
   const { categoryId } = useParams();
