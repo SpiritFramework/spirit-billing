@@ -174,6 +174,12 @@ function roleLabel(role: string) {
   return 'Client';
 }
 
+function roleSummary(role: string) {
+  if (role === 'admin') return 'Full billing administration';
+  if (role === 'staff') return 'Tickets, suspend, and read-only settings';
+  return 'Standard billing and hosting access';
+}
+
 export function AdminUsers() {
   const navigate = useNavigate();
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
@@ -551,7 +557,8 @@ export function AdminUserDetail() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [linkOpen, setLinkOpen] = useState(false);
   const [tab, setTab] = useState<'overview' | 'services' | 'invoices'>('overview');
   const [creditAmount, setCreditAmount] = useState('');
   const [creditNote, setCreditNote] = useState('');
@@ -608,11 +615,10 @@ export function AdminUserDetail() {
     }
   }
 
-  async function copyPanelId() {
-    if (!user?.panelUserId) return;
-    await navigator.clipboard.writeText(user.panelUserId);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1500);
+  async function copyValue(key: string, value: string) {
+    await navigator.clipboard.writeText(value);
+    setCopiedKey(key);
+    window.setTimeout(() => setCopiedKey((current) => (current === key ? null : current)), 1500);
   }
 
   async function adjustCredits(e: FormEvent) {
@@ -789,7 +795,7 @@ export function AdminUserDetail() {
       : 'Not linked';
 
   return (
-    <div className="ops-user">
+    <div className="ops-user ops-account">
       <Link to="/admin/users" className="ops-user__back">
         <ArrowLeft size={14} /> Directory
       </Link>
@@ -797,6 +803,7 @@ export function AdminUserDetail() {
       {error ? <div className="ops-user__alert is-error">{error}</div> : null}
       {message ? <div className="ops-user__alert is-info">{message}</div> : null}
 
+      <section className="ops-account__stage">
       <header className="ops-user__mast">
         <div className="ops-user__identity">
           <span className={`ops-user__avatar-wrap ${user.enabled ? 'is-on' : 'is-off'}`}>
@@ -850,45 +857,44 @@ export function AdminUserDetail() {
         </div>
       </header>
 
-      <section className="ops-user__metrics" aria-label="Account metrics">
-        <div className="ops-users__chip ops-user__metric">
-          <span className="ops-user__metric-icon" aria-hidden>
-            <WalletCards size={15} />
-          </span>
-          <div>
-            <small>Credits</small>
-            <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
-          </div>
-        </div>
-        <div className="ops-users__chip ops-user__metric">
-          <span className="ops-user__metric-icon" aria-hidden>
-            <Server size={15} />
-          </span>
-          <div>
-            <small>Services</small>
-            <strong>{user.stats.services}</strong>
-          </div>
-        </div>
-        <div className="ops-users__chip ops-user__metric">
-          <span className="ops-user__metric-icon" aria-hidden>
-            <FileText size={15} />
-          </span>
-          <div>
-            <small>Invoices</small>
-            <strong>{user.stats.invoices}</strong>
-          </div>
-        </div>
-        <div className={`ops-users__chip ops-user__metric${user.stats.unpaidInvoices ? ' is-warn' : ''}`}>
-          <span className="ops-user__metric-icon" aria-hidden>
-            <CircleDollarSign size={15} />
-          </span>
-          <div>
-            <small>Unpaid</small>
-            <strong>{user.stats.unpaidInvoices}</strong>
-          </div>
-        </div>
-      </section>
-
+      <div className="ops-account__rail" aria-label="Account metrics">
+        <button
+          type="button"
+          onClick={() => {
+            setTab('overview');
+            window.requestAnimationFrame(() => {
+              document.getElementById('ops-account-wallet')?.scrollIntoView({ block: 'nearest' });
+            });
+          }}
+        >
+          <WalletCards size={14} />
+          <span>Credits</span>
+          <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
+          <em>on account</em>
+        </button>
+        <button type="button" className={tab === 'services' ? 'is-on' : ''} onClick={() => setTab('services')}>
+          <Server size={14} />
+          <span>Services</span>
+          <strong>{user.stats.services}</strong>
+          <em>{user.stats.activeServices} active</em>
+        </button>
+        <button type="button" className={tab === 'invoices' ? 'is-on' : ''} onClick={() => setTab('invoices')}>
+          <FileText size={14} />
+          <span>Invoices</span>
+          <strong>{user.stats.invoices}</strong>
+          <em>{user.stats.paidInvoices} paid</em>
+        </button>
+        <button
+          type="button"
+          className={user.stats.unpaidInvoices ? 'is-warn' : ''}
+          onClick={() => setTab('invoices')}
+        >
+          <CircleDollarSign size={14} />
+          <span>Unpaid</span>
+          <strong>{user.stats.unpaidInvoices}</strong>
+          <em>{user.stats.unpaidInvoices ? 'needs collecting' : 'clear'}</em>
+        </button>
+      </div>
       <div className="ops-user__tabs" role="tablist" aria-label="Account sections">
         <button type="button" role="tab" aria-selected={tab === 'overview'} className={tab === 'overview' ? 'is-on' : ''} onClick={() => setTab('overview')}>
           <UserRound size={14} /> Overview
@@ -900,35 +906,19 @@ export function AdminUserDetail() {
           <FileText size={14} /> Invoices <em>{user.invoices.length}</em>
         </button>
       </div>
+      </section>
 
       {tab === 'overview' ? (
-        <div className="ops-user__overview">
-          <section className="ops-user__panel">
+        <div className="ops-account__desk">
+          <section className="ops-account__card">
             <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <UserRound size={15} />
-              </span>
-              <div>
-                <span>Identity</span>
-                <h2>Account</h2>
-              </div>
+              <span>Profile</span>
+              <h2>Role and record</h2>
             </header>
-            <dl className="ops-user__facts">
-              <div>
-                <dt>Full name</dt>
-                <dd>{name}</dd>
-              </div>
-              <div>
-                <dt>Username</dt>
-                <dd>@{user.username}</dd>
-              </div>
+            <dl className="ops-account__rows">
               <div>
                 <dt>Email</dt>
-                <dd className="is-wrap">{user.email}</dd>
-              </div>
-              <div>
-                <dt>User ID</dt>
-                <dd className="is-mono">{user.id}</dd>
+                <dd>{user.email}</dd>
               </div>
               <div>
                 <dt>Joined</dt>
@@ -940,64 +930,85 @@ export function AdminUserDetail() {
                   })}
                 </dd>
               </div>
-            </dl>
-            <label className="ops-user__field">
-              <span>Role</span>
-              {fullAdmin ? (
-                <ThemedSelect
-                  ariaLabel="Account role"
-                  value={user.role}
-                  disabled={saving}
-                  onChange={(role) => void patchUser({ role: role as 'admin' | 'staff' | 'client' })}
-                  options={[
-                    { value: 'client', label: 'Client', description: 'Standard billing and hosting access' },
-                    { value: 'staff', label: 'Staff', description: 'Light admin: tickets, suspend, read-only settings' },
-                    { value: 'admin', label: 'Administrator', description: 'Full billing administration access' },
-                  ]}
-                />
-              ) : (
-                <strong>{roleLabel(user.role)}</strong>
-              )}
-            </label>
-          </section>
-
-          <section className="ops-user__panel">
-            <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Server size={15} />
-              </span>
               <div>
-                <span>Provisioning</span>
-                <h2>Spirit-Panel</h2>
-              </div>
-            </header>
-            <dl className="ops-user__facts">
-              <div>
-                <dt>Status</dt>
-                <dd>
-                  <span className={`ops-users__panel ${user.panelLinked ? 'is-yes' : 'is-no'}`}>{panelLabel}</span>
+                <dt>User ID</dt>
+                <dd className="ops-account__id">
+                  <code title={user.id}>{user.id}</code>
+                  <button type="button" className="ops-user__icon-btn" onClick={() => void copyValue('user', user.id)} title="Copy user ID">
+                    {copiedKey === 'user' ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
                 </dd>
               </div>
-              <div>
-                <dt>Panel user ID</dt>
-                <dd className="is-mono ops-user__copy-row">
-                  <span>{user.panelUserId || '—'}</span>
-                  {user.panelUserId ? (
-                    <button type="button" className="ops-user__icon-btn" onClick={() => void copyPanelId()} title="Copy panel ID">
-                      {copied ? <Check size={13} /> : <Copy size={13} />}
-                    </button>
+              <div className="is-role">
+                <dt>Role</dt>
+                <dd>
+                  <div className="ops-account__role">
+                    <strong>{roleLabel(user.role)}</strong>
+                    <small>{roleSummary(user.role)}</small>
+                  </div>
+                  {fullAdmin ? (
+                    <ThemedSelect
+                      ariaLabel="Account role"
+                      value={user.role}
+                      disabled={saving}
+                      onChange={(role) => void patchUser({ role: role as 'admin' | 'staff' | 'client' })}
+                      options={[
+                        { value: 'client', label: 'Client', description: 'Standard billing and hosting access' },
+                        { value: 'staff', label: 'Staff', description: 'Light admin: tickets, suspend, read-only settings' },
+                        { value: 'admin', label: 'Administrator', description: 'Full billing administration access' },
+                      ]}
+                    />
                   ) : null}
                 </dd>
               </div>
             </dl>
-            {panelHref ? (
-              <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn is-ghost">
-                <ExternalLink size={14} /> Open game panel
-              </a>
+          </section>
+
+          <section className="ops-account__card">
+            <header>
+              <span>Panel</span>
+              <h2>Spirit-Panel</h2>
+              <em className={user.panelLinked ? 'is-ok' : 'is-warn'}>{panelLabel}</em>
+            </header>
+            <div className={`ops-account__panel-state${user.panelLinked ? ' is-ok' : ''}`}>
+              <strong>
+                {user.panelLinked
+                  ? 'Connected to the game panel'
+                  : user.panelStatus === 'unreachable'
+                    ? 'Panel did not answer'
+                    : 'No panel account yet'}
+              </strong>
+              <p>
+                {user.panelLinked
+                  ? 'Servers for this client provision through the linked panel user.'
+                  : 'Link a panel account before provisioning servers for this client.'}
+              </p>
+              {user.panelUserId ? (
+                <div className="ops-account__id">
+                  <code title={user.panelUserId}>{user.panelUserId}</code>
+                  <button type="button" className="ops-user__icon-btn" onClick={() => void copyValue('panel', user.panelUserId!)} title="Copy panel ID">
+                    {copiedKey === 'panel' ? <Check size={13} /> : <Copy size={13} />}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+            {panelHref || (fullAdmin && (!user.panelLinked || user.panelStatus === 'unreachable') && !linkOpen) ? (
+            <div className="ops-account__form-actions">
+              {panelHref ? (
+                <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn is-ghost">
+                  <ExternalLink size={14} /> Open game panel
+                </a>
+              ) : null}
+              {fullAdmin && (!user.panelLinked || user.panelStatus === 'unreachable') && !linkOpen ? (
+                <button type="button" className="ops-user__btn is-primary" onClick={() => setLinkOpen(true)}>
+                  <Link2 size={14} /> Link Spirit-Panel
+                </button>
+              ) : null}
+            </div>
             ) : null}
-            {fullAdmin && (!user.panelLinked || user.panelStatus === 'unreachable') ? (
+            {fullAdmin && linkOpen && (!user.panelLinked || user.panelStatus === 'unreachable') ? (
               <form className="ops-user__form" onSubmit={(event) => void relinkPanel(event)}>
-                <p>Create or attach a Spirit-Panel account. Password must be 16+ characters.</p>
+                <p>This also sets the billing password. Use at least 16 characters.</p>
                 <label className="ops-user__field">
                   <span>Panel password</span>
                   <input
@@ -1024,111 +1035,115 @@ export function AdminUserDetail() {
                     required
                   />
                 </label>
-                <button type="submit" className="ops-user__btn is-primary" disabled={relinkBusy}>
-                  <Link2 size={14} /> {relinkBusy ? 'Linking…' : 'Relink Spirit-Panel'}
-                </button>
+                <div className="ops-account__form-actions">
+                  <button type="submit" className="ops-user__btn is-primary" disabled={relinkBusy}>
+                    <Link2 size={14} /> {relinkBusy ? 'Linking…' : 'Create link'}
+                  </button>
+                  <button type="button" className="ops-user__btn is-ghost" onClick={() => setLinkOpen(false)}>
+                    Cancel
+                  </button>
+                </div>
               </form>
             ) : null}
           </section>
 
           {fullAdmin ? (
-            <section className="ops-user__panel ops-user__panel--wide">
+            <section className="ops-account__card">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <KeyRound size={15} />
-                </span>
-                <div>
-                  <span>Security</span>
-                  <h2>Password</h2>
-                </div>
+                <span>Access</span>
+                <h2>Password</h2>
               </header>
-              <p className="ops-user__hint">Updates billing and the linked panel, then signs the user out everywhere.</p>
-              <form className="ops-user__form ops-user__form--split" onSubmit={(event) => void changePassword(event)}>
-                <label className="ops-user__field">
-                  <span>Your admin password</span>
-                  <input
-                    type="password"
-                    autoComplete="current-password"
-                    maxLength={200}
-                    value={passwordStepUp}
-                    onChange={(event) => setPasswordStepUp(event.target.value)}
-                    placeholder="Confirm with your password"
-                    required
-                  />
-                </label>
-                <label className="ops-user__field">
-                  <span>New password</span>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={16}
-                    maxLength={200}
-                    value={password}
-                    onChange={(event) => setPassword(event.target.value)}
-                    placeholder="At least 16 characters"
-                    required
-                  />
-                </label>
-                <label className="ops-user__field">
-                  <span>Confirm password</span>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    minLength={16}
-                    maxLength={200}
-                    value={passwordConfirm}
-                    onChange={(event) => setPasswordConfirm(event.target.value)}
-                    placeholder="Repeat new password"
-                    required
-                  />
-                </label>
-                <button
-                  type="submit"
-                  className="ops-user__btn is-primary"
-                  disabled={passwordBusy || (user.role === 'admin' && user.id !== currentUser?.id)}
-                >
-                  <KeyRound size={14} /> {passwordBusy ? 'Updating…' : 'Update password'}
-                </button>
-              </form>
+              {user.role === 'admin' && user.id !== currentUser?.id ? (
+                <div className="ops-account__panel-state">
+                  <strong>Locked for other administrators</strong>
+                  <p>Another admin’s password stays with that account. You can still change a client or staff password here.</p>
+                </div>
+              ) : (
+                <form className="ops-account__pass" onSubmit={(event) => void changePassword(event)}>
+                  <div className="ops-account__pass-block">
+                    <strong>Confirm it is you</strong>
+                    <label className="ops-user__field">
+                      <span>Your admin password</span>
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        maxLength={200}
+                        value={passwordStepUp}
+                        onChange={(event) => setPasswordStepUp(event.target.value)}
+                        placeholder="Current password"
+                        required
+                      />
+                    </label>
+                  </div>
+                  <div className="ops-account__pass-block">
+                    <strong>New password for {user.username}</strong>
+                    <p>Updates billing and the linked panel, then signs them out everywhere.</p>
+                    <label className="ops-user__field">
+                      <span>New password</span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={16}
+                        maxLength={200}
+                        value={password}
+                        onChange={(event) => setPassword(event.target.value)}
+                        placeholder="At least 16 characters"
+                        required
+                      />
+                    </label>
+                    <label className="ops-user__field">
+                      <span>Confirm password</span>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={16}
+                        maxLength={200}
+                        value={passwordConfirm}
+                        onChange={(event) => setPasswordConfirm(event.target.value)}
+                        placeholder="Repeat new password"
+                        required
+                      />
+                    </label>
+                  </div>
+                  <button type="submit" className="ops-user__btn is-primary" disabled={passwordBusy}>
+                    <KeyRound size={14} /> {passwordBusy ? 'Updating…' : 'Update password'}
+                  </button>
+                </form>
+              )}
             </section>
           ) : null}
 
           {fullAdmin ? (
-            <section className="ops-user__panel ops-user__panel--wide">
+            <section className="ops-account__card" id="ops-account-wallet">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <WalletCards size={15} />
-                </span>
-                <div>
-                  <span>Wallet</span>
-                  <h2>Credits</h2>
-                </div>
+                <span>Wallet</span>
+                <h2>Credits</h2>
               </header>
-              <div className="ops-user__credit-stats">
+              <div className="ops-account__balance">
                 <div>
-                  <small>Available</small>
+                  <span>Available</span>
                   <strong>{money(user.creditBalanceCents ?? 0, 'GBP')}</strong>
                 </div>
-                <div>
-                  <small>Adjustments</small>
-                  <strong>{user.creditLedgers?.length ?? 0}</strong>
-                </div>
-                <div>
-                  <small>Last movement</small>
-                  <strong>
-                    {user.creditLedgers?.[0]
-                      ? new Date(user.creditLedgers[0].createdAt).toLocaleDateString(undefined, {
-                          day: 'numeric',
-                          month: 'short',
-                        })
-                      : '—'}
-                  </strong>
-                </div>
+                <em>
+                  {user.creditLedgers?.length ?? 0} adjustments
+                  {user.creditLedgers?.[0]
+                    ? ` · last ${new Date(user.creditLedgers[0].createdAt).toLocaleDateString(undefined, {
+                        day: 'numeric',
+                        month: 'short',
+                      })}`
+                    : ''}
+                </em>
               </div>
-              <form className="ops-user__credit-form" onSubmit={(event) => void adjustCredits(event)}>
-                <div className="ops-user__quick">
+              <form className="ops-account__credit" onSubmit={(event) => void adjustCredits(event)}>
+                <div className="ops-user__quick" role="group" aria-label="Quick amounts">
                   {[10, 25, 50, -10].map((amount) => (
-                    <button key={amount} type="button" disabled={creditBusy} onClick={() => setCreditAmount(String(amount))}>
+                    <button
+                      key={amount}
+                      type="button"
+                      className={creditAmount === String(amount) ? 'is-on' : ''}
+                      disabled={creditBusy}
+                      onClick={() => setCreditAmount(String(amount))}
+                    >
                       {amount > 0 ? `+£${amount}` : `−£${Math.abs(amount)}`}
                     </button>
                   ))}
@@ -1193,32 +1208,28 @@ export function AdminUserDetail() {
           ) : null}
 
           {fullAdmin ? (
-            <section className="ops-user__panel ops-user__panel--danger ops-user__panel--wide">
-              <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <Trash2 size={15} />
-                </span>
-                <div>
-                  <span>Danger</span>
-                  <h2>Delete user</h2>
-                </div>
-              </header>
-              <div className="ops-user__danger">
-                <p>
-                  Permanently removes billing data and the linked panel account. Panel users that still own servers must have
-                  those services removed first.
-                </p>
-                <button type="button" className="ops-user__btn is-danger" disabled={deleting} onClick={() => setDeleteModalOpen(true)}>
-                  <Trash2 size={14} /> Delete user
-                </button>
+            <section className="ops-account__danger">
+              <div>
+                <span>Danger</span>
+                <strong>Delete this account</strong>
+                <p>Removes billing data and the linked panel user. Servers they still own have to be removed first.</p>
               </div>
+              <button type="button" className="ops-user__btn is-danger" disabled={deleting} onClick={() => setDeleteModalOpen(true)}>
+                <Trash2 size={14} /> Delete user
+              </button>
             </section>
           ) : null}
         </div>
       ) : null}
 
       {tab === 'services' ? (
-        <section className="ops-user__table" aria-label="Services">
+        <section className="ops-account__sheet" aria-label="Services">
+          <header>
+            <span>Fleet</span>
+            <h2>Services</h2>
+            <em>{user.stats.activeServices} active</em>
+          </header>
+          <div className="ops-user__table">
           <div className="ops-user__table-head ops-user__table-head--services" aria-hidden>
             <span>Service</span>
             <span>Plan</span>
@@ -1269,11 +1280,18 @@ export function AdminUserDetail() {
           {!user.services.length ? (
             <div className="ops-user__empty-inline">No services for this account.</div>
           ) : null}
+          </div>
         </section>
       ) : null}
 
       {tab === 'invoices' ? (
-        <section className="ops-user__table" aria-label="Invoices">
+        <section className="ops-account__sheet" aria-label="Invoices">
+          <header>
+            <span>Ledger</span>
+            <h2>Invoices</h2>
+            <em>{user.stats.unpaidInvoices ? `${user.stats.unpaidInvoices} unpaid` : 'Clear'}</em>
+          </header>
+          <div className="ops-user__table">
           <div className="ops-user__table-head ops-user__table-head--invoices" aria-hidden>
             <span>Invoice</span>
             <span>Status</span>
@@ -1347,6 +1365,7 @@ export function AdminUserDetail() {
           {!user.invoices.length ? (
             <div className="ops-user__empty-inline">No invoices for this account.</div>
           ) : null}
+          </div>
         </section>
       ) : null}
 

@@ -2,15 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Activity,
-  AlertTriangle,
-  ArrowDownRight,
   ArrowRight,
-  ArrowUpRight,
   BarChart3,
   CheckCircle2,
   ChevronRight,
-  CircleDollarSign,
-  Clock3,
   FileText,
   LifeBuoy,
   Package,
@@ -119,11 +114,12 @@ type OverviewStats = {
 
 type QueueItem = {
   id: string;
-  tone: 'bad' | 'warn' | 'info';
+  tone: 'bad' | 'today' | 'warn' | 'info';
   kind: string;
   title: string;
   detail: string;
-  meta: string;
+  amount: string;
+  note: string;
   to: string;
 };
 
@@ -136,6 +132,7 @@ type FeedItem = {
   at: number;
   to?: string;
   tone?: string;
+  count?: number;
 };
 
 function displayName(user: Person) {
@@ -167,12 +164,110 @@ function daysOverdue(dueAt: string) {
   return Math.max(1, Math.round((Date.now() - new Date(dueAt).getTime()) / (24 * 60 * 60 * 1000)));
 }
 
+function isSameDay(value: string, now = Date.now()) {
+  const date = new Date(value);
+  const today = new Date(now);
+  return (
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate()
+  );
+}
+
+function duePhrase(dueAt?: string) {
+  if (!dueAt) return 'Open';
+  if (isSameDay(dueAt)) return 'Due today';
+  if (new Date(dueAt).getTime() < Date.now()) return `${daysOverdue(dueAt)}d overdue`;
+  return `Due ${formatShortDate(dueAt)}`;
+}
+
+function dueTone(phrase: string): QueueItem['tone'] {
+  if (phrase.includes('overdue')) return 'bad';
+  if (phrase === 'Due today') return 'today';
+  return 'warn';
+}
+
+function logPreview(message: string) {
+  if (/prisma\.|[A-Za-z]:\\|randomBy|invocation/i.test(message)) {
+    if (/session\.create/i.test(message)) return 'Could not open a login session.';
+    if (/session/i.test(message)) return 'Session call failed.';
+    return 'A database call failed. Open Logs for the record.';
+  }
+  const cleaned = message.replace(/\s+/g, ' ').trim();
+  if (!cleaned) return 'Logged event';
+  return cleaned.length > 88 ? `${cleaned.slice(0, 85)}…` : cleaned;
+}
+
 function isOverdue(invoice: { status: string; dueAt?: string }) {
   return invoice.status === 'unpaid' && Boolean(invoice.dueAt) && new Date(invoice.dueAt!).getTime() < Date.now();
 }
 
 function ticketStatusLabel(status: string) {
   return status.replaceAll('_', ' ');
+}
+
+function RevenueRibbon({
+  months,
+  selected,
+  onSelect,
+}: {
+  months: Array<{ label: string; revenueCents: number }>;
+  selected: number;
+  onSelect: (index: number) => void;
+}) {
+  const width = 640;
+  const height = 128;
+  const pad = { left: 10, right: 10, top: 14, bottom: 6 };
+  const max = Math.max(1, ...months.map((row) => row.revenueCents));
+  const innerW = width - pad.left - pad.right;
+  const innerH = height - pad.top - pad.bottom;
+  const points = months.map((row, index) => {
+    const x = pad.left + (months.length <= 1 ? innerW / 2 : (index / (months.length - 1)) * innerW);
+    const y = pad.top + innerH - (row.revenueCents / max) * innerH;
+    return { x, y, index };
+  });
+  const line = points.map((point) => `${point.x},${point.y}`).join(' ');
+  const base = pad.top + innerH;
+  const area = points.length ? `${points[0].x},${base} ${line} ${points[points.length - 1].x},${base}` : '';
+  const active = points[Math.min(selected, Math.max(0, points.length - 1))];
+
+  return (
+    <div className="ops-home__plot">
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Settled revenue by month">
+        {[0.5, 1].map((step) => {
+          const y = pad.top + innerH * (1 - step);
+          return <line key={step} className="ops-home__gridline" x1={pad.left} x2={width - pad.right} y1={y} y2={y} />;
+        })}
+        {area ? <polygon className="ops-home__area" points={area} /> : null}
+        {line ? <polyline className="ops-home__line" points={line} /> : null}
+        {active ? <line className="ops-home__guide" x1={active.x} x2={active.x} y1={pad.top} y2={base} /> : null}
+        {points.map((point) => (
+          <circle
+            key={point.index}
+            className={point.index === (active?.index ?? -1) ? 'is-on' : ''}
+            cx={point.x}
+            cy={point.y}
+            r={point.index === (active?.index ?? -1) ? 5 : 3.2}
+            onClick={() => onSelect(point.index)}
+          />
+        ))}
+      </svg>
+      <div className="ops-home__months" role="tablist" aria-label="Months">
+        {months.map((row, index) => (
+          <button
+            key={`${row.label}-${index}`}
+            type="button"
+            role="tab"
+            aria-selected={index === (active?.index ?? -1)}
+            className={index === (active?.index ?? -1) ? 'is-on' : ''}
+            onClick={() => onSelect(index)}
+          >
+            {row.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function AdminOverview() {
@@ -182,6 +277,7 @@ export function AdminOverview() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [ribbonMonth, setRibbonMonth] = useState(0);
 
   async function load(soft = false) {
     setError('');
@@ -206,6 +302,11 @@ export function AdminOverview() {
     return () => window.clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!stats?.revenueByMonth.length) return;
+    setRibbonMonth(stats.revenueByMonth.length - 1);
+  }, [stats?.generatedAt, stats?.revenueByMonth.length]);
+
   const tickets = stats?.tickets ?? { open: 0, awaiting: 0, answered: 0, hot: 0 };
   const overdue = stats?.invoices.overdue ?? 0;
   const dueSoon = stats?.invoices.dueSoon ?? 0;
@@ -213,19 +314,11 @@ export function AdminOverview() {
   const monthPaid = stats?.revenueThisMonthCents ?? stats?.revenueByMonth.at(-1)?.revenueCents ?? 0;
   const prevMonth = stats?.revenueLastMonthCents ?? stats?.revenueByMonth.at(-2)?.revenueCents ?? 0;
   const monthDelta =
-    monthPaid > 0 && prevMonth > 0 ? Math.round(((monthPaid - prevMonth) / prevMonth) * 100) : null;
-  const maxRevenue = Math.max(...(stats?.revenueByMonth.map((month) => month.revenueCents) ?? [0]), 1);
+    prevMonth > 0 ? Math.round(((monthPaid - prevMonth) / prevMonth) * 100) : monthPaid > 0 ? 100 : 0;
   const activeRate = stats?.services.total
     ? Math.round((stats.services.active / stats.services.total) * 100)
     : 0;
   const linkRate = stats?.users ? Math.round((stats.linkedUsers / stats.users) * 100) : 0;
-  const pressure =
-    overdue * 3 +
-    (stats?.invoices.unpaid ?? 0) +
-    tickets.open * 2 +
-    tickets.awaiting +
-    (stats?.services.suspended ?? 0) * 3 +
-    (stats?.services.pending ?? 0);
 
   const queue = useMemo(() => {
     if (!stats) return [] as QueueItem[];
@@ -234,13 +327,15 @@ export function AdminOverview() {
 
     for (const invoice of stats.overdueInvoices ?? []) {
       seenInvoices.add(invoice.id);
+      const note = duePhrase(invoice.dueAt);
       items.push({
         id: `overdue-${invoice.id}`,
-        tone: 'bad',
+        tone: dueTone(note),
         kind: 'Collect',
         title: invoice.number,
         detail: `${displayName(invoice.user)}${invoice.service ? ` · ${invoice.service.name}` : ''}`,
-        meta: `${money(invoice.totalCents, invoice.currency)} · ${daysOverdue(invoice.dueAt)}d overdue`,
+        amount: money(invoice.totalCents, invoice.currency),
+        note,
         to: `/admin/invoices/${invoice.id}`,
       });
     }
@@ -248,16 +343,15 @@ export function AdminOverview() {
     for (const invoice of stats.recentInvoices.filter((row) => row.status === 'unpaid')) {
       if (seenInvoices.has(invoice.id)) continue;
       seenInvoices.add(invoice.id);
-      const overdueInvoice = isOverdue(invoice);
+      const note = duePhrase(invoice.dueAt || invoice.createdAt);
       items.push({
         id: `unpaid-${invoice.id}`,
-        tone: overdueInvoice ? 'bad' : 'warn',
+        tone: dueTone(note),
         kind: 'Collect',
         title: invoice.number,
         detail: `${displayName(invoice.user)}${invoice.service ? ` · ${invoice.service.name}` : ''}`,
-        meta: overdueInvoice
-          ? `${money(invoice.totalCents, invoice.currency)} · ${daysOverdue(invoice.dueAt!)}d overdue`
-          : `${money(invoice.totalCents, invoice.currency)} · due ${formatShortDate(invoice.dueAt || invoice.createdAt)}`,
+        amount: money(invoice.totalCents, invoice.currency),
+        note,
         to: `/admin/invoices/${invoice.id}`,
       });
     }
@@ -269,7 +363,8 @@ export function AdminOverview() {
         kind: 'Reply',
         title: ticket.number,
         detail: `${ticket.subject} · ${displayName(ticket.user)}`,
-        meta: `${ticket.priority} · ${formatUpdated(ticket.updatedAt)}`,
+        amount: ticket.priority,
+        note: formatUpdated(ticket.updatedAt),
         to: `/admin/tickets/${ticket.id}`,
       });
     }
@@ -281,7 +376,8 @@ export function AdminOverview() {
         kind: 'Fleet',
         title: service.name,
         detail: `@${service.user.username} · ${service.product.name}`,
-        meta: 'Suspended',
+        amount: 'Suspended',
+        note: formatUpdated(service.createdAt),
         to: `/admin/services/${service.id}`,
       });
     }
@@ -293,7 +389,8 @@ export function AdminOverview() {
         kind: 'Provision',
         title: service.name,
         detail: `@${service.user.username} · ${service.product.name}`,
-        meta: 'Pending payment',
+        amount: 'Pending',
+        note: formatUpdated(service.createdAt),
         to: `/admin/services/${service.id}`,
       });
     }
@@ -354,7 +451,7 @@ export function AdminOverview() {
         id: `log-${log.id}`,
         kind: 'log',
         title: log.action.replaceAll('_', ' '),
-        detail: log.message,
+        detail: logPreview(log.message),
         meta: `${log.category} · ${log.level}`,
         at: new Date(log.createdAt).getTime(),
         to: '/admin/logs',
@@ -362,7 +459,21 @@ export function AdminOverview() {
       });
     }
 
-    return items.sort((a, b) => b.at - a.at).slice(0, 10);
+    const business = items
+      .filter((item) => item.kind !== 'log')
+      .sort((a, b) => b.at - a.at)
+      .slice(0, 6);
+    const grouped = new Map<string, FeedItem>();
+    for (const log of items.filter((item) => item.kind === 'log').sort((a, b) => b.at - a.at)) {
+      const key = `${log.title}|${log.meta}`;
+      const existing = grouped.get(key);
+      if (existing) {
+        existing.count = (existing.count ?? 1) + 1;
+        continue;
+      }
+      grouped.set(key, { ...log, count: 1 });
+    }
+    return [...business, ...[...grouped.values()].slice(0, 3)];
   }, [stats]);
 
   const clock = new Date(nowTick).toLocaleString(undefined, {
@@ -372,93 +483,91 @@ export function AdminOverview() {
     hour: '2-digit',
     minute: '2-digit',
   });
+  const dueToday = queue.filter((item) => item.note === 'Due today').length;
+  const months = stats?.revenueByMonth ?? [];
+  const picked = months[Math.min(ribbonMonth, Math.max(0, months.length - 1))];
+  const fleetMix = [
+    { label: 'Active', value: stats?.services.active ?? 0, tone: 'ok' },
+    { label: 'Pending', value: stats?.services.pending ?? 0, tone: 'warn' },
+    { label: 'Suspended', value: stats?.services.suspended ?? 0, tone: 'bad' },
+  ].filter((row) => row.value > 0);
+  const briefing = queue.length
+    ? `${queue.length} ${queue.length === 1 ? 'item needs' : 'items need'} a look. ${
+        stats?.services.suspended ? 'Fleet has suspended services.' : 'Fleet is up.'
+      }`
+    : 'Nothing waiting. Invoices, tickets, and the fleet are clear.';
 
   if (loading && !stats) {
     return (
-      <div className="ops-user ops-dash">
+      <div className="ops-user ops-home">
         <div className="ops-user__loading">
           <RefreshCw size={18} aria-hidden />
-          Loading command center…
+          Loading overview…
         </div>
       </div>
     );
   }
 
   return (
-    <div className="ops-user ops-dash">
+    <div className="ops-user ops-home">
       {error ? <div className="ops-user__alert is-error">{error}</div> : null}
 
-      <section className="ops-dash__hero">
-        <div className="ops-dash__hero-main">
-          <div className="ops-dash__hero-copy">
-            <span>Overview</span>
-            <h1>{stats ? money(stats.revenuePaidCents) : '—'}</h1>
+      <header className="ops-home__mast">
+        <div>
+          <span>Command</span>
+          <h1>Overview</h1>
+          <p>{briefing}</p>
+        </div>
+        <div className="ops-home__mast-actions">
+          <span className="ops-dash__live" title="Local time">
+            <i /> {clock}
+          </span>
+          <Link to="/admin/analytics" className="ops-user__btn is-ghost">
+            <BarChart3 size={14} /> Analytics
+          </Link>
+          <Link to="/admin/products/new" className="ops-user__btn is-primary">
+            <Plus size={14} /> New product
+          </Link>
+          <button
+            type="button"
+            className="ops-user__btn is-ghost"
+            disabled={refreshing}
+            onClick={() => void load(true)}
+          >
+            <RefreshCw size={14} className={refreshing ? 'ops-dash__spin' : undefined} />
+            {refreshing ? 'Refreshing…' : 'Refresh'}
+          </button>
+        </div>
+      </header>
+
+      <section className="ops-home__stage">
+        <div className="ops-home__stage-top">
+          <div className="ops-home__figure">
+            <span>To collect</span>
+            <strong>{stats ? money(stats.invoices.unpaidCents) : '—'}</strong>
             <p>
-              Settled revenue across all paid invoices
-              {monthPaid > 0 ? (
-                <>
-                  {' '}
-                  · <strong>{money(monthPaid)}</strong> this month
-                  {monthDelta != null ? (
-                    <em className={monthDelta >= 0 ? 'is-up' : 'is-down'}>
-                      {monthDelta >= 0 ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-                      {monthDelta > 0 ? '+' : ''}
-                      {monthDelta}%
-                    </em>
-                  ) : null}
-                </>
-              ) : (
-                ' · nothing paid this month yet'
-              )}
+              <b>{stats?.invoices.unpaid ?? 0} open</b>
+              {overdue ? <em className="is-down">{overdue} overdue</em> : null}
+              {dueToday ? <em className="is-today">{dueToday} due today</em> : null}
+              {dueSoon && dueSoon !== (stats?.invoices.unpaid ?? 0) ? <span>{dueSoon} due this week</span> : null}
             </p>
           </div>
-
-          <div className="ops-dash__hero-actions">
-            <span className="ops-dash__live" title="Local time">
-              <i /> {clock}
-            </span>
-            <Link to="/admin/products/new" className="ops-user__btn is-primary">
-              <Plus size={14} /> New product
-            </Link>
-            <button
-              type="button"
-              className="ops-user__btn is-ghost"
-              disabled={refreshing}
-              onClick={() => void load(true)}
-            >
-              <RefreshCw size={14} className={refreshing ? 'ops-dash__spin' : undefined} />
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-          </div>
-        </div>
-
-        <div className="ops-dash__pulses" aria-label="Operational pulse">
-          <Link
-            to="/admin/invoices"
-            className={`ops-dash__pulse${overdue || stats?.invoices.unpaid ? ' is-warn' : ''}`}
-          >
-            <span className="ops-dash__pulse-icon" aria-hidden>
-              <FileText size={16} />
-            </span>
-            <span>
-              <small>Collect</small>
-              <strong>{stats ? money(stats.invoices.unpaidCents) : '—'}</strong>
+          <div className="ops-home__chips">
+            <article className={monthDelta < 0 ? 'is-warn' : 'is-ok'}>
+              <span>This month</span>
+              <strong>{money(monthPaid)}</strong>
               <em>
-                {stats?.invoices.unpaid ?? 0} unpaid
-                {overdue ? ` · ${overdue} overdue` : dueSoon ? ` · ${dueSoon} due soon` : ''}
+                {monthDelta > 0 ? '+' : ''}
+                {monthDelta}% vs last
               </em>
-            </span>
-          </Link>
-
-          <Link
-            to="/admin/services"
-            className={`ops-dash__pulse${stats?.services.suspended ? ' is-warn' : ' is-ok'}`}
-          >
-            <span className="ops-dash__pulse-icon" aria-hidden>
-              <Server size={16} />
-            </span>
-            <span>
-              <small>Fleet</small>
+            </article>
+            <article>
+              <span>All-time</span>
+              <strong>{stats ? money(stats.revenuePaidCents) : '—'}</strong>
+              <em>{stats?.paidThisMonthCount ?? 0} paid this month</em>
+            </article>
+            <Link to="/admin/services" className={stats?.services.suspended ? 'is-warn' : 'is-ok'}>
+              <span>Fleet</span>
               <strong>
                 {stats?.services.active ?? 0}
                 <i>/{stats?.services.total ?? 0}</i>
@@ -467,60 +576,51 @@ export function AdminOverview() {
                 {activeRate}% active
                 {renewalsDueSoon ? ` · ${renewalsDueSoon} renewing` : ''}
               </em>
-            </span>
-          </Link>
-
-          <Link to="/admin/tickets" className={`ops-dash__pulse${tickets.hot ? ' is-warn' : ' is-ok'}`}>
-            <span className="ops-dash__pulse-icon" aria-hidden>
-              <Ticket size={16} />
-            </span>
-            <span>
-              <small>Inbox</small>
+            </Link>
+            <Link to="/admin/tickets" className={tickets.hot ? 'is-warn' : 'is-ok'}>
+              <span>Inbox</span>
               <strong>{tickets.open}</strong>
               <em>
                 {tickets.awaiting} awaiting · {tickets.answered} answered
               </em>
-            </span>
-          </Link>
-
-          <Link to="/admin/users" className="ops-dash__pulse">
-            <span className="ops-dash__pulse-icon" aria-hidden>
-              <Users size={16} />
-            </span>
-            <span>
-              <small>Clients</small>
-              <strong>{stats?.users ?? 0}</strong>
-              <em>
-                {linkRate}% panel-linked
-                {(stats?.newClients30d ?? 0) > 0 ? ` · +${stats?.newClients30d} / 30d` : ''}
-              </em>
-            </span>
+            </Link>
+          </div>
+        </div>
+        <div className="ops-home__toolbar">
+          <span>Settled</span>
+          {picked ? (
+            <strong>
+              {picked.label}
+              <b>{money(picked.revenueCents)}</b>
+            </strong>
+          ) : (
+            <strong>No months yet</strong>
+          )}
+          <Link to="/admin/analytics">
+            Full analytics <ArrowRight size={13} />
           </Link>
         </div>
+        {months.length ? (
+          <RevenueRibbon months={months} selected={ribbonMonth} onSelect={setRibbonMonth} />
+        ) : (
+          <p className="ops-home__quiet">Revenue trend appears after the first paid invoice.</p>
+        )}
       </section>
 
-      <div className="ops-dash__board">
-        <section className="ops-user__panel ops-dash__queue-panel">
-          <header className="ops-dash__section-head">
-            <span className="ops-user__panel-icon is-warn" aria-hidden>
-              <AlertTriangle size={15} />
-            </span>
-            <div>
-              <span>Priority</span>
-              <h2>Needs action</h2>
-            </div>
-            <em className={`ops-dash__pressure${pressure ? ' is-hot' : ''}`}>
-              {pressure ? `${queue.length} in queue` : 'Clear'}
-            </em>
+      <div className="ops-home__work">
+        <section className="ops-user__panel ops-home__card">
+          <header>
+            <span>Priority</span>
+            <h2>Needs action</h2>
+            <em className={queue.length ? 'is-hot' : ''}>{queue.length ? `${queue.length} open` : 'Clear'}</em>
           </header>
-
           {queue.length ? (
-            <div className="ops-dash__queue">
+            <div className="ops-home__queue">
               {queue.map((item) => (
                 <button
                   type="button"
                   key={item.id}
-                  className={`ops-dash__queue-item is-${item.tone}`}
+                  className={`ops-home__row is-${item.tone}`}
                   onClick={() => navigate(item.to)}
                 >
                   <em>{item.kind}</em>
@@ -528,7 +628,10 @@ export function AdminOverview() {
                     <strong>{item.title}</strong>
                     <small>{item.detail}</small>
                   </span>
-                  <b>{item.meta}</b>
+                  <b>
+                    {item.amount}
+                    <small>{item.note}</small>
+                  </b>
                   <ChevronRight size={15} aria-hidden />
                 </button>
               ))}
@@ -544,223 +647,32 @@ export function AdminOverview() {
           )}
         </section>
 
-        <section className="ops-user__panel ops-dash__vitals-panel">
-          <header className="ops-dash__section-head">
-            <span className="ops-user__panel-icon" aria-hidden>
-              <Activity size={15} />
-            </span>
-            <div>
-              <span>Vitals</span>
-              <h2>Platform pulse</h2>
-            </div>
-          </header>
-
-          <div className="ops-dash__vitals">
-            <div>
-              <small>Panel link</small>
-              <strong>{linkRate}%</strong>
-              <span>
-                {stats?.linkedUsers ?? 0}/{stats?.users ?? 0} clients
-              </span>
-              <i style={{ width: `${linkRate}%` }} />
-            </div>
-            <div>
-              <small>Fleet health</small>
-              <strong>{activeRate}%</strong>
-              <span>
-                {stats?.services.suspended ?? 0} suspended · {stats?.services.pending ?? 0} pending
-              </span>
-              <i className="is-ok" style={{ width: `${activeRate}%` }} />
-            </div>
-            <div>
-              <small>Catalog</small>
-              <strong>{stats?.products.active ?? 0}</strong>
-              <span>{stats?.products.total ?? 0} total plans</span>
-              <i
-                className="is-mark"
-                style={{
-                  width: `${
-                    stats?.products.total
-                      ? Math.round(((stats.products.active || 0) / stats.products.total) * 100)
-                      : 0
-                  }%`,
-                }}
-              />
-            </div>
-            <div>
-              <small>Renewals · 7d</small>
-              <strong>{renewalsDueSoon}</strong>
-              <span>{dueSoon} invoices due soon</span>
-              <i className={renewalsDueSoon || dueSoon ? 'is-warn' : ''} style={{ width: renewalsDueSoon || dueSoon ? '72%' : '12%' }} />
-            </div>
-            <div>
-              <small>Paid this month</small>
-              <strong>{stats?.paidThisMonthCount ?? 0}</strong>
-              <span>{monthPaid ? money(monthPaid) : '£0 settled'}</span>
-              <i className="is-ok" style={{ width: monthPaid ? '88%' : '8%' }} />
-            </div>
-            <div>
-              <small>New clients · 30d</small>
-              <strong>{stats?.newClients30d ?? 0}</strong>
-              <span>Directory growth</span>
-              <i className="is-mark" style={{ width: stats?.newClients30d ? '64%' : '8%' }} />
-            </div>
-          </div>
-        </section>
-      </div>
-
-      <div className="ops-inv__desk ops-dash__desk">
-        <div className="ops-inv__main">
-          <section className="ops-user__panel ops-dash__chart-panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <CircleDollarSign size={15} />
-              </span>
-              <div>
-                <span>Performance</span>
-                <h2>Revenue trend</h2>
-              </div>
-              <div className="ops-dash__chart-legend">
-                <span>
-                  <small>This month</small>
-                  <strong>{money(monthPaid)}</strong>
-                </span>
-                <span>
-                  <small>Last month</small>
-                  <strong>{money(prevMonth)}</strong>
-                </span>
-              </div>
-            </header>
-
-            <div className="ops-dash__chart" aria-label="Revenue by month">
-              {(stats?.revenueByMonth ?? Array.from({ length: 6 }, () => null)).map((month, index) => {
-                const cents = month?.revenueCents ?? 0;
-                const height = Math.max(8, (cents / maxRevenue) * 100);
-                const isCurrent = index === (stats?.revenueByMonth.length ?? 6) - 1;
-                return (
-                  <div
-                    key={month?.label ?? index}
-                    className={`ops-dash__bar${cents <= 0 ? ' is-empty' : ''}${isCurrent ? ' is-current' : ''}`}
-                  >
-                    <strong>{cents > 0 ? money(cents) : '£0'}</strong>
-                    <span className="ops-dash__bar-track" aria-hidden>
-                      <i style={{ height: `${height}%` }} />
-                    </span>
-                    <small>{month?.label ?? '—'}</small>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          <section className="ops-user__panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Activity size={15} />
-              </span>
-              <div>
-                <span>Stream</span>
-                <h2>Live activity</h2>
-              </div>
-              <Link to="/admin/logs" className="ops-dash__panel-link">
-                Logs <ArrowRight size={13} />
+        <div className="ops-home__side">
+          <section className="ops-user__panel ops-home__card">
+            <header>
+              <span>Floor</span>
+              <h2>Fleet and calendar</h2>
+              <Link to="/admin/services">
+                Fleet <ArrowRight size={13} />
               </Link>
             </header>
-
-            <div className="ops-dash__feed" aria-label="Live activity">
-              {feed.map((item) => (
-                <button
-                  type="button"
-                  key={item.id}
-                  className={`ops-dash__feed-item ${item.tone || ''}`}
-                  onClick={() => item.to && navigate(item.to)}
-                  disabled={!item.to}
-                >
-                  <span className={`ops-dash__feed-mark is-${item.kind}`} aria-hidden>
-                    {item.kind === 'invoice' ? (
-                      <FileText size={13} />
-                    ) : item.kind === 'ticket' ? (
-                      <LifeBuoy size={13} />
-                    ) : item.kind === 'service' ? (
-                      <Server size={13} />
-                    ) : (
-                      <Activity size={13} />
-                    )}
-                  </span>
-                  <span className="ops-dash__feed-copy">
-                    <strong>{item.title}</strong>
-                    <small>{item.detail}</small>
-                  </span>
-                  <span className="ops-dash__feed-meta">
-                    <strong>{item.meta}</strong>
-                    <small>{formatUpdated(new Date(item.at).toISOString())}</small>
-                  </span>
-                  {item.to ? <ChevronRight size={14} aria-hidden /> : <span />}
-                </button>
+            <div className="ops-home__mix" aria-hidden>
+              {fleetMix.length ? (
+                fleetMix.map((row) => <i key={row.label} className={`is-${row.tone}`} style={{ flex: row.value }} />)
+              ) : (
+                <i className="is-empty" style={{ flex: 1 }} />
+              )}
+            </div>
+            <div className="ops-home__mix-rows">
+              {(fleetMix.length ? fleetMix : [{ label: 'Active', value: 0, tone: 'ok' }]).map((row) => (
+                <span key={row.label}>
+                  <i className={`is-${row.tone}`} />
+                  {row.label}
+                  <strong>{row.value}</strong>
+                </span>
               ))}
-              {!feed.length ? (
-                <div className="ops-dash__empty">
-                  <strong>No recent activity</strong>
-                  <span>Billing events and ticket updates will show here.</span>
-                </div>
-              ) : null}
             </div>
-          </section>
-        </div>
-
-        <aside className="ops-inv__aside">
-          <section className="ops-user__panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Server size={15} />
-              </span>
-              <div>
-                <span>Fleet</span>
-                <h2>Composition</h2>
-              </div>
-            </header>
-
-            <div className="ops-dash__stack" aria-hidden>
-              {(stats?.services.active ?? 0) > 0 ? (
-                <i className="is-ok" style={{ flex: stats?.services.active }} />
-              ) : null}
-              {(stats?.services.pending ?? 0) > 0 ? (
-                <i className="is-warn" style={{ flex: stats?.services.pending }} />
-              ) : null}
-              {(stats?.services.suspended ?? 0) > 0 ? (
-                <i className="is-bad" style={{ flex: stats?.services.suspended }} />
-              ) : null}
-              {!stats?.services.total ? <i className="is-empty" style={{ flex: 1 }} /> : null}
-            </div>
-
-            <div className="ops-dash__health-rows">
-              <span>
-                <i className="is-ok" /> Active <strong>{stats?.services.active ?? 0}</strong>
-              </span>
-              <span>
-                <i className="is-warn" /> Pending <strong>{stats?.services.pending ?? 0}</strong>
-              </span>
-              <span>
-                <i className="is-bad" /> Suspended <strong>{stats?.services.suspended ?? 0}</strong>
-              </span>
-            </div>
-
-            <Link to="/admin/services" className="ops-user__btn is-ghost ops-dash__full-btn">
-              Open fleet <ArrowRight size={13} />
-            </Link>
-          </section>
-
-          <section className="ops-user__panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Clock3 size={15} />
-              </span>
-              <div>
-                <span>Calendar</span>
-                <h2>Coming due</h2>
-              </div>
-            </header>
-            <dl className="ops-user__facts">
+            <dl className="ops-home__facts">
               <div>
                 <dt>Invoices · 7d</dt>
                 <dd>{dueSoon}</dd>
@@ -774,24 +686,20 @@ export function AdminOverview() {
                 <dd>{overdue}</dd>
               </div>
               <div>
-                <dt>Unpaid value</dt>
-                <dd>{stats ? money(stats.invoices.unpaidCents) : '—'}</dd>
+                <dt>Clients</dt>
+                <dd>{linkRate}% linked</dd>
               </div>
             </dl>
-            <Link to="/admin/invoices" className="ops-user__btn is-ghost ops-dash__full-btn">
-              Open ledger <ArrowRight size={13} />
-            </Link>
+            <p className="ops-home__note">
+              {stats?.products.active ?? 0}/{stats?.products.total ?? 0} products live
+              {(stats?.newClients30d ?? 0) > 0 ? ` · +${stats?.newClients30d} clients / 30d` : ''}
+            </p>
           </section>
 
-          <section className="ops-user__panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Server size={15} />
-              </span>
-              <div>
-                <span>Provisioning</span>
-                <h2>Newest services</h2>
-              </div>
+          <section className="ops-user__panel ops-home__card">
+            <header>
+              <span>Provisioning</span>
+              <h2>Newest services</h2>
             </header>
             <div className="ops-dash__side-list">
               {stats?.recentServices.slice(0, 4).map((service) => (
@@ -829,49 +737,76 @@ export function AdminOverview() {
             </div>
           </section>
 
-          <section className="ops-user__panel">
-            <header className="ops-dash__section-head">
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Settings size={15} />
-              </span>
-              <div>
-                <span>Launch</span>
-                <h2>Quick ops</h2>
-              </div>
-            </header>
-            <div className="ops-dash__launch">
-              <Link to="/admin/analytics">
-                <BarChart3 size={15} />
-                <strong>Analytics</strong>
-              </Link>
-              <Link to="/admin/products/new">
-                <Plus size={15} />
-                <strong>Product</strong>
-              </Link>
-              <Link to="/admin/users">
-                <Users size={15} />
-                <strong>Users</strong>
-              </Link>
-              <Link to="/admin/tickets">
-                <Ticket size={15} />
-                <strong>Tickets</strong>
-              </Link>
-              <Link to="/admin/products">
-                <Package size={15} />
-                <strong>Catalog</strong>
-              </Link>
-              <Link to="/admin/invoices">
-                <FileText size={15} />
-                <strong>Ledger</strong>
-              </Link>
-              <Link to="/admin/settings">
-                <Settings size={15} />
-                <strong>Settings</strong>
-              </Link>
-            </div>
-          </section>
-        </aside>
+          <nav className="ops-home__jump" aria-label="Quick ops">
+            <Link to="/admin/users">
+              <Users size={14} /> Users
+            </Link>
+            <Link to="/admin/invoices">
+              <FileText size={14} /> Ledger
+            </Link>
+            <Link to="/admin/tickets">
+              <Ticket size={14} /> Tickets
+            </Link>
+            <Link to="/admin/products">
+              <Package size={14} /> Catalog
+            </Link>
+            <Link to="/admin/settings">
+              <Settings size={14} /> Settings
+            </Link>
+          </nav>
+        </div>
       </div>
+
+      <section className="ops-user__panel ops-home__card">
+        <header>
+          <span>Stream</span>
+          <h2>Recent activity</h2>
+          <Link to="/admin/logs">
+            Logs <ArrowRight size={13} />
+          </Link>
+        </header>
+        <div className="ops-home__feed" aria-label="Recent activity">
+          {feed.map((item) => (
+            <button
+              type="button"
+              key={item.id}
+              className={`ops-home__feed-item ${item.tone || ''}`}
+              onClick={() => item.to && navigate(item.to)}
+              disabled={!item.to}
+            >
+              <span className={`ops-dash__feed-mark is-${item.kind}`} aria-hidden>
+                {item.kind === 'invoice' ? (
+                  <FileText size={13} />
+                ) : item.kind === 'ticket' ? (
+                  <LifeBuoy size={13} />
+                ) : item.kind === 'service' ? (
+                  <Server size={13} />
+                ) : (
+                  <Activity size={13} />
+                )}
+              </span>
+              <span className="ops-dash__feed-copy">
+                <strong>
+                  {item.title}
+                  {item.count && item.count > 1 ? <i> ×{item.count}</i> : null}
+                </strong>
+                <small>{item.detail}</small>
+              </span>
+              <span className="ops-dash__feed-meta">
+                <strong>{item.meta}</strong>
+                <small>{formatUpdated(new Date(item.at).toISOString())}</small>
+              </span>
+              {item.to ? <ChevronRight size={14} aria-hidden /> : <span />}
+            </button>
+          ))}
+          {!feed.length ? (
+            <div className="ops-dash__empty">
+              <strong>No recent activity</strong>
+              <span>Billing events and ticket updates will show here.</span>
+            </div>
+          ) : null}
+        </div>
+      </section>
     </div>
   );
 }

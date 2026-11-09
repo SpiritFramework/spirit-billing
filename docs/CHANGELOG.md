@@ -17,6 +17,11 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 
 ### Changed
 
+- Admin **Analytics** rebuilt as an intelligence desk: stage chart with its own controls, metric rail, share rings, and a promotions/health band. Empty revenue windows and zero-share rows stay out of the way
+- Admin **Overview** is a command desk: collectable figure, settled trend, a due-today queue, and an activity stream that leads with billing events. Repeated log lines collapse, and database errors no longer paste source paths onto the page
+- Admin **user detail** is one account desk: identity, metrics, and section switcher share a stage, and profile, panel, password, wallet, services, invoices, and delete use the same cards
+- Admin **service detail** is one server desk: identity, price, due date, panel, and unpaid share a stage. Overview, invoices, and the whole settings tab (name, price, limits, features, jobs, and delete) use the same cards. Resource limits show the real values, without decorative meters
+
 ### Fixed
 
 ### Security

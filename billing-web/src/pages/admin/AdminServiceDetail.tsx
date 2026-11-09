@@ -25,7 +25,6 @@ import {
   Receipt,
   Save,
   Server,
-  ShieldCheck,
   SlidersHorizontal,
   Trash2,
   UserRound,
@@ -155,13 +154,6 @@ function dueRelative(iso: string | null) {
   if (days === 0) return 'Due today';
   if (days === 1) return 'in 1 day';
   return `in ${days}d`;
-}
-
-function resourceFill(value: number, kind: 'memory' | 'cpu' | 'disk') {
-  if (value <= 0) return 100;
-  if (kind === 'cpu') return Math.min(100, Math.round((value / 400) * 100));
-  if (kind === 'memory') return Math.min(100, Math.round((value / 16_384) * 100));
-  return Math.min(100, Math.round((value / 102_400) * 100));
 }
 
 function invoiceKind(inv: AdminServiceDetail['invoices'][number]) {
@@ -369,7 +361,7 @@ export function AdminServiceDetail() {
   const isDirty = Boolean(editForm && JSON.stringify(editForm) !== JSON.stringify(baselineForm));
 
   return (
-    <div className="ops-user ops-svc">
+    <div className="ops-user ops-svc ops-server">
       <Link to="/admin/services" className="ops-user__back">
         <ArrowLeft size={14} /> Fleet
       </Link>
@@ -377,6 +369,7 @@ export function AdminServiceDetail() {
       {error ? <div className="ops-user__alert is-error">{error}</div> : null}
       {message ? <div className="ops-user__alert is-info">{message}</div> : null}
 
+      <section className="ops-server__stage">
       <header className="ops-user__mast">
         <div className="ops-user__identity">
           <span
@@ -449,92 +442,36 @@ export function AdminServiceDetail() {
         </div>
       </header>
 
-      {!service.panelServerId || unpaidCount > 0 ? (
-        <div className="ops-svc__attention" role="status">
-          {!service.panelServerId ? (
-            <div className="ops-svc__attention-item is-warn">
-              <Link2 size={15} aria-hidden />
-              <div>
-                <strong>Not provisioned</strong>
-                <span>No Spirit-Panel server is linked yet. Access appears after provisioning.</span>
-              </div>
-            </div>
-          ) : null}
-          {unpaidCount > 0 ? (
-            <button type="button" className="ops-svc__attention-item is-warn" onClick={() => setTab('invoices')}>
-              <FileText size={15} aria-hidden />
-              <div>
-                <strong>
-                  {unpaidCount} unpaid · {money(unpaidCents, currency)}
-                </strong>
-                <span>Open invoices to review balances and due dates.</span>
-              </div>
-              <ChevronRight size={15} aria-hidden />
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-
-      <section className="ops-user__metrics" aria-label="Service metrics">
-        <div className="ops-users__chip ops-user__metric">
-          <span className="ops-user__metric-icon" aria-hidden>
-            <CircleDollarSign size={15} />
-          </span>
-          <div>
-            <small>Price</small>
-            <strong>
-              {money(price, currency)}
-              <em>/{cycle}</em>
-            </strong>
-          </div>
-        </div>
-        <div className={`ops-users__chip ops-user__metric${nextDueLabel?.includes('overdue') ? ' is-warn' : ''}`}>
-          <span className="ops-user__metric-icon" aria-hidden>
-            <CalendarDays size={15} />
-          </span>
-          <div>
-            <small>Next due</small>
-            <strong className="ops-svc__metric-stack">
-              <span>
-                {service.nextDueAt
-                  ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
-                      day: 'numeric',
-                      month: 'short',
-                      year: '2-digit',
-                    })
-                  : '—'}
-              </span>
-              {nextDueLabel ? <em>{nextDueLabel}</em> : null}
-            </strong>
-          </div>
-        </div>
-        <div className={`ops-users__chip ops-user__metric ${service.panelServerId ? '' : 'is-warn'}`.trim()}>
-          <span className="ops-user__metric-icon" aria-hidden>
-            <Link2 size={15} />
-          </span>
-          <div>
-            <small>Panel</small>
-            <strong>{service.panelServerId ? 'Linked' : 'Missing'}</strong>
-          </div>
-        </div>
-        <button
-          type="button"
-          className={`ops-users__chip ops-user__metric ops-user__metric--action${unpaidCount ? ' is-warn' : ''}`}
-          onClick={() => setTab('invoices')}
-          title="Open invoices"
-        >
-          <span className="ops-user__metric-icon" aria-hidden>
-            <FileText size={15} />
-          </span>
-          <div>
-            <small>Unpaid</small>
-            <strong className="ops-svc__metric-stack">
-              <span>{unpaidCount}</span>
-              {unpaidCount ? <em>{money(unpaidCents, currency)}</em> : null}
-            </strong>
-          </div>
+      <div className="ops-server__rail" aria-label="Service metrics">
+        <button type="button" className={tab === 'settings' ? 'is-on' : ''} disabled={!fullAdmin || service.status === 'cancelled'} onClick={() => setTab('settings')}>
+          <CircleDollarSign size={15} aria-hidden />
+          <small>Price</small>
+          <strong>{money(price, currency)}</strong>
+          <em>/{cycle}</em>
         </button>
-      </section>
+        <button type="button" className={nextDueLabel?.includes('overdue') ? 'is-warn' : ''} disabled={!fullAdmin || service.status === 'cancelled'} onClick={() => setTab('settings')}>
+          <CalendarDays size={15} aria-hidden />
+          <small>Next due</small>
+          <strong>
+            {service.nextDueAt
+              ? new Date(service.nextDueAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: '2-digit' })
+              : '—'}
+          </strong>
+          <em>{nextDueLabel || 'not scheduled'}</em>
+        </button>
+        <div className={service.panelServerId ? 'is-ok' : 'is-warn'}>
+          <Link2 size={15} aria-hidden />
+          <small>Panel</small>
+          <strong>{service.panelServerId ? 'Linked' : 'Missing'}</strong>
+          <em>{service.panelServerId ? 'Spirit-Panel' : 'not provisioned'}</em>
+        </div>
+        <button type="button" className={`${tab === 'invoices' ? 'is-on' : ''} ${unpaidCount ? 'is-warn' : ''}`.trim()} onClick={() => setTab('invoices')}>
+          <FileText size={15} aria-hidden />
+          <small>Unpaid</small>
+          <strong>{unpaidCount}</strong>
+          <em>{unpaidCount ? money(unpaidCents, currency) : 'clear'}</em>
+        </button>
+      </div>
 
       <div className="ops-user__tabs" role="tablist" aria-label="Service sections">
         <button
@@ -567,113 +504,97 @@ export function AdminServiceDetail() {
           </button>
         ) : null}
       </div>
+      </section>
 
       {tab === 'overview' ? (
-        <div className="ops-user__overview ops-svc__overview">
-          <section className="ops-user__panel">
+        <div className="ops-server__desk">
+          <section className="ops-server__card">
             <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <UserRound size={15} />
-              </span>
-              <div>
-                <span>Owner</span>
-                <h2>Client</h2>
-              </div>
+              <span>Owner</span>
+              <h2>Client</h2>
             </header>
-            <dl className="ops-user__facts">
+            <div className="ops-server__rows">
               <div>
-                <dt>Name</dt>
-                <dd>{displayName(service.user)}</dd>
+                <span>Name</span>
+                <strong>{displayName(service.user)}</strong>
               </div>
               <div>
-                <dt>Username</dt>
-                <dd>@{service.user.username}</dd>
+                <span>Username</span>
+                <strong>@{service.user.username}</strong>
               </div>
               <div>
-                <dt>Email</dt>
-                <dd className="is-wrap">{service.user.email}</dd>
+                <span>Email</span>
+                <strong>{service.user.email}</strong>
               </div>
               <div>
-                <dt>Credits</dt>
-                <dd>{money(service.user.creditBalanceCents, 'GBP')}</dd>
+                <span>Credits</span>
+                <strong>{money(service.user.creditBalanceCents, 'GBP')}</strong>
               </div>
-            </dl>
-            <Link to={`/admin/users/${service.user.id}`} className="ops-user__btn">
-              <UserRound size={14} /> Open account
-            </Link>
+            </div>
+            <div className="ops-server__card-actions">
+              <Link to={`/admin/users/${service.user.id}`} className="ops-user__btn">
+                <UserRound size={14} /> Open account
+              </Link>
+            </div>
           </section>
 
-          <section className={`ops-user__panel${service.panelServerId ? '' : ' ops-svc__panel--muted'}`}>
+          <section className="ops-server__card">
             <header>
-              <span className={`ops-user__panel-icon${service.panelServerId ? '' : ' is-warn'}`} aria-hidden>
-                <Server size={15} />
-              </span>
-              <div>
-                <span>Spirit-Panel</span>
-                <h2>{service.panelServerId ? 'Linked server' : 'Not provisioned'}</h2>
-              </div>
+              <span>Spirit-Panel</span>
+              <h2>{service.panelServerId ? 'Linked server' : 'Not provisioned'}</h2>
             </header>
             {service.panelServerId ? (
               <>
-                <dl className="ops-user__facts">
+                <div className="ops-server__rows">
                   <div>
-                    <dt>Panel server ID</dt>
-                    <dd className="is-mono ops-user__copy-row">
-                      <span>{service.panelServerId}</span>
-                      <button
-                        type="button"
-                        className="ops-user__icon-btn"
-                        aria-label="Copy panel server ID"
-                        onClick={() => void copyText(service.panelServerId!, 'panel')}
-                      >
+                    <span>Server ID</span>
+                    <strong className="ops-server__copy">
+                      {service.panelServerId}
+                      <button type="button" aria-label="Copy panel server ID" onClick={() => void copyText(service.panelServerId!, 'panel')}>
                         {copied === 'panel' ? <Check size={13} /> : <Copy size={13} />}
                       </button>
-                    </dd>
+                    </strong>
                   </div>
                   <div>
-                    <dt>Access</dt>
-                    <dd>Ready</dd>
+                    <span>Access</span>
+                    <strong>Ready</strong>
                   </div>
-                </dl>
+                </div>
                 {panelHref ? (
-                  <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn">
-                    <ExternalLink size={14} /> Open Spirit-Panel
-                  </a>
+                  <div className="ops-server__card-actions">
+                    <a href={panelHref} target="_blank" rel="noopener noreferrer" className="ops-user__btn">
+                      <ExternalLink size={14} /> Open Spirit-Panel
+                    </a>
+                  </div>
                 ) : null}
               </>
             ) : (
-              <div className="ops-svc__empty">
-                <Server size={18} aria-hidden />
+              <p className="ops-server__state is-warn">
                 <strong>Waiting on provision</strong>
-                <span>Panel access appears after the first successful provisioning for this service.</span>
-              </div>
+                Panel access appears after the first successful provisioning for this service.
+              </p>
             )}
           </section>
 
-          <section className="ops-user__panel ops-user__panel--wide">
+          <section className="ops-server__card is-wide">
             <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Package size={15} />
-              </span>
+              <span>Plan</span>
+              <h2>Billing</h2>
+            </header>
+            <div className="ops-server__rows is-grid">
               <div>
                 <span>Plan</span>
-                <h2>Billing profile</h2>
-              </div>
-            </header>
-            <dl className="ops-user__facts ops-svc__facts--wide">
-              <div>
-                <dt>Plan</dt>
-                <dd>{planName}</dd>
+                <strong>{planName}</strong>
               </div>
               <div>
-                <dt>Recurring</dt>
-                <dd>
+                <span>Recurring</span>
+                <strong>
                   {money(price, currency)} / {cycle}
-                </dd>
+                </strong>
               </div>
               <div>
-                <dt>Next renewal</dt>
-                <dd>
+                <span>Next renewal</span>
+                <strong>
                   {service.nextDueAt
                     ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
                         day: 'numeric',
@@ -681,99 +602,62 @@ export function AdminServiceDetail() {
                         year: 'numeric',
                       })
                     : 'Not scheduled'}
-                </dd>
+                </strong>
               </div>
               {service.panelEggName ? (
                 <div>
-                  <dt>Panel egg</dt>
-                  <dd>{service.panelEggName}</dd>
+                  <span>Panel egg</span>
+                  <strong>{service.panelEggName}</strong>
                 </div>
               ) : null}
               <div>
-                <dt>Service ID</dt>
-                <dd className="is-mono ops-user__copy-row">
-                  <span>{service.id}</span>
-                  <button
-                    type="button"
-                    className="ops-user__icon-btn"
-                    aria-label="Copy service ID"
-                    onClick={() => void copyText(service.id, 'service')}
-                  >
+                <span>Service ID</span>
+                <strong className="ops-server__copy">
+                  {service.id}
+                  <button type="button" aria-label="Copy service ID" onClick={() => void copyText(service.id, 'service')}>
                     {copied === 'service' ? <Check size={13} /> : <Copy size={13} />}
                   </button>
-                </dd>
+                </strong>
               </div>
-            </dl>
+            </div>
           </section>
 
-          <section className="ops-user__panel ops-user__panel--wide">
+          <section className="ops-server__card is-wide">
             <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Cpu size={15} />
-              </span>
-              <div>
-                <span>Capacity</span>
-                <h2>Resources</h2>
-              </div>
+              <span>Capacity</span>
+              <h2>Resources</h2>
             </header>
-            <div className="ops-svc__resources ops-svc__resources--wide" aria-label="Server resources">
-              <article>
-                <span aria-hidden>
-                  <MemoryStick size={15} />
-                </span>
-                <div>
-                  <small>Memory</small>
-                  <strong>{formatResourceMb(memory)}</strong>
-                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(memory, 'memory')}%` }} />
-                </div>
-              </article>
-              <article>
-                <span aria-hidden>
-                  <Cpu size={15} />
-                </span>
-                <div>
-                  <small>CPU</small>
-                  <strong>{cpu <= 0 ? 'Unlimited' : `${cpu}%`}</strong>
-                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(cpu, 'cpu')}%` }} />
-                </div>
-              </article>
-              <article>
-                <span aria-hidden>
-                  <HardDrive size={15} />
-                </span>
-                <div>
-                  <small>Disk</small>
-                  <strong>{formatResourceMb(disk)}</strong>
-                  <i className="ops-svc__meter" style={{ ['--fill' as string]: `${resourceFill(disk, 'disk')}%` }} />
-                </div>
-              </article>
-              <article>
-                <span aria-hidden>
-                  <Archive size={15} />
-                </span>
-                <div>
-                  <small>Backups</small>
-                  <strong>{backups <= 0 ? 'Off' : backups}</strong>
-                </div>
-              </article>
-              <article>
-                <span aria-hidden>
-                  <Database size={15} />
-                </span>
-                <div>
-                  <small>Databases</small>
-                  <strong>{databases <= 0 ? 'Off' : databases}</strong>
-                </div>
-              </article>
-              <article>
-                <span aria-hidden>
-                  <Layers3 size={15} />
-                </span>
-                <div>
-                  <small>Ports</small>
-                  <strong>{allocations <= 0 ? 'Off' : allocations}</strong>
-                </div>
-              </article>
+            <div className="ops-server__specs" aria-label="Server resources">
+              <div>
+                <MemoryStick size={14} aria-hidden />
+                <span>Memory</span>
+                <strong>{formatResourceMb(memory)}</strong>
+              </div>
+              <div>
+                <Cpu size={14} aria-hidden />
+                <span>CPU</span>
+                <strong>{cpu <= 0 ? 'Unlimited' : `${cpu}%`}</strong>
+              </div>
+              <div>
+                <HardDrive size={14} aria-hidden />
+                <span>Disk</span>
+                <strong>{formatResourceMb(disk)}</strong>
+              </div>
+              <div>
+                <Archive size={14} aria-hidden />
+                <span>Backups</span>
+                <strong>{backups <= 0 ? 'Off' : backups}</strong>
+              </div>
+              <div>
+                <Database size={14} aria-hidden />
+                <span>Databases</span>
+                <strong>{databases <= 0 ? 'Off' : databases}</strong>
+              </div>
+              <div>
+                <Layers3 size={14} aria-hidden />
+                <span>Ports</span>
+                <strong>{allocations <= 0 ? 'Off' : allocations}</strong>
+              </div>
             </div>
             <div className="ops-svc__features">
               <span className={service.subdomainAccess ? 'is-on' : 'is-off'}>
@@ -788,16 +672,11 @@ export function AdminServiceDetail() {
             </div>
           </section>
 
-          <section className="ops-user__panel ops-user__panel--wide">
+          <section className="ops-server__card is-wide">
             <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <FileText size={15} />
-              </span>
-              <div>
-                <span>Billing</span>
-                <h2>Recent invoices</h2>
-              </div>
-              <button type="button" className="ops-user__btn is-ghost ops-svc__panel-action" onClick={() => setTab('invoices')}>
+              <span>Billing</span>
+              <h2>Recent invoices</h2>
+              <button type="button" className="ops-user__btn is-ghost" onClick={() => setTab('invoices')}>
                 View all <em>{service.invoices.length}</em>
               </button>
             </header>
@@ -851,6 +730,12 @@ export function AdminServiceDetail() {
       ) : null}
 
       {tab === 'invoices' ? (
+        <div className="ops-server__sheet">
+          <header className="ops-server__sheet-head">
+            <span>Ledger</span>
+            <h2>Invoices</h2>
+            <em>{unpaidCount ? `${unpaidCount} unpaid` : 'Clear'}</em>
+          </header>
         <div className="ops-svc__invoices">
           <div className="ops-svc__invoice-bar">
             <div className="ops-svc__invoice-filters" role="group" aria-label="Invoice status">
@@ -967,10 +852,11 @@ export function AdminServiceDetail() {
             ) : null}
           </section>
         </div>
+        </div>
       ) : null}
 
       {tab === 'settings' && fullAdmin && editForm && service.status !== 'cancelled' ? (
-        <div className="ops-svc__settings">
+        <div className="ops-server__settings">
           {isDirty ? (
             <div className="ops-svc__dirty-bar" role="status">
               <div>
@@ -998,28 +884,12 @@ export function AdminServiceDetail() {
             </div>
           ) : null}
 
-          <div className="ops-svc__sync">
-            <ShieldCheck size={16} />
-            <div>
-              <strong>{service.panelServerId ? 'Panel sync enabled' : 'Applies during provisioning'}</strong>
-              <p>
-                {service.panelServerId
-                  ? 'Spirit-Panel and Wings must accept new limits before billing saves them.'
-                  : 'These limits are used when this service is provisioned.'}
-              </p>
-            </div>
-          </div>
-
-          <form className="ops-svc__settings-grid" onSubmit={(event) => void saveService(event)}>
-            <section className="ops-user__panel">
+          <form className="ops-server__settings-form" onSubmit={(event) => void saveService(event)}>
+            <div className="ops-server__desk">
+            <section className="ops-server__card">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <Server size={15} />
-                </span>
-                <div>
-                  <span>Identity</span>
-                  <h2>Server name</h2>
-                </div>
+                <span>Identity</span>
+                <h2>Server name</h2>
               </header>
               <label className="ops-user__field">
                 <span>Display name</span>
@@ -1032,15 +902,10 @@ export function AdminServiceDetail() {
               <p className="ops-user__hint">Shown to the client and in Spirit-Panel. Max 64 characters.</p>
             </section>
 
-            <section className="ops-user__panel">
+            <section className="ops-server__card">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <CircleDollarSign size={15} />
-                </span>
-                <div>
-                  <span>Billing</span>
-                  <h2>Price override</h2>
-                </div>
+                <span>Billing</span>
+                <h2>Price</h2>
               </header>
               <div className="ops-svc__edit-grid ops-svc__edit-grid--2">
                 <label className="ops-user__field">
@@ -1087,17 +952,18 @@ export function AdminServiceDetail() {
                 Clear date + £0 unschedules renewals.
               </p>
             </section>
+            </div>
 
-            <section className="ops-user__panel ops-user__panel--wide">
+            <section className="ops-server__card is-wide">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <Cpu size={15} />
-                </span>
-                <div>
-                  <span>Capacity</span>
-                  <h2>Resource limits</h2>
-                </div>
+                <span>Capacity</span>
+                <h2>Limits</h2>
               </header>
+              <p className="ops-server__note">
+                {service.panelServerId
+                  ? 'Spirit-Panel and Wings must accept new limits before billing saves them.'
+                  : 'These limits are used when this service is provisioned.'}
+              </p>
               <div className="ops-svc__resource-edit">
                 <label className="ops-svc__resource-field">
                   <span>
@@ -1225,15 +1091,10 @@ export function AdminServiceDetail() {
               </p>
             </section>
 
-            <section className="ops-user__panel ops-user__panel--wide">
+            <section className="ops-server__card is-wide">
               <header>
-                <span className="ops-user__panel-icon" aria-hidden>
-                  <Package size={15} />
-                </span>
-                <div>
-                  <span>Access</span>
-                  <h2>Client features</h2>
-                </div>
+                <span>Access</span>
+                <h2>Client features</h2>
               </header>
               <div className="ops-svc__checks ops-svc__checks--grid">
                 <label className={`ops-svc__check${editForm.subdomainAccess ? ' is-on' : ''}`}>
@@ -1282,107 +1143,77 @@ export function AdminServiceDetail() {
               </div>
             </section>
 
-            <div className="ops-svc__form-actions ops-svc__field-wide">
-              <button
-                type="button"
-                className="ops-user__btn is-ghost"
-                disabled={busy || !isDirty}
-                onClick={() => setEditForm(buildEditForm(service))}
-              >
-                Reset
-              </button>
-              <button
-                type="submit"
-                className="ops-user__btn is-primary"
-                disabled={busy || !editForm.name.trim() || !isDirty}
-              >
-                <Save size={14} /> {busy ? 'Saving…' : isDirty ? 'Save changes' : 'Saved'}
-              </button>
-            </div>
           </form>
 
-          <section className="ops-user__panel ops-user__panel--wide">
-            <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Receipt size={15} />
-              </span>
-              <div>
+          <div className="ops-server__desk">
+            <section className="ops-server__card">
+              <header>
                 <span>Lifecycle</span>
-                <h2>Jobs & power</h2>
+                <h2>Billing jobs</h2>
+              </header>
+              <p className="ops-server__note">Create renewals or overdue invoices for enforcement tests.</p>
+              <div className="ops-server__card-actions">
+                <button
+                  type="button"
+                  className="ops-user__btn"
+                  disabled={busy || price <= 0}
+                  onClick={() => void createRenewal(false)}
+                >
+                  <Receipt size={14} /> Create renewal
+                </button>
+                <button
+                  type="button"
+                  className="ops-user__btn is-ghost"
+                  disabled={busy || price <= 0}
+                  onClick={() => void createRenewal(true)}
+                >
+                  <CalendarDays size={14} /> Test overdue
+                </button>
               </div>
-            </header>
-            <div className="ops-svc__lifecycle">
-              <article>
-                <strong>Billing jobs</strong>
-                <span>Create renewals or overdue invoices for enforcement tests.</span>
-                <div className="ops-svc__action-row">
+            </section>
+            <section className="ops-server__card">
+              <header>
+                <span>Lifecycle</span>
+                <h2>Server power</h2>
+              </header>
+              <p className="ops-server__note">
+                {service.panelServerId
+                  ? 'Suspend or resume the linked Spirit-Panel server.'
+                  : 'Available after this service is provisioned on Spirit-Panel.'}
+              </p>
+              <div className="ops-server__card-actions">
+                {canSuspend ? (
                   <button
                     type="button"
-                    className="ops-user__btn"
-                    disabled={busy || price <= 0}
-                    onClick={() => void createRenewal(false)}
+                    className="ops-user__btn is-danger"
+                    disabled={busy}
+                    onClick={() => void setSuspended(true)}
                   >
-                    <Receipt size={14} /> Create renewal
+                    <PauseCircle size={14} /> Suspend
                   </button>
+                ) : null}
+                {canUnsuspend ? (
                   <button
                     type="button"
-                    className="ops-user__btn is-ghost"
-                    disabled={busy || price <= 0}
-                    onClick={() => void createRenewal(true)}
+                    className="ops-user__btn is-ok"
+                    disabled={busy}
+                    onClick={() => void setSuspended(false)}
                   >
-                    <CalendarDays size={14} /> Test overdue
+                    <PlayCircle size={14} /> Unsuspend
                   </button>
-                </div>
-              </article>
-              <article>
-                <strong>Server power</strong>
-                <span>
-                  {service.panelServerId
-                    ? 'Suspend or resume the linked Spirit-Panel server.'
-                    : 'Available after this service is provisioned on Spirit-Panel.'}
-                </span>
-                <div className="ops-svc__action-row">
-                  {canSuspend ? (
-                    <button
-                      type="button"
-                      className="ops-user__btn is-danger"
-                      disabled={busy}
-                      onClick={() => void setSuspended(true)}
-                    >
-                      <PauseCircle size={14} /> Suspend
-                    </button>
-                  ) : null}
-                  {canUnsuspend ? (
-                    <button
-                      type="button"
-                      className="ops-user__btn is-ok"
-                      disabled={busy}
-                      onClick={() => void setSuspended(false)}
-                    >
-                      <PlayCircle size={14} /> Unsuspend
-                    </button>
-                  ) : null}
-                  {!canSuspend && !canUnsuspend ? (
-                    <span className="ops-svc__lifecycle-muted">No power actions available in the current state.</span>
-                  ) : null}
-                </div>
-              </article>
-            </div>
-          </section>
+                ) : null}
+                {!canSuspend && !canUnsuspend && service.panelServerId ? (
+                  <span className="ops-server__note">No power actions in the current state.</span>
+                ) : null}
+              </div>
+            </section>
+          </div>
 
-          <section className="ops-user__panel ops-user__panel--danger ops-user__panel--wide">
-            <header>
-              <span className="ops-user__panel-icon" aria-hidden>
-                <Trash2 size={15} />
-              </span>
-              <div>
-                <span>Danger</span>
-                <h2>Delete service</h2>
-              </div>
-            </header>
-            <p className="ops-user__hint">
-              Permanently removes this service from billing and deletes its linked server from Spirit-Panel.
-            </p>
+          <section className="ops-server__danger">
+            <div>
+              <strong>Delete this service</strong>
+              <span>Removes it from billing and deletes the linked Spirit-Panel server.</span>
+            </div>
             <button type="button" className="ops-user__btn is-danger" disabled={busy} onClick={() => setDeleteOpen(true)}>
               <Trash2 size={14} /> Delete service
             </button>
