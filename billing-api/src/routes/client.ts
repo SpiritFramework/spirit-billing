@@ -65,6 +65,7 @@ const productPublicSelect = {
   priceCents: true,
   currency: true,
   cycle: true,
+  freeTrialDays: true,
   memoryMb: true,
   diskMb: true,
   cpuPercent: true,
@@ -90,6 +91,7 @@ const serviceListSelect = {
   currency: true,
   cycle: true,
   nextDueAt: true,
+  trialEndsAt: true,
   createdAt: true,
   updatedAt: true,
   category: { select: categoryPublicSelect },
@@ -119,6 +121,17 @@ const provisionableProductWhere: Prisma.ProductWhereInput = {
   AND: [{ panelNodeId: { not: null } }, { panelNodeId: { not: '' } }],
 };
 
+function trialDaysFor(product: { priceCents: number; freeTrialDays?: number | null }) {
+  const days = product.freeTrialDays ?? 0;
+  return product.priceCents > 0 && days > 0 ? days : 0;
+}
+
+function addDays(from: Date, days: number) {
+  const next = new Date(from);
+  next.setDate(next.getDate() + days);
+  return next;
+}
+
 async function createServiceInvoice(
   tx: Prisma.TransactionClient,
   input: {
@@ -132,6 +145,7 @@ async function createServiceInvoice(
       subdomainAccess: boolean;
       fivemMarketplaceAccess: boolean;
       minecraftPluginsAccess: boolean;
+      freeTrialDays?: number | null;
     };
     name?: string;
     invoiceNumber: string;
@@ -144,7 +158,11 @@ async function createServiceInvoice(
 ) {
   const discountCents = Math.max(0, input.discountCents ?? 0);
   const creditAppliedCents = Math.max(0, input.creditAppliedCents ?? 0);
-  const totalCents = Math.max(0, input.product.priceCents - discountCents - creditAppliedCents);
+  const trialDays = trialDaysFor(input.product);
+  const trialEndsAt = trialDays > 0 ? addDays(new Date(), trialDays) : null;
+  const totalCents = trialEndsAt
+    ? 0
+    : Math.max(0, input.product.priceCents - discountCents - creditAppliedCents);
 
   const service = await tx.service.create({
     data: {
@@ -155,7 +173,17 @@ async function createServiceInvoice(
       subdomainAccess: input.product.subdomainAccess,
       fivemMarketplaceAccess: input.product.fivemMarketplaceAccess,
       minecraftPluginsAccess: input.product.minecraftPluginsAccess,
-      nextDueAt: addBillingCycle(new Date(), input.product.cycle),
+      ...(trialEndsAt
+        ? {
+            priceCents: input.product.priceCents,
+            currency: input.product.currency,
+            cycle: input.product.cycle,
+            trialEndsAt,
+            nextDueAt: trialEndsAt,
+          }
+        : {
+            nextDueAt: addBillingCycle(new Date(), input.product.cycle),
+          }),
     },
   });
 
@@ -167,13 +195,15 @@ async function createServiceInvoice(
       status: 'unpaid',
       currency: input.product.currency,
       subtotalCents: input.product.priceCents,
-      discountCents,
-      creditAppliedCents,
+      discountCents: trialEndsAt ? input.product.priceCents : discountCents,
+      creditAppliedCents: trialEndsAt ? 0 : creditAppliedCents,
       totalCents,
-      couponId: input.couponId ?? null,
-      couponCode: input.couponCode ?? null,
-      description: `${input.product.name} (${input.product.cycle})`,
-      dueAt: input.dueAt,
+      couponId: trialEndsAt ? null : (input.couponId ?? null),
+      couponCode: trialEndsAt ? null : (input.couponCode ?? null),
+      description: trialEndsAt
+        ? `${trialDays}-day free trial — ${input.product.name} (${input.product.cycle})`
+        : `${input.product.name} (${input.product.cycle})`,
+      dueAt: trialEndsAt ?? input.dueAt,
     },
   });
 
@@ -264,6 +294,7 @@ export async function clientRoutes(app: FastifyInstance) {
             priceCents: Number(product.priceCents),
             currency: product.currency,
             cycle: product.cycle,
+            freeTrialDays: Number(product.freeTrialDays ?? 0),
             memoryMb: Number(product.memoryMb),
             diskMb: Number(product.diskMb),
             cpuPercent: Number(product.cpuPercent),
@@ -722,6 +753,13 @@ export async function clientRoutes(app: FastifyInstance) {
             dueAt,
           }),
         );
+        if (result.invoice.totalCents === 0) {
+          await markInvoicePaidAndProvision({
+            invoiceId: result.invoice.id,
+            paidById: user.id,
+            log: request.log,
+          });
+        }
         return {
           ...result,
           paymentInstructions: await getSetting(
@@ -783,7 +821,7 @@ export async function clientRoutes(app: FastifyInstance) {
       return {
         product,
         name: item.name,
-        priceCents: product.priceCents,
+        priceCents: trialDaysFor(product) > 0 ? 0 : product.priceCents,
       };
     });
 

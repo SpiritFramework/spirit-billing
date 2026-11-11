@@ -181,6 +181,8 @@ model Product {
   priceCents      Int          @map("price_cents")
   currency        String       @default("GBP")
   cycle           BillingCycle @default(monthly)
+  /// Days of free hosting before the first paid invoice. 0 disables the trial.
+  freeTrialDays   Int          @default(0) @map("free_trial_days")
   active          Boolean      @default(true)
   sortOrder       Int          @default(0) @map("sort_order")
   panelEggId      String       @map("panel_egg_id")
@@ -236,6 +238,8 @@ model Service {
   currency        String?
   cycle           BillingCycle?
   nextDueAt       DateTime?     @map("next_due_at")
+  /// When set, the first paid invoice is due at this time. Cleared once that invoice is paid.
+  trialEndsAt     DateTime?     @map("trial_ends_at")
   createdAt       DateTime      @default(now()) @map("created_at")
   updatedAt       DateTime      @updatedAt @map("updated_at")
 

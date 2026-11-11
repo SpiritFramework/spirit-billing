@@ -267,6 +267,8 @@ ensure_env() {
   fi
 
   apply_optional_env
+  env_set_key "$env_file" BILLING_LIFECYCLE_SCHEDULER "true"
+  log "Lifecycle scheduler enabled (renewals, trial wipe, overdue)"
 
   strip_crlf "$env_file"
   # Quote unquoted values that contain spaces (common WinSCP/template pitfall)

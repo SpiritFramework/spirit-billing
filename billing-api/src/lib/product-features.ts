@@ -76,6 +76,7 @@ export type StorefrontProductRow = {
   priceCents: number;
   currency: string;
   cycle: 'monthly' | 'quarterly' | 'yearly';
+  freeTrialDays: number;
   memoryMb: number;
   diskMb: number;
   cpuPercent: number;
@@ -94,6 +95,7 @@ export async function loadStorefrontProducts(categoryId: string): Promise<Storef
       price_cents AS priceCents,
       currency,
       cycle,
+      free_trial_days AS freeTrialDays,
       memory_mb AS memoryMb,
       disk_mb AS diskMb,
       cpu_percent AS cpuPercent,

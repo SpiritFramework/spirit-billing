@@ -16,10 +16,11 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 ### Added
 
 - Game hosting categories can take a card background image. The logo stays on top of the art. Schema: `categories.background_url` (applied on update)
-- Optional in-process billing lifecycle scheduler (`BILLING_LIFECYCLE_SCHEDULER=true`, default off) that reuses the existing renewal and overdue jobs on an interval
+- Game plans can include a free trial (`products.free_trial_days`). Checkout provisions the server immediately, the first paid invoice is raised when the trial ends, and an unpaid trial is deleted 48 hours later.
 
 ### Changed
 
+- Install, update, and repair turn on the billing lifecycle scheduler (`BILLING_LIFECYCLE_SCHEDULER=true`) and restart the API. Renewals, trial wipe, and overdue then run about every 15 minutes
 - Admin **Analytics** rebuilt as an intelligence desk: stage chart with its own controls, metric rail, share rings, and a promotions/health band. Empty revenue windows and zero-share rows stay out of the way
 - Admin **Overview** is a command desk: collectable figure, settled trend, a due-today queue, and an activity stream that leads with billing events. Repeated log lines collapse, and database errors no longer paste source paths onto the page
 - Admin **user detail** is one account desk: identity, metrics, and section switcher share a stage, and profile, panel, password, wallet, services, invoices, and delete use the same cards

@@ -188,6 +188,7 @@ Copy from `deploy/env.production.example`. Critical fields:
 | `JWT_SECRET` | ≥32 chars, not containing `change-me` |
 | `SECRETS_ENCRYPTION_KEY` | Separate from JWT; ≥32 chars |
 | `PANEL_*` | Spirit-Panel Application API |
+| `BILLING_LIFECYCLE_SCHEDULER` | `true` — install and update set this so renewals, trial wipe, and overdue run |
 | `ADMIN_PASSWORD` | ≥16 chars, letter + number (seed only) |
 
 Generate secrets:

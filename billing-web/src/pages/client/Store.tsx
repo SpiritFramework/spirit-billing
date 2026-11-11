@@ -147,6 +147,7 @@ type Product = {
   priceCents: number;
   currency: string;
   cycle: string;
+  freeTrialDays?: number;
   memoryMb: number;
   diskMb: number;
   cpuPercent: number;
@@ -658,7 +659,11 @@ export function CategoryPlansPage() {
                 <div className="client-gh-plan__price">
                   <strong>{money(product.priceCents, product.currency)}</strong>
                   <span>/{cycleShort(product.cycle)}</span>
-                  <small>{cyclePhrase(product.cycle)}</small>
+                  <small>
+                    {(product.freeTrialDays ?? 0) > 0
+                      ? `${product.freeTrialDays}-day free trial, then ${cyclePhrase(product.cycle).toLowerCase()}`
+                      : cyclePhrase(product.cycle)}
+                  </small>
                 </div>
 
                 <div className="client-gh-plan__ram">

@@ -240,9 +240,11 @@ apply_optional_env() {
     env_set_key "$env_file" ADMIN_EMAIL "$ADMIN_EMAIL"
     changed=1
   fi
+  env_set_key "$env_file" BILLING_LIFECYCLE_SCHEDULER "true"
+  chown root:"$APP_GROUP" "$env_file"
+  chmod 640 "$env_file"
+  log "Lifecycle scheduler enabled (renewals, trial wipe, overdue)"
   if [[ "$changed" -eq 1 ]]; then
-    chown root:"$APP_GROUP" "$env_file"
-    chmod 640 "$env_file"
     log "Updated Panel / admin settings in .env"
   fi
 }

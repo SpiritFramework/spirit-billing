@@ -32,6 +32,7 @@ import {
   getOverdueSuspendDays,
   getOverdueTerminateDays,
   runDueRenewals,
+  runExpiredTrialEnforcement,
   runOverdueEnforcement,
 } from '../lib/renewals.js';
 import { pruneSystemLogs, recordLogFireAndForget } from '../lib/system-log.js';
@@ -103,6 +104,7 @@ const productBody = z.object({
   priceCents: z.number().int().min(0).max(100_000_000),
   currency: z.string().length(3).default('GBP'),
   cycle: z.enum(['monthly', 'quarterly', 'yearly']).default('monthly'),
+  freeTrialDays: z.number().int().min(0).max(3650).default(0),
   active: z.boolean().default(true),
   sortOrder: z.number().int().default(0),
   panelEggId: z.string().min(1),
@@ -1271,6 +1273,7 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/services/run-renewals', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request) => {
     const result = await runDueRenewals();
+    const trials = await runExpiredTrialEnforcement();
     recordLogFireAndForget({
       level: 'info',
       category: 'billing',
@@ -1280,31 +1283,34 @@ export async function adminRoutes(app: FastifyInstance) {
       ip: request.ip,
       method: 'POST',
       path: '/api/admin/services/run-renewals',
-      meta: { created: result.created.length, skipped: result.skipped.length, scanned: result.scanned },
+      meta: { created: result.created.length, skipped: result.skipped.length, scanned: result.scanned, trialsTerminated: trials.terminated.length },
     });
-    return result;
+    return { ...result, trials };
   });
 
   app.post('/services/run-overdue-suspensions', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request) => {
+    const trials = await runExpiredTrialEnforcement();
     const result = await runOverdueEnforcement();
+    const terminated = [...trials.terminated, ...result.terminated];
+    const failed = [...trials.failed, ...result.failed];
     recordLogFireAndForget({
       level: 'info',
       category: 'billing',
       action: 'services.run_overdue',
-      message: `Overdue enforcement: suspended ${result.suspended.length}, terminated ${result.terminated.length}`,
+      message: `Overdue enforcement: suspended ${result.suspended.length}, terminated ${terminated.length}`,
       actorUserId: request.user!.id,
       ip: request.ip,
       method: 'POST',
       path: '/api/admin/services/run-overdue-suspensions',
       meta: {
         suspended: result.suspended.length,
-        terminated: result.terminated.length,
-        failed: result.failed.length,
+        terminated: terminated.length,
+        failed: failed.length,
         suspendDays: result.suspendDays,
         terminateDays: result.terminateDays,
       },
     });
-    return result;
+    return { ...result, terminated, failed, trialsTerminated: trials.terminated.length };
   });
 
   app.get('/services/:id', async (request, reply) => {

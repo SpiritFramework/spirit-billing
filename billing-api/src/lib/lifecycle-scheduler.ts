@@ -1,6 +1,6 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { getConfig } from './env.js';
-import { runDueRenewals, runOverdueEnforcement } from './renewals.js';
+import { runDueRenewals, runExpiredTrialEnforcement, runOverdueEnforcement } from './renewals.js';
 import { recordLogFireAndForget } from './system-log.js';
 
 const DEFAULT_INTERVAL_MS = 15 * 60 * 1000;
@@ -22,10 +22,11 @@ async function tick(log?: FastifyBaseLogger) {
   running = true;
   try {
     const renewals = await runDueRenewals();
+    const trials = await runExpiredTrialEnforcement();
     const overdue = await runOverdueEnforcement();
     const created = renewals.created?.length ?? 0;
     const suspended = overdue.suspended?.length ?? 0;
-    const terminated = overdue.terminated?.length ?? 0;
+    const terminated = (overdue.terminated?.length ?? 0) + (trials.terminated?.length ?? 0);
     if (created || suspended || terminated) {
       recordLogFireAndForget({
         level: 'info',
@@ -37,6 +38,7 @@ async function tick(log?: FastifyBaseLogger) {
           renewalsSkipped: renewals.skipped?.length ?? 0,
           suspended,
           terminated,
+          trialsTerminated: trials.terminated.length,
         },
       });
       log?.info(
@@ -58,8 +60,8 @@ async function tick(log?: FastifyBaseLogger) {
 }
 
 /**
- * Optional in-process renewal / overdue runner.
- * Off by default — set BILLING_LIFECYCLE_SCHEDULER=true to enable.
+ * In-process renewal / trial wipe / overdue runner.
+ * Runs when BILLING_LIFECYCLE_SCHEDULER=true. Production install and update set that.
  */
 export function startLifecycleScheduler(log?: FastifyBaseLogger) {
   if (!schedulerEnabled()) {

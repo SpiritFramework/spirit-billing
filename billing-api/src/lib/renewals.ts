@@ -139,7 +139,9 @@ export async function createRenewalInvoiceForService(
             discountCents: 0,
             creditAppliedCents: 0,
             totalCents: priceCents,
-            description: `${service.name} renewal (${cycle})`,
+            description: service.trialEndsAt
+              ? `${service.name} after free trial (${cycle})`
+              : `${service.name} renewal (${cycle})`,
             dueAt,
           },
         });
@@ -167,7 +169,97 @@ export async function createRenewalInvoiceForService(
   throw lastError;
 }
 
-/** Create renewal invoices for every active/suspended service whose nextDueAt is due. */
+export const TRIAL_GRACE_MS = 48 * 60 * 60 * 1000;
+
+function trialGraceStillOpen(trialEndsAt: Date | null | undefined, now: Date) {
+  if (!trialEndsAt) return false;
+  return now.getTime() < trialEndsAt.getTime() + TRIAL_GRACE_MS;
+}
+
+async function terminateUnpaidService(input: {
+  service: { id: string; name: string; panelServerId: string | null; userId: string };
+  invoice: { id: string; number: string };
+  message: string;
+}) {
+  const { service, invoice } = input;
+  if (service.panelServerId) {
+    try {
+      await deletePanelServer(service.panelServerId);
+    } catch (err) {
+      if (!(err instanceof PanelApiError && err.status === 404)) throw err;
+    }
+  }
+
+  await cancelUnpaidForService(service.id);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.service.update({
+      where: { id: service.id },
+      data: {
+        status: 'cancelled',
+        panelServerId: null,
+        nextDueAt: null,
+        trialEndsAt: null,
+      },
+    });
+    await tx.notification.create({
+      data: {
+        userId: service.userId,
+        type: 'warning',
+        title: 'Service terminated',
+        message: input.message,
+        href: '/services',
+      },
+    });
+  });
+}
+
+/**
+ * Delete panel servers whose free trial ended more than 48 hours ago
+ * and still have an unpaid (non-upgrade) invoice.
+ */
+export async function runExpiredTrialEnforcement(now = new Date()) {
+  const cutoff = new Date(now.getTime() - TRIAL_GRACE_MS);
+  const services = await prisma.service.findMany({
+    where: {
+      status: { in: ['active', 'suspended'] },
+      trialEndsAt: { lte: cutoff },
+      invoices: { some: { status: 'unpaid', upgradeToProductId: null } },
+    },
+    include: {
+      product: { select: { priceCents: true } },
+      invoices: {
+        where: { status: 'unpaid', upgradeToProductId: null },
+        orderBy: { dueAt: 'asc' },
+        take: 1,
+      },
+    },
+  });
+
+  const terminated: Array<{ serviceId: string; invoiceId: string; number: string }> = [];
+  const failed: Array<{ serviceId: string; reason: string }> = [];
+
+  for (const service of services) {
+    if (servicePrice(service) <= 0) continue;
+    const invoice = service.invoices[0];
+    if (!invoice) continue;
+    try {
+      await terminateUnpaidService({
+        service,
+        invoice,
+        message: `${service.name} was deleted because the free trial ended and invoice ${invoice.number} was not paid within 48 hours.`,
+      });
+      terminated.push({ serviceId: service.id, invoiceId: invoice.id, number: invoice.number });
+    } catch (err) {
+      failed.push({
+        serviceId: service.id,
+        reason: err instanceof Error ? err.message : 'Trial terminate failed',
+      });
+    }
+  }
+
+  return { terminated, failed, scanned: services.length };
+}
 export async function runDueRenewals(now = new Date()) {
   const due = await prisma.service.findMany({
     where: {
@@ -277,7 +369,7 @@ export async function runOverdueEnforcement(now = new Date()) {
     },
     include: {
       service: {
-        select: { id: true, name: true, panelServerId: true, status: true, userId: true },
+        select: { id: true, name: true, panelServerId: true, status: true, userId: true, trialEndsAt: true },
       },
     },
     orderBy: { dueAt: 'asc' },
@@ -286,42 +378,16 @@ export async function runOverdueEnforcement(now = new Date()) {
   for (const invoice of terminateInvoices) {
     const service = invoice.service;
     if (!service || seenTerminate.has(service.id)) continue;
+    if (trialGraceStillOpen(service.trialEndsAt, now)) continue;
     seenTerminate.add(service.id);
     seenSuspend.add(service.id);
 
     try {
-      if (service.panelServerId) {
-        try {
-          await deletePanelServer(service.panelServerId);
-        } catch (err) {
-          if (!(err instanceof PanelApiError && err.status === 404)) {
-            throw err;
-          }
-        }
-      }
-
-      await cancelUnpaidForService(service.id);
-
-      await prisma.$transaction(async (tx) => {
-        await tx.service.update({
-          where: { id: service.id },
-          data: {
-            status: 'cancelled',
-            panelServerId: null,
-            nextDueAt: null,
-          },
-        });
-        await tx.notification.create({
-          data: {
-            userId: service.userId,
-            type: 'warning',
-            title: 'Service terminated',
-            message: `${service.name} was terminated because invoice ${invoice.number} was not paid.`,
-            href: '/services',
-          },
-        });
+      await terminateUnpaidService({
+        service,
+        invoice,
+        message: `${service.name} was terminated because invoice ${invoice.number} was not paid.`,
       });
-
       terminated.push({ serviceId: service.id, invoiceId: invoice.id, number: invoice.number });
     } catch (err) {
       failed.push({
@@ -346,7 +412,7 @@ export async function runOverdueEnforcement(now = new Date()) {
       service: { status: 'active', panelServerId: { not: null } },
     },
     include: {
-      service: { select: { id: true, name: true, panelServerId: true, status: true } },
+      service: { select: { id: true, name: true, panelServerId: true, status: true, trialEndsAt: true } },
     },
     orderBy: { dueAt: 'asc' },
   });
@@ -354,6 +420,7 @@ export async function runOverdueEnforcement(now = new Date()) {
   for (const invoice of suspendInvoices) {
     const service = invoice.service;
     if (!service?.panelServerId || seenSuspend.has(service.id)) continue;
+    if (trialGraceStillOpen(service.trialEndsAt, now)) continue;
     seenSuspend.add(service.id);
 
     try {

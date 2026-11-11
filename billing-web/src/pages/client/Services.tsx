@@ -54,6 +54,7 @@ type Service = {
   currency: string | null;
   cycle: string | null;
   nextDueAt: string | null;
+  trialEndsAt?: string | null;
   createdAt: string;
   product: {
     id: string;
@@ -350,7 +351,15 @@ export function ServicesPage() {
                         <span className="client-home__service-meta-item">
                           {service.product.name}
                         </span>
-                        {service.nextDueAt ? (
+                        {service.trialEndsAt && new Date(service.trialEndsAt).getTime() > Date.now() ? (
+                          <span className="client-home__service-meta-item is-renew">
+                            Trial ends{' '}
+                            {new Date(service.trialEndsAt).toLocaleDateString(undefined, {
+                              day: 'numeric',
+                              month: 'short',
+                            })}
+                          </span>
+                        ) : service.nextDueAt ? (
                           <span className="client-home__service-meta-item is-renew">
                             Renews{' '}
                             {new Date(service.nextDueAt).toLocaleDateString(undefined, {
@@ -578,13 +587,20 @@ export function ServiceDetailPage() {
     month: 'short',
     year: 'numeric',
   });
-  const renewalLabel = service.nextDueAt
-    ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
+  const onTrial = Boolean(service.trialEndsAt && new Date(service.trialEndsAt).getTime() > Date.now());
+  const renewalLabel = onTrial
+    ? new Date(service.trialEndsAt!).toLocaleDateString(undefined, {
         day: 'numeric',
         month: 'short',
         year: 'numeric',
       })
-    : 'Not scheduled';
+    : service.nextDueAt
+      ? new Date(service.nextDueAt).toLocaleDateString(undefined, {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        })
+      : 'Not scheduled';
   const sortedInvoices = [...service.invoices].sort((a, b) => {
     const rank = (invoice: ServiceInvoice) => {
       if (invoice.status === 'unpaid' && new Date(invoice.dueAt).getTime() < Date.now()) return 0;
@@ -688,9 +704,9 @@ export function ServiceDetailPage() {
         </div>
         <div className="client-service-detail__pulse-item">
           <span className="client-service-detail__pulse-copy">
-            <small>Next renewal</small>
+            <small>{onTrial ? 'Trial ends' : 'Next renewal'}</small>
             <strong>{renewalLabel}</strong>
-            <span>{cycleLabel(billing.cycle)} billing</span>
+            <span>{onTrial ? `Then ${cycleLabel(billing.cycle)} billing` : `${cycleLabel(billing.cycle)} billing`}</span>
           </span>
           <span className="client-service-detail__pulse-icon is-renewal" aria-hidden>
             <CalendarDays size={17} />

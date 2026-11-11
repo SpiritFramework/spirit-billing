@@ -221,21 +221,36 @@ export async function markInvoicePaidAndProvision(input: {
       }
     }
 
+    const trialEndsAt = invoice.service.trialEndsAt;
+    const trialStillOpen = Boolean(trialEndsAt && trialEndsAt.getTime() > paidAt.getTime());
+    const payingRealInvoice = invoice.totalCents > 0;
+    const nextDueAt =
+      !payingRealInvoice && trialStillOpen && trialEndsAt
+        ? trialEndsAt
+        : addBillingCycle(new Date(), invoice.service.cycle ?? product.cycle);
+    const trialLabel = trialEndsAt
+      ? trialEndsAt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+      : '';
+
     const updated = await prisma.$transaction(async (tx) => {
       await tx.service.update({
         where: { id: serviceId },
         data: {
           status: 'active',
           panelServerId,
-          nextDueAt: addBillingCycle(new Date(), invoice.service!.cycle ?? product.cycle),
+          nextDueAt,
+          ...(payingRealInvoice ? { trialEndsAt: null } : {}),
         },
       });
       await tx.notification.create({
         data: {
           userId: invoice.userId,
           type: 'success',
-          title: 'Service activated',
-          message: `${invoice.service!.name} is paid and ready to manage.`,
+          title: !payingRealInvoice && trialStillOpen ? 'Free trial started' : 'Service activated',
+          message:
+            !payingRealInvoice && trialStillOpen
+              ? `${invoice.service!.name} is online until ${trialLabel}. Pay the invoice when the trial ends to keep it.`
+              : `${invoice.service!.name} is paid and ready to manage.`,
           href: `/services/${serviceId}`,
         },
       });

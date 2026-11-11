@@ -53,6 +53,7 @@ type Product = {
   priceCents: number;
   currency: string;
   cycle: 'monthly' | 'quarterly' | 'yearly';
+  freeTrialDays?: number;
   active: boolean;
   sortOrder?: number;
   categoryId?: string | null;
@@ -99,6 +100,7 @@ type ProductForm = {
   priceCents: number;
   currency: string;
   cycle: 'monthly' | 'quarterly' | 'yearly';
+  freeTrialDays: number;
   active: boolean;
   sortOrder: number;
   panelEggId: string;
@@ -178,6 +180,7 @@ const emptyForm: ProductForm = {
   priceCents: 1000,
   currency: 'GBP',
   cycle: 'monthly',
+  freeTrialDays: 0,
   active: true,
   sortOrder: 0,
   panelEggId: '',
@@ -862,6 +865,7 @@ export function AdminProductEdit() {
             priceCents: product.priceCents,
             currency: product.currency,
             cycle: product.cycle,
+            freeTrialDays: product.freeTrialDays ?? 0,
             active: product.active,
             sortOrder: product.sortOrder ?? 0,
             panelEggId: product.panelEggId,
@@ -1329,7 +1333,26 @@ export function AdminProductEdit() {
                     }}
                   />
                 </div>
-                <p className="ops-user__hint">{money(form.priceCents || 0, form.currency)} charged to clients</p>
+                <p className="ops-user__hint">{money(form.priceCents || 0, form.currency)} charged after any trial</p>
+              </label>
+              <label className="ops-user__field">
+                <span>Free trial days</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={3650}
+                  step={1}
+                  value={form.freeTrialDays}
+                  onChange={(event) => {
+                    const next = Math.max(0, Math.round(Number(event.target.value || 0)));
+                    setForm({ ...form, freeTrialDays: Number.isFinite(next) ? next : 0 });
+                  }}
+                />
+                <p className="ops-user__hint">
+                  {form.freeTrialDays > 0
+                    ? `Server starts immediately. If unpaid 48 hours after day ${form.freeTrialDays}, it is deleted.`
+                    : '0 means no trial. A £0 price is free forever, not a trial.'}
+                </p>
               </label>
               <label className="ops-user__field">
                 <span>Billing cycle</span>
