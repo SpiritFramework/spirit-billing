@@ -751,11 +751,16 @@ export function AdminUserDetail() {
 
   async function deleteUser() {
     if (!id || !user) return;
+    const currentPassword = window.prompt('Enter your admin password to delete this user:');
+    if (!currentPassword) return;
     setDeleting(true);
     setError('');
     setMessage('');
     try {
-      await api(`/admin/users/${id}`, { method: 'DELETE' });
+      await api(`/admin/users/${id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ currentPassword }),
+      });
       navigate('/admin/users', { replace: true });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'User deletion failed');

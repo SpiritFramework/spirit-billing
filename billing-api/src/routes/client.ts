@@ -38,6 +38,15 @@ const orderRateLimit = {
   },
 };
 
+const couponRedeemRateLimit = {
+  config: {
+    rateLimit: {
+      max: 5,
+      timeWindow: '1 minute',
+    },
+  },
+};
+
 const categoryPublicSelect = {
   id: true,
   name: true,
@@ -287,12 +296,9 @@ export async function clientRoutes(app: FastifyInstance) {
   app.get('/dashboard', { preHandler: requireAuth }, async (request) => {
     const userId = request.user!.id;
     const [
-      totalServices,
-      activeServices,
-      pendingServices,
-      unpaidInvoices,
+      serviceStatusCounts,
       unpaidBalance,
-      paidInvoices,
+      invoiceStatusCounts,
       recentInvoices,
       recentServices,
       user,
@@ -300,16 +306,23 @@ export async function clientRoutes(app: FastifyInstance) {
       openTickets,
       recentTickets,
       nextRenewal,
+      panel,
     ] = await Promise.all([
-      prisma.service.count({ where: { userId } }),
-      prisma.service.count({ where: { userId, status: 'active' } }),
-      prisma.service.count({ where: { userId, status: 'pending_payment' } }),
-      prisma.invoice.count({ where: { userId, status: 'unpaid' } }),
+      prisma.service.groupBy({
+        by: ['status'],
+        where: { userId },
+        _count: { _all: true },
+      }),
       prisma.invoice.aggregate({
         where: { userId, status: 'unpaid' },
         _sum: { totalCents: true },
+        _count: { _all: true },
       }),
-      prisma.invoice.count({ where: { userId, status: 'paid' } }),
+      prisma.invoice.groupBy({
+        by: ['status'],
+        where: { userId },
+        _count: { _all: true },
+      }),
       prisma.invoice.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
@@ -382,7 +395,14 @@ export async function clientRoutes(app: FastifyInstance) {
           product: { select: { priceCents: true, currency: true, cycle: true } },
         },
       }),
+      getPanelConnectionConfig(),
     ]);
+    const totalServices = serviceStatusCounts.reduce((sum, row) => sum + row._count._all, 0);
+    const activeServices = serviceStatusCounts.find((row) => row.status === 'active')?._count._all ?? 0;
+    const pendingServices =
+      serviceStatusCounts.find((row) => row.status === 'pending_payment')?._count._all ?? 0;
+    const unpaidInvoices = unpaidBalance._count._all;
+    const paidInvoices = invoiceStatusCounts.find((row) => row.status === 'paid')?._count._all ?? 0;
     const link = await resolvePanelUserLink(user);
     const statusRank: Record<string, number> = {
       active: 0,
@@ -406,7 +426,7 @@ export async function clientRoutes(app: FastifyInstance) {
       memberSince: user.createdAt,
       panelLinked: link.panelLinked,
       panelStatus: link.panelStatus,
-      panelWebUrl: (await getPanelConnectionConfig()).panelWebUrl,
+      panelWebUrl: panel.panelWebUrl,
       ticketsEnabled,
       openTickets,
       recentTickets,
@@ -511,7 +531,7 @@ export async function clientRoutes(app: FastifyInstance) {
   });
 
   /** Redeem a credit-granting coupon into account balance (no order required when min order is met / 0). */
-  app.post('/coupons/redeem', { preHandler: requireAuth, ...orderRateLimit }, async (request, reply) => {
+  app.post('/coupons/redeem', { preHandler: requireAuth, ...couponRedeemRateLimit }, async (request, reply) => {
     const body = z.object({ code: z.string().min(1).max(64) }).parse(request.body);
     const userId = request.user!.id;
 

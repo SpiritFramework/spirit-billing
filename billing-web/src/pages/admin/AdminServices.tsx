@@ -141,6 +141,8 @@ export function AdminServices() {
       'Sync servers from Spirit-Panel?\n\nOK = also create Billing accounts for panel owners that are missing (recommended if Panel was live before Billing).\nCancel = abort.',
     );
     if (!createMissingUsers) return;
+    const currentPassword = window.prompt('Enter your admin password to sync from Spirit-Panel:');
+    if (!currentPassword) return;
 
     setSyncing(true);
     setError('');
@@ -148,7 +150,7 @@ export function AdminServices() {
     try {
       const result = await api<SyncResult>('/admin/services/sync-from-panel', {
         method: 'POST',
-        body: JSON.stringify({ createMissingUsers: true }),
+        body: JSON.stringify({ createMissingUsers: true, currentPassword }),
       });
       const parts: string[] = [];
       if ((result.usersCreatedCount ?? 0) > 0) {

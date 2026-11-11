@@ -453,8 +453,8 @@ export function ClientLayout() {
             )}
           </div>
         </header>
-        <main className="public-store-main">
-          <div className="ds-page">
+        <main className={`public-store-main${location.pathname === '/game-hosting' ? ' is-hosting' : ''}`}>
+          <div className={`ds-page${location.pathname === '/game-hosting' ? ' is-hosting' : ''}`}>
             <Outlet />
           </div>
         </main>
@@ -615,7 +615,7 @@ export function ClientLayout() {
             <span>{banner}</span>
           </div>
         )}
-        <div className="ds-page">
+        <div className={`ds-page${location.pathname === '/game-hosting' ? ' is-hosting' : ''}`}>
           <Outlet />
         </div>
       </main>

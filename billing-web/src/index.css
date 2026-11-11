@@ -1036,6 +1036,13 @@ html[data-sidebar="rail"] .ds-nav a.active::before {
   padding: 1.15rem 1.5rem 2rem;
 }
 
+.ds-page.is-hosting {
+  max-width: none;
+  width: 100%;
+  margin: 0;
+  padding: 0 0 2rem;
+}
+
 .ds-announcement {
   margin: 0.75rem 1.35rem 0;
   padding: 0.65rem 0.85rem;
@@ -13164,6 +13171,12 @@ a.ds-user-chip:focus-visible {
   width: min(1180px, calc(100% - 2rem));
   margin: 0 auto;
   padding: 1.25rem 0 2.5rem;
+}
+.public-store-main.is-hosting {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0 0 2.5rem;
 }
 .cart-v2-guest-actions {
   display: grid;

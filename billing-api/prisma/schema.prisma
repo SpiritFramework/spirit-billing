@@ -245,6 +245,9 @@ model Service {
   invoices Invoice[]
   tickets  Ticket[]
 
+  @@index([userId, status])
+  @@index([userId, nextDueAt])
+  @@index([status, nextDueAt])
   @@map("services")
 }
 
@@ -277,6 +280,10 @@ model Invoice {
   creditLedgers     CreditLedger[]
   couponRedemptions CouponRedemption[]
 
+  @@index([userId, status])
+  @@index([userId, createdAt])
+  @@index([status, dueAt])
+  @@index([status, paidAt])
   @@map("invoices")
 }
 

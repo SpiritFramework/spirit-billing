@@ -16,6 +16,7 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 ### Added
 
 - Game hosting categories can take a card background image. The logo stays on top of the art. Schema: `categories.background_url` (applied on update)
+- Optional in-process billing lifecycle scheduler (`BILLING_LIFECYCLE_SCHEDULER=true`, default off) that reuses the existing renewal and overdue jobs on an interval
 
 ### Changed
 
@@ -24,16 +25,22 @@ How to add an entry when you ship: see [releasing.md](./releasing.md).
 - Admin **user detail** is one account desk: identity, metrics, and section switcher share a stage, and profile, panel, password, wallet, services, invoices, and delete use the same cards
 - Admin **service detail** is one server desk: identity, price, due date, panel, and unpaid share a stage. Overview, invoices, and the whole settings tab (name, price, limits, features, jobs, and delete) use the same cards. Resource limits show the real values, without decorative meters
 - Client **Dashboard** adds the next renewal and recent support tickets beside account credit. The services count notes plans still waiting on payment
-- Client **Game hosting** opens with a custom invite hero (grid/orbit artwork, Browse games, Games/Plans stats with icons). Popular games holds search and the catalog; Online in three steps follows. Cards without a description no longer invent a hosting line, and a category with no plans does not show “0 plans”. The cart sits under those sections
+- Client **Game hosting** is a full-width showcase: a colored mast with live game/plan/from-price facts, a full-width search bar, the existing game cards, and a quiet how-it-works close. Cards without a description no longer invent a hosting line, and a category with no plans does not show “0 plans”. The cart sits under the catalog
 - Client **service detail** Resources includes backups, databases, and ports alongside RAM, CPU, and disk. A limit of zero shows as Off
 - Client **service detail** Manage server opens that server on the panel (`/servers/{id}`) when a panel server is assigned
 - Client **invoice detail** plan resources include backups, databases, and ports. A limit of zero shows as Off
 - Client **game plan** “What’s included” expands in place with a smooth open, accented trigger, and staggered feature rows. Opening it on one plan no longer stretches the closed trigger on the others
 - Public **home** is tighter: game cards use category art with the logo centered, two games fill the row, and section type and cards read more clearly
+- Client dashboard and admin overview use fewer database round-trips; services/invoices gain indexes for user/status/due queries (`prisma db push`)
+- Web app code-splits admin and authenticated client pages so the public home is not bundled with the ops desk
+- Spirit-Panel client caches connection settings and egg/node catalogs briefly, retries safe GETs once on timeout/502/503, and skips per-server owner lookups when the servers list already has an email
 
 ### Fixed
 
 ### Security
+
+- Mark-paid, user delete, and panel sync require the admin’s current password again; coupon redeem and panel test use tighter rate limits
+- Panel/provision failures return generic client messages; sync audit logs never include temporary passwords
 
 ---
 

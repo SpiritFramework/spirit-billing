@@ -218,103 +218,104 @@ export function GameHostingPage() {
   }, [categories, query]);
 
   const totalPlans = categories.reduce((sum, category) => sum + (category._count?.products ?? 0), 0);
+  const lowestFrom = useMemo(() => {
+    let best: Category['startingFrom'] = null;
+    for (const category of categories) {
+      const from = category.startingFrom;
+      if (!from) continue;
+      if (!best || from.priceCents < best.priceCents) best = from;
+    }
+    return best;
+  }, [categories]);
   const showSearch = categories.length > 1 || Boolean(query.trim());
+  const queryActive = Boolean(query.trim());
 
   return (
     <div className={`client-home client-gh client-host${count > 0 ? ' has-dock' : ''}`}>
       <section
-        className="client-host__hero"
+        className="client-host__mast"
         style={{
           ['--hero-a' as string]: categories[0]?.color || 'var(--accent)',
           ['--hero-b' as string]: categories[1]?.color || categories[0]?.color || 'var(--accent)',
         }}
       >
-        <div className="client-host__hero-bg" aria-hidden>
-          <span className="client-host__hero-bg-grid" />
-          <span className="client-host__hero-bg-orb client-host__hero-bg-orb--a" />
-          <span className="client-host__hero-bg-orb client-host__hero-bg-orb--b" />
-          <svg className="client-host__hero-bg-rings" viewBox="0 0 640 320" preserveAspectRatio="xMaxYMid slice">
-            <g fill="none" stroke="currentColor" strokeWidth="1.2">
-              <circle cx="470" cy="160" r="46" opacity="0.28" />
-              <circle cx="470" cy="160" r="86" opacity="0.2" />
-              <circle cx="470" cy="160" r="132" opacity="0.14" />
-              <circle cx="470" cy="160" r="178" opacity="0.1" />
-              <path d="M292 160h356" opacity="0.16" />
-              <path d="M470 2v316" opacity="0.16" />
-              <path d="M350 52l240 216" opacity="0.12" />
-              <path d="M350 268l240-216" opacity="0.12" />
-            </g>
-            <g fill="currentColor">
-              <circle cx="470" cy="160" r="4.5" opacity="0.55" />
-              <circle cx="556" cy="102" r="3" opacity="0.4" />
-              <circle cx="392" cy="214" r="2.5" opacity="0.35" />
-              <circle cx="538" cy="232" r="2.2" opacity="0.3" />
-            </g>
-          </svg>
-        </div>
-        <div className="client-host__hero-body">
-          <h1>Game hosting</h1>
-          <p>
+        <div className="client-host__mast-copy">
+          <p>Game servers</p>
+          <h1>Choose your game.</h1>
+          <span>
             {loading
               ? 'Loading games…'
               : categories.length
-                ? 'Choose a game, then a plan built for it.'
+                ? 'Each game has its own plans. Pick one, then run it from Spirit-Panel.'
                 : 'Games appear here once they are published.'}
-          </p>
-          <div className="client-host__hero-actions">
-            {categories.length ? (
-              <a className="client-home__btn client-home__btn--primary client-home__btn--cta" href="#games">
-                <span>Browse games</span>
-                <span className="client-home__btn-icon" aria-hidden>
-                  <ArrowRight size={16} className="client-home__btn-arrow" />
-                </span>
-              </a>
-            ) : null}
-            <div className="client-host__hero-stats" aria-label="Catalog totals">
-              <span>
-                <Gamepad2 size={15} aria-hidden />
-                <strong>{loading ? '—' : categories.length}</strong>
-                <small>{categories.length === 1 ? 'Game' : 'Games'}</small>
-              </span>
-              <span>
-                <Layers3 size={15} aria-hidden />
-                <strong>{loading ? '—' : totalPlans}</strong>
-                <small>{totalPlans === 1 ? 'Plan' : 'Plans'}</small>
-              </span>
-            </div>
-          </div>
+          </span>
+        </div>
+        <div className="client-host__mast-facts" aria-label="Catalog totals">
+          <span>
+            <Gamepad2 size={16} aria-hidden />
+            <strong>{loading ? '—' : categories.length}</strong>
+            <small>{categories.length === 1 ? 'Game' : 'Games'}</small>
+          </span>
+          <span>
+            <Layers3 size={16} aria-hidden />
+            <strong>{loading ? '—' : totalPlans}</strong>
+            <small>{totalPlans === 1 ? 'Plan' : 'Plans'}</small>
+          </span>
+          {loading || lowestFrom ? (
+            <span>
+              <Sparkles size={16} aria-hidden />
+              <strong>
+                {loading || !lowestFrom
+                  ? '—'
+                  : `${money(lowestFrom.priceCents, lowestFrom.currency)}/${cycleShort(lowestFrom.cycle)}`}
+              </strong>
+              <small>From</small>
+            </span>
+          ) : null}
         </div>
       </section>
 
-      <section className="client-host__catalog" id="games" aria-labelledby="popular-games">
-        <header className="client-host__block-head">
-          <div>
-            <p>Start here</p>
-            <h2 id="popular-games">Popular games</h2>
-          </div>
-          <div className="client-host__block-tools">
-            {showSearch ? (
-              <label className="client-gh__search client-host__catalog-search">
-                <Search size={15} aria-hidden />
-                <input
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search games"
-                  aria-label="Search games"
-                />
-              </label>
-            ) : null}
+      <section className="client-host__showcase" id="games" aria-label="Games">
+        {showSearch ? (
+          <div className="client-host__search">
+            <label className="client-gh__search client-host__search-field">
+              <Search size={15} aria-hidden />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search games"
+                aria-label="Search games"
+              />
+              {queryActive ? (
+                <button
+                  type="button"
+                  className="client-host__search-clear"
+                  onClick={() => setQuery('')}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </label>
             {!loading ? (
-              <span>
+              <span className="client-host__search-count">
                 {filtered.length} game{filtered.length === 1 ? '' : 's'}
               </span>
             ) : null}
           </div>
-        </header>
+        ) : null}
+
         {loading ? (
           <div className="client-host__grid">
             {[0, 1].map((item) => (
-              <div className="client-host__card is-loading" key={item} />
+              <div className="client-host__card is-loading" key={item} aria-hidden>
+                <span className="client-host__card-art" />
+                <span className="client-host__card-body">
+                  <span className="client-host__skel client-host__skel--title" />
+                  <span className="client-host__skel client-host__skel--line" />
+                  <span className="client-host__skel client-host__skel--line is-short" />
+                  <span className="client-host__skel client-host__skel--foot" />
+                </span>
+              </div>
             ))}
           </div>
         ) : filtered.length ? (
@@ -394,7 +395,7 @@ export function GameHostingPage() {
                   : 'Hosting categories will appear here once they are published.'}
               </p>
             </div>
-            {query ? (
+            {queryActive ? (
               <button
                 type="button"
                 className="client-home__btn client-home__btn--ghost client-home__btn--sm"
@@ -407,39 +408,44 @@ export function GameHostingPage() {
         )}
       </section>
 
-      <section className="client-host__steps" aria-labelledby="online-steps">
-        <header className="client-host__block-head">
-          <div>
-            <p>Get started</p>
-            <h2 id="online-steps">Online in three steps</h2>
-          </div>
-        </header>
+      <section className="client-host__close" aria-label="How it works">
         <ol>
           <li>
-            <span>
-              <em>01</em>
-              <Gamepad2 size={16} aria-hidden />
-            </span>
-            <strong>Choose a game</strong>
-            <p>Open a game from the catalog and see the plans built for it.</p>
+            <em>01</em>
+            <div>
+              <strong>Choose a game</strong>
+              <p>Open a game and see the plans built for it.</p>
+            </div>
           </li>
           <li>
-            <span>
-              <em>02</em>
-              <Layers3 size={16} aria-hidden />
-            </span>
-            <strong>Pick a plan</strong>
-            <p>Compare memory, storage, and price, then add it to your cart.</p>
+            <em>02</em>
+            <div>
+              <strong>Pick a plan</strong>
+              <p>Compare memory, storage, and price, then add it to your cart.</p>
+            </div>
           </li>
           <li>
-            <span>
-              <em>03</em>
-              <Rocket size={16} aria-hidden />
-            </span>
-            <strong>You&apos;re online</strong>
-            <p>Check out, then manage the server from Spirit-Panel.</p>
+            <em>03</em>
+            <div>
+              <strong>Open Spirit-Panel</strong>
+              <p>Check out, then manage the server from the panel.</p>
+            </div>
           </li>
         </ol>
+        <ul className="client-host__trust">
+          <li>
+            <CheckCircle2 size={14} aria-hidden />
+            Clear resource limits
+          </li>
+          <li>
+            <CheckCircle2 size={14} aria-hidden />
+            Integrated billing
+          </li>
+          <li>
+            <CheckCircle2 size={14} aria-hidden />
+            Full panel access
+          </li>
+        </ul>
       </section>
 
       <CartDock count={count} />

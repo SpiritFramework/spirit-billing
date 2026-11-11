@@ -43,7 +43,11 @@ function shouldLogPanelSuccess(method: string, path: string) {
   );
 }
 
-async function panelFetch<T>(path: string, init?: RequestInit): Promise<T> {
+function isRetryablePanelFailure(err: PanelApiError) {
+  return err.status === 502 || err.status === 503 || err.status === 504;
+}
+
+async function panelFetchOnce<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method || 'GET').toUpperCase();
   const started = Date.now();
   const { panelApiUrl, panelApplicationApiKey, panelKeyConfigured } = await getPanelConnectionConfig();
@@ -186,6 +190,28 @@ async function panelFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return body as T;
 }
 
+/** Idempotent GETs retry once on timeout / 502 / 503 / 504. Mutations never retry. */
+async function panelFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || 'GET').toUpperCase();
+  try {
+    return await panelFetchOnce<T>(path, init);
+  } catch (err) {
+    if (method !== 'GET' || !(err instanceof PanelApiError) || !isRetryablePanelFailure(err)) {
+      throw err;
+    }
+    return panelFetchOnce<T>(path, init);
+  }
+}
+
+const CATALOG_CACHE_TTL_MS = 45_000;
+let eggsCache: { value: PanelEgg[]; expiresAt: number } | null = null;
+let nodesCache: { value: PanelNode[]; expiresAt: number } | null = null;
+
+export function invalidatePanelCatalogCache() {
+  eggsCache = null;
+  nodesCache = null;
+}
+
 export type PanelUser = {
   id: string;
   uuid: string;
@@ -283,11 +309,19 @@ export async function deletePanelUser(panelUserId: string): Promise<void> {
 }
 
 export async function listPanelNodes(): Promise<PanelNode[]> {
-  return panelFetch<PanelNode[]>('/nodes');
+  const now = Date.now();
+  if (nodesCache && nodesCache.expiresAt > now) return nodesCache.value;
+  const value = await panelFetch<PanelNode[]>('/nodes');
+  nodesCache = { value, expiresAt: now + CATALOG_CACHE_TTL_MS };
+  return value;
 }
 
 export async function listPanelEggs(): Promise<PanelEgg[]> {
-  return panelFetch<PanelEgg[]>('/eggs');
+  const now = Date.now();
+  if (eggsCache && eggsCache.expiresAt > now) return eggsCache.value;
+  const value = await panelFetch<PanelEgg[]>('/eggs');
+  eggsCache = { value, expiresAt: now + CATALOG_CACHE_TTL_MS };
+  return value;
 }
 
 export async function listPanelServers(): Promise<PanelServer[]> {

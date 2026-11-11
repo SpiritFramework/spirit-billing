@@ -127,6 +127,18 @@ async function resolvePanelOwner(server: PanelServer): Promise<{
   firstName: string | null;
   lastName: string | null;
 }> {
+  // Prefer owner email already on the servers list payload — avoids one getPanelUser per server.
+  const listedEmail = ownerEmail(server);
+  if (listedEmail) {
+    return {
+      email: listedEmail,
+      panelUserId: server.ownerId ?? null,
+      usernameHint: listedEmail.split('@')[0] || null,
+      firstName: null,
+      lastName: null,
+    };
+  }
+
   let panelUser: PanelUser | null = null;
   if (server.ownerId) {
     try {
@@ -135,10 +147,7 @@ async function resolvePanelOwner(server: PanelServer): Promise<{
       panelUser = null;
     }
   }
-  const email =
-    panelUser?.email?.trim().toLowerCase() ||
-    ownerEmail(server) ||
-    null;
+  const email = panelUser?.email?.trim().toLowerCase() || null;
   return {
     email,
     panelUserId: panelUser?.id ?? server.ownerId ?? null,

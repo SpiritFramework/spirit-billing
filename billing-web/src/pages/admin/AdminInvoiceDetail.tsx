@@ -235,13 +235,15 @@ export function AdminInvoiceDetail() {
 
   async function markPaid() {
     if (!invoice) return;
+    const currentPassword = window.prompt('Enter your admin password to mark this invoice paid:');
+    if (!currentPassword) return;
     setBusy(true);
     setError('');
     setMessage('');
     try {
       const result = await api<{ panelServerId: string | null }>(
         `/admin/invoices/${invoice.id}/status`,
-        { method: 'PATCH', body: JSON.stringify({ status: 'paid' }) },
+        { method: 'PATCH', body: JSON.stringify({ status: 'paid', currentPassword }) },
       );
       setMessage(
         result.panelServerId

@@ -7,6 +7,9 @@ const KEY_SETTING = 'panel_application_api_key_enc';
 const API_URL_SETTING = 'panel_api_url';
 const WEB_URL_SETTING = 'panel_web_url';
 
+const CONFIG_CACHE_TTL_MS = 30_000;
+let cachedConfig: { value: PanelConnectionConfig; expiresAt: number } | null = null;
+
 function encryptionKey(): Buffer {
   return createHash('sha256').update(getConfig().secretsEncryptionKey).digest();
 }
@@ -56,7 +59,11 @@ export type PanelConnectionConfig = {
   panelAllowPrivateUrls: boolean;
 };
 
-export async function getPanelConnectionConfig(): Promise<PanelConnectionConfig> {
+export function invalidatePanelConnectionCache() {
+  cachedConfig = null;
+}
+
+async function loadPanelConnectionConfig(): Promise<PanelConnectionConfig> {
   const env = getConfig();
   const apiUrl = (await getSetting(API_URL_SETTING, env.panelApiUrl)).replace(/\/$/, '');
   const webUrl = (await getSetting(WEB_URL_SETTING, env.panelWebUrl)).replace(/\/$/, '');
@@ -88,6 +95,16 @@ export async function getPanelConnectionConfig(): Promise<PanelConnectionConfig>
     panelKeyMasked: maskApiKey(key),
     panelAllowPrivateUrls,
   };
+}
+
+export async function getPanelConnectionConfig(): Promise<PanelConnectionConfig> {
+  const now = Date.now();
+  if (cachedConfig && cachedConfig.expiresAt > now) {
+    return cachedConfig.value;
+  }
+  const value = await loadPanelConnectionConfig();
+  cachedConfig = { value, expiresAt: now + CONFIG_CACHE_TTL_MS };
+  return value;
 }
 
 export async function savePanelConnectionConfig(input: {
@@ -129,6 +146,13 @@ export async function savePanelConnectionConfig(input: {
     }
   }
 
+  invalidatePanelConnectionCache();
+  try {
+    const { invalidatePanelCatalogCache } = await import('../services/panel.js');
+    invalidatePanelCatalogCache();
+  } catch {
+    /* panel module may be loading */
+  }
   return getPanelConnectionConfig();
 }
 

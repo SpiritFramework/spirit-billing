@@ -19,6 +19,7 @@ import {
   verifyTicketUploadSignature,
 } from './lib/uploads.js';
 import { repairInvalidProductFeatures } from './lib/product-features.js';
+import { startLifecycleScheduler } from './lib/lifecycle-scheduler.js';
 import { authRoutes } from './routes/auth.js';
 import { clientRoutes } from './routes/client.js';
 import { adminRoutes } from './routes/admin.js';
@@ -220,3 +221,4 @@ try {
 await app.listen({ port: config.port, host: config.host });
 app.log.info(`Spirit Billing API on http://${config.host}:${config.port}`);
 app.log.info(`Uploads directory ${getUploadsRoot()}`);
+startLifecycleScheduler(app.log);

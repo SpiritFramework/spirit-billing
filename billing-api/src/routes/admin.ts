@@ -45,6 +45,7 @@ import {
 import { getSecuritySettings, saveSecuritySettings } from '../lib/security-settings.js';
 import { prisma } from '../lib/prisma.js';
 import { markInvoicePaidAndProvision } from '../lib/provision.js';
+import { publicErrorMessage } from '../lib/public-errors.js';
 import { resolvePanelUserLink } from '../lib/panel-link.js';
 import {
   createPanelUser,
@@ -80,6 +81,15 @@ const adminMutationRateLimit = {
   config: {
     rateLimit: {
       max: 40,
+      timeWindow: '1 minute',
+    },
+  },
+};
+
+const panelTestRateLimit = {
+  config: {
+    rateLimit: {
+      max: 5,
       timeWindow: '1 minute',
     },
   },
@@ -211,10 +221,7 @@ export async function adminRoutes(app: FastifyInstance) {
       users,
       linkedUsers,
       newClients30d,
-      totalServices,
-      activeServices,
-      pendingServices,
-      suspendedServices,
+      serviceStatusCounts,
       renewalsDueSoon,
       unpaidInvoices,
       overdueInvoices,
@@ -232,10 +239,10 @@ export async function adminRoutes(app: FastifyInstance) {
       prisma.user.count({ where: { role: 'client' } }),
       prisma.user.count({ where: { role: 'client', panelUserId: { not: null } } }),
       prisma.user.count({ where: { role: 'client', createdAt: { gte: clientsSince } } }),
-      prisma.service.count(),
-      prisma.service.count({ where: { status: 'active' } }),
-      prisma.service.count({ where: { status: 'pending_payment' } }),
-      prisma.service.count({ where: { status: 'suspended' } }),
+      prisma.service.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
       prisma.service.count({
         where: {
           status: 'active',
@@ -385,6 +392,13 @@ export async function adminRoutes(app: FastifyInstance) {
 
     const settled = (row: { _sum: { totalCents: number | null; creditAppliedCents: number | null } }) =>
       (row._sum.totalCents ?? 0) + (row._sum.creditAppliedCents ?? 0);
+
+    const totalServices = serviceStatusCounts.reduce((sum, row) => sum + row._count._all, 0);
+    const activeServices = serviceStatusCounts.find((row) => row.status === 'active')?._count._all ?? 0;
+    const pendingServices =
+      serviceStatusCounts.find((row) => row.status === 'pending_payment')?._count._all ?? 0;
+    const suspendedServices =
+      serviceStatusCounts.find((row) => row.status === 'suspended')?._count._all ?? 0;
 
     return {
       generatedAt: now.toISOString(),
@@ -1178,11 +1192,14 @@ export async function adminRoutes(app: FastifyInstance) {
       const body = z
         .object({
           createMissingUsers: z.boolean().optional(),
+          currentPassword: z.string().min(1).max(128).optional(),
         })
         .passthrough()
         .parse(request.body ?? {});
+      await assertStepUpPassword(request.user!.id, body.currentPassword);
       const createMissingUsers = body.createMissingUsers !== false;
       const result = await syncPanelServersIntoBilling({ createMissingUsers });
+      // Never log temporary passwords — only counts for the audit trail.
       recordLogFireAndForget({
         level: 'info',
         category: 'provision',
@@ -1219,7 +1236,7 @@ export async function adminRoutes(app: FastifyInstance) {
       }
       if (err instanceof PanelApiError) {
         return reply.status(err.status >= 400 && err.status < 500 ? err.status : 502).send({
-          error: err.message,
+          error: publicErrorMessage(err, 'Could not sync from Spirit-Panel', request.log),
         });
       }
       throw err;
@@ -1607,7 +1624,11 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.post('/invoices/:id/mark-paid', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
     const { id } = request.params as { id: string };
+    const body = z
+      .object({ currentPassword: z.string().min(1).max(128).optional() })
+      .parse(request.body ?? {});
     try {
+      await assertStepUpPassword(request.user!.id, body.currentPassword);
       const result = await markInvoicePaidAndProvision({
         invoiceId: id,
         paidById: request.user!.id,
@@ -1623,8 +1644,10 @@ export async function adminRoutes(app: FastifyInstance) {
       if (status && status < 500) {
         return reply.status(status).send({ error: err instanceof Error ? err.message : 'Failed' });
       }
-      if (status === 502) {
-        return reply.status(502).send({ error: err instanceof Error ? err.message : 'Provisioning failed' });
+      if (status === 502 || err instanceof PanelApiError) {
+        return reply
+          .status(502)
+          .send({ error: publicErrorMessage(err, 'Provisioning failed', request.log) });
       }
       throw err;
     }
@@ -1666,7 +1689,12 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.patch('/invoices/:id/status', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
     const { id } = request.params as { id: string };
-    const body = z.object({ status: z.enum(['unpaid', 'paid', 'cancelled']) }).parse(request.body);
+    const body = z
+      .object({
+        status: z.enum(['unpaid', 'paid', 'cancelled']),
+        currentPassword: z.string().min(1).max(128).optional(),
+      })
+      .parse(request.body);
 
     const invoice = await prisma.invoice.findUnique({
       where: { id },
@@ -1687,6 +1715,13 @@ export async function adminRoutes(app: FastifyInstance) {
     }
 
     if (body.status === 'paid') {
+      try {
+        await assertStepUpPassword(request.user!.id, body.currentPassword);
+      } catch (err) {
+        const status = (err as { statusCode?: number }).statusCode ?? 422;
+        return reply.status(status).send({ error: err instanceof Error ? err.message : 'Failed' });
+      }
+
       if (invoice.status === 'cancelled') {
         await prisma.$transaction(async (tx) => {
           await tx.invoice.update({
@@ -1744,10 +1779,10 @@ export async function adminRoutes(app: FastifyInstance) {
         if (status && status < 500) {
           return reply.status(status).send({ error: err instanceof Error ? err.message : 'Failed' });
         }
-        if (status === 502) {
+        if (status === 502 || err instanceof PanelApiError) {
           return reply
             .status(502)
-            .send({ error: err instanceof Error ? err.message : 'Provisioning failed' });
+            .send({ error: publicErrorMessage(err, 'Provisioning failed', request.log) });
         }
         throw err;
       }
@@ -2369,6 +2404,15 @@ export async function adminRoutes(app: FastifyInstance) {
 
   app.delete('/users/:id', { preHandler: requireFullAdmin, ...adminMutationRateLimit }, async (request, reply) => {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const body = z
+      .object({ currentPassword: z.string().min(1).max(128).optional() })
+      .parse(request.body ?? {});
+    try {
+      await assertStepUpPassword(request.user!.id, body.currentPassword);
+    } catch (err) {
+      const status = (err as { statusCode?: number }).statusCode ?? 422;
+      return reply.status(status).send({ error: err instanceof Error ? err.message : 'Failed' });
+    }
     if (id === request.user!.id) {
       return reply.status(422).send({ error: 'You cannot delete your own account' });
     }
@@ -2393,12 +2437,8 @@ export async function adminRoutes(app: FastifyInstance) {
             err.status === 404 &&
             (msg.includes('panel user not found') || msg === 'not found');
           if (!alreadyGone) {
-            const hint =
-              err.status === 404
-                ? ' Deploy the Spirit-Panel Application API update that adds DELETE /users/:id, then try again.'
-                : '';
             return reply.status(err.status >= 400 && err.status < 500 ? err.status : 502).send({
-              error: `Panel user deletion failed: ${err.message}.${hint}`,
+              error: publicErrorMessage(err, 'Could not delete the linked Spirit-Panel user', request.log),
             });
           }
         } else {
@@ -2752,7 +2792,7 @@ export async function adminRoutes(app: FastifyInstance) {
     return settingsPayload();
   });
 
-  app.post('/panel/test', { preHandler: requireFullAdmin }, async (request) => {
+  app.post('/panel/test', { preHandler: requireFullAdmin, ...panelTestRateLimit }, async (request) => {
     const body = z
       .object({
         panelApiUrl: z.string().url().optional(),
